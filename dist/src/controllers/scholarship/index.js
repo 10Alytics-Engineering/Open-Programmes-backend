@@ -7,6 +7,7 @@ exports.applyForScholarship = applyForScholarship;
 exports.getScholarshipApplications = getScholarshipApplications;
 const index_1 = require("../../../src/index");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const mail_1 = require("./mail");
 async function applyForScholarship(req, res) {
     try {
         const { fullName, email, phone_number, country, gender, program, cohort, discountCode } = req.body;
@@ -59,6 +60,10 @@ async function applyForScholarship(req, res) {
                 discountCode,
                 userId: user.id
             }
+        });
+        // Send confirmation email in the background
+        (0, mail_1.sendIWDRegistrationEmail)(emailLower, fullName).catch(err => {
+            console.error("[SCHOLARSHIP_EMAIL_ERROR]:", err);
         });
         // Generate tokens so user is logged in
         const access_token = jsonwebtoken_1.default.sign({

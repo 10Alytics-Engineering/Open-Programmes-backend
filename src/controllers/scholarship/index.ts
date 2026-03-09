@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../../src/index";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { sendIWDRegistrationEmail } from "./mail";
 
 export async function applyForScholarship(req: Request, res: Response) {
     try {
@@ -60,6 +60,11 @@ export async function applyForScholarship(req: Request, res: Response) {
                 discountCode,
                 userId: user.id
             }
+        });
+
+        // Send confirmation email in the background
+        sendIWDRegistrationEmail(emailLower, fullName).catch(err => {
+            console.error("[SCHOLARSHIP_EMAIL_ERROR]:", err);
         });
 
         // Generate tokens so user is logged in
