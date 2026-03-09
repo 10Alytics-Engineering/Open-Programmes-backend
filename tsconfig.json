@@ -1,16 +1,27 @@
 {
   "compilerOptions": {
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "CommonJS",
+    "moduleResolution": "node",
     "baseUrl": "src",
     "target": "ES2020",
     "downlevelIteration": true,
-    
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "paths": {
-      "*": ["node_modules/*", "src/types/*"]
+      "*": [
+        "node_modules/*",
+        "src/types/*"
+      ]
     },
     "outDir": "dist",
     "sourceMap": true,
     "noImplicitAny": true
-  }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

@@ -71,6 +71,13 @@ export async function applyForScholarship(req: Request, res: Response) {
             console.error("[SCHOLARSHIP_EMAIL_ERROR]:", err);
         });
 
+        // Sync to Google Sheets in the background
+        import("../../../src/utils/googleSheets").then(({ GoogleSheetsSyncService }) => {
+            GoogleSheetsSyncService.syncApplication(application).catch(err => {
+                console.error("[GOOGLE_SHEETS_SYNC_ERROR]:", err);
+            });
+        });
+
         // Generate tokens so user is logged in
         const access_token = jwt.sign(
             {
