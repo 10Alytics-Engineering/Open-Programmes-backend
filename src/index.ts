@@ -38,10 +38,11 @@ app.use(bodyParser.json());
 // Lowest Mb sent at a time
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
-app.use("/api", router());
-app.use("/api", paymentApp);
-app.use("/api/admin", salesDashboardApp); // Add this line
+app.use('/api', router());
+app.use('/api', paymentApp);
+app.use('/api/admin', salesDashboardApp); // Add this line
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use(express.static(path.join(__dirname, '../public')));
 
 const server = http.createServer(app);
 

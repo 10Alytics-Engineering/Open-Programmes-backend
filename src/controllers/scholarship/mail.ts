@@ -62,7 +62,16 @@ export const sendIWDRegistrationEmail = async (email: string, name: string) => {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1 style="margin:0; font-size: 24px;">10Alytics</h1>
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                        <tr>
+                            <td style="vertical-align: middle; padding-right: 10px;">
+                                <img src="https://programs.10alyticsbusiness.ca/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                            </td>
+                            <td style="vertical-align: middle;">
+                                <h1 style="margin:0; font-size: 24px; color: white; border: 0;">10Alytics</h1>
+                            </td>
+                        </tr>
+                    </table>
                 </div>
                 <div class="content">
                     <p>Hello ${firstName},</p>

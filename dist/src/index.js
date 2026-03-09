@@ -39,10 +39,11 @@ app.use(express_1.default.json());
 app.use(body_parser_1.default.json());
 // Lowest Mb sent at a time
 app.use(body_parser_1.default.urlencoded({ limit: "50mb", extended: true }));
-app.use("/api", (0, route_1.default)());
-app.use("/api", paystack_1.default);
-app.use("/api/admin", sales_dashboard_1.default); // Add this line
+app.use('/api', (0, route_1.default)());
+app.use('/api', paystack_1.default);
+app.use('/api/admin', sales_dashboard_1.default); // Add this line
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads')));
+app.use(express_1.default.static(path_1.default.join(__dirname, '../public')));
 const server = http_1.default.createServer(app);
 node_cron_1.default.schedule("0 * * * *", async () => {
     console.log("🔄 Running hourly transaction cleanup...", new Date().toISOString());
