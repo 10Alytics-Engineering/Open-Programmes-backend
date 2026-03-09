@@ -6,21 +6,25 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.applyForScholarship = applyForScholarship;
 exports.getScholarshipApplications = getScholarshipApplications;
 const index_1 = require("../../../src/index");
-const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 async function applyForScholarship(req, res) {
     try {
-        const { fullName, email, phone_number, password, country, gender, program, cohort, discountCode } = req.body;
-        if (!fullName || !email || !phone_number || !password || !country || !gender || !program || !cohort) {
+        const { fullName, email, phone_number, country, gender, program, cohort, discountCode } = req.body;
+        if (!fullName || !email || !phone_number || !country || !gender || !program || !cohort) {
             return res.status(400).json({ message: "Fill in all required fields!" });
         }
         const emailLower = email.toLowerCase();
-        // Check if user already exists
-        let user = await index_1.prismadb.user.findUnique({
-            where: { email: emailLower }
+        // Check if user already exists by email OR phone number
+        let user = await index_1.prismadb.user.findFirst({
+            where: {
+                OR: [
+                    { email: emailLower },
+                    { phone_number: phone_number }
+                ]
+            }
         });
         if (user) {
-            // If user exists, we might want to check if they already have an application
+            // If user exists, check if they already have an application for this program
             const existingApplication = await index_1.prismadb.scholarshipApplication.findFirst({
                 where: {
                     userId: user.id,
@@ -32,14 +36,11 @@ async function applyForScholarship(req, res) {
             }
         }
         else {
-            // Create user if not exists
-            const salt = await bcryptjs_1.default.genSalt(10);
-            const hashedPassword = await bcryptjs_1.default.hash(password, salt);
+            // Create user if not exists (Pass-less for now, or could generate a temporary one)
             user = await index_1.prismadb.user.create({
                 data: {
                     name: fullName,
                     email: emailLower,
-                    password: hashedPassword,
                     phone_number: phone_number,
                     emailVerified: new Date(),
                 },
