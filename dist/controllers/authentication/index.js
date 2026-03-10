@@ -74,8 +74,22 @@ async function login(req, res) {
         if (!existingUser || !existingUser?.email) {
             return res.status(404).json({ message: "Nonexistent User!" });
         }
-        const comparePassword = await bcryptjs_1.default.compare(password, existingUser?.password);
+        if (!existingUser?.password) {
+            console.log(`[LOGIN_ERROR]: User ${email} has no password in DB.`);
+            return res.status(401).json({ message: "This account was created via social login. Please sign in with Google or reset your password." });
+        }
+        // Defensive check against non-string passwords
+        if (typeof existingUser.password !== 'string') {
+            console.error(`[LOGIN_CRITICAL]: User ${email} password is not a string! Type: ${typeof existingUser.password}`, existingUser.password);
+            return res.status(500).json({ message: "Internal account error. Please reset your password." });
+        }
+        if (typeof password !== 'string') {
+            console.error(`[LOGIN_ERROR]: Provided password is not a string! Type: ${typeof password}`);
+            return res.status(400).json({ message: "Invalid password format" });
+        }
+        const comparePassword = await bcryptjs_1.default.compare(password, existingUser.password);
         if (!comparePassword) {
+            console.log(`[LOGIN_ERROR]: Invalid password attempt for ${email}`);
             return res?.status(401).json({ message: "Invalid Password" });
         }
         // In Case account have not been verified;

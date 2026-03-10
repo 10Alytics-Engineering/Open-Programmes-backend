@@ -50,26 +50,16 @@ async function applyForScholarship(req, res) {
         }
         const emailLower = email.toLowerCase();
         // 1. Check if email is already used in a scholarship application
-        const existingEmailApp = await index_1.prismadb.scholarshipApplication.findFirst({
+        let application = await index_1.prismadb.scholarshipApplication.findFirst({
             where: { email: emailLower }
         });
-        if (existingEmailApp) {
-            return res.status(400).json({ message: "This email address has already been used to apply for a scholarship." });
-        }
-        // 2. Check if phone number is already used in a scholarship application
-        const existingPhoneApp = await index_1.prismadb.scholarshipApplication.findFirst({
-            where: { phone_number: phone_number }
-        });
-        if (existingPhoneApp) {
-            return res.status(400).json({ message: "This phone number has already been used to apply for a scholarship." });
-        }
-        // Hash password if provided
+        // 2. Hash password if provided
         let hashedPassword = null;
         if (password) {
             const salt = await bcryptjs_1.default.genSalt(10);
             hashedPassword = await bcryptjs_1.default.hash(password, salt);
         }
-        // Check if user already exists by email OR phone number
+        // 3. User Handling
         let user = await index_1.prismadb.user.findFirst({
             where: {
                 OR: [
@@ -79,7 +69,10 @@ async function applyForScholarship(req, res) {
             }
         });
         if (!user) {
-            // Create user if not exists
+            console.log(`[SCHOLARSHIP]: No existing user found for ${emailLower}. Creating new record.`);
+            if (!hashedPassword) {
+                console.error(`[SCHOLARSHIP_CRITICAL]: No password provided for NEW user ${emailLower}`);
+            }
             user = await index_1.prismadb.user.create({
                 data: {
                     name: fullName,
@@ -87,32 +80,47 @@ async function applyForScholarship(req, res) {
                     phone_number: phone_number,
                     password: hashedPassword,
                     emailVerified: new Date(),
-                },
+                }
+            });
+            console.log(`[SCHOLARSHIP]: New user created successfully with ID: ${user.id}. Password saved: ${!!user.password}`);
+        }
+        else {
+            console.log(`[SCHOLARSHIP]: User already exists with ID: ${user.id}. Skipping user update (preserving existing password).`);
+        }
+        // 4. Scholarship Application (Create or Update)
+        if (application) {
+            application = await index_1.prismadb.scholarshipApplication.update({
+                where: { id: application.id },
+                data: {
+                    fullName,
+                    phone_number,
+                    country,
+                    gender,
+                    program,
+                    cohort,
+                    discountCode,
+                    password: hashedPassword || application.password,
+                    userId: user.id
+                }
             });
         }
-        else if (hashedPassword && !user.password) {
-            // Update password if user exists but has no password (e.g. from social login or previous lead)
-            user = await index_1.prismadb.user.update({
-                where: { id: user.id },
-                data: { password: hashedPassword }
+        else {
+            application = await index_1.prismadb.scholarshipApplication.create({
+                data: {
+                    fullName,
+                    email: emailLower,
+                    phone_number,
+                    country,
+                    gender,
+                    program,
+                    cohort,
+                    discountCode,
+                    password: hashedPassword,
+                    paymentStatus: "PENDING",
+                    userId: user.id
+                }
             });
         }
-        // Create scholarship application
-        const application = await index_1.prismadb.scholarshipApplication.create({
-            data: {
-                fullName,
-                email: emailLower,
-                phone_number,
-                country,
-                gender,
-                program,
-                cohort,
-                discountCode,
-                password: hashedPassword,
-                paymentStatus: "PENDING",
-                userId: user.id
-            }
-        });
         // Send confirmation email in the background
         (0, mail_1.sendIWDRegistrationEmail)(emailLower, fullName).catch(err => {
             console.error("[SCHOLARSHIP_EMAIL_ERROR]:", err);
