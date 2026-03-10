@@ -88,7 +88,7 @@ export class GoogleSheetsSyncService {
             });
 
             // 2. Prepare Header and Data
-            const header = ['Full Name', 'Email', 'Phone', 'Country', 'Gender', 'Program', 'Cohort', 'Discount Code', 'Submitted At'];
+            const header = ['Full Name', 'Email', 'Phone', 'Country', 'Gender', 'Program', 'Cohort', 'Discount Code', 'Payment Status', 'Submitted At'];
             const rows = applications.map(app => [
                 app.fullName,
                 app.email,
@@ -98,6 +98,7 @@ export class GoogleSheetsSyncService {
                 app.program,
                 app.cohort,
                 app.discountCode || 'IWD 2026',
+                app.paymentStatus || 'PENDING',
                 new Date(app.createdAt).toLocaleString('en-GB')
             ]);
 
@@ -144,6 +145,7 @@ export class GoogleSheetsSyncService {
                     application.program,
                     application.cohort,
                     application.discountCode || 'IWD 2026',
+                    application.paymentStatus || 'PENDING',
                     new Date(application.createdAt || Date.now()).toLocaleString('en-GB')
                 ],
             ];

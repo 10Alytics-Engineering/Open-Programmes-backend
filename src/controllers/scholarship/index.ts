@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { sendIWDRegistrationEmail } from "./mail";
 
 export async function applyForScholarship(req: Request, res: Response) {
     try {
-        const { fullName, email, phone_number, country, gender, program, cohort, discountCode } = req.body;
+        const { fullName, email, phone_number, country, gender, program, cohort, discountCode, password } = req.body;
 
         if (!fullName || !email || !phone_number || !country || !gender || !program || !cohort) {
             return res.status(400).json({ message: "Fill in all required fields!" });
@@ -29,26 +30,11 @@ export async function applyForScholarship(req: Request, res: Response) {
             return res.status(400).json({ message: "This phone number has already been used to apply for a scholarship." });
         }
 
-        // Check if user already exists by email OR phone number
-        let user = await prismadb.user.findFirst({
-            where: {
-                OR: [
-                    { email: emailLower },
-                    { phone_number: phone_number }
-                ]
-            }
-        });
-
-        if (!user) {
-            // Create user if not exists
-            user = await prismadb.user.create({
-                data: {
-                    name: fullName,
-                    email: emailLower,
-                    phone_number: phone_number,
-                    emailVerified: new Date(),
-                },
-            });
+        // Hash password if provided
+        let hashedPassword = null;
+        if (password) {
+            const salt = await bcrypt.genSalt(10);
+            hashedPassword = await bcrypt.hash(password, salt);
         }
 
         // Create scholarship application
@@ -62,7 +48,8 @@ export async function applyForScholarship(req: Request, res: Response) {
                 program,
                 cohort,
                 discountCode,
-                userId: user.id
+                password: hashedPassword, // Store hashed password for later user creation
+                paymentStatus: "PENDING",
             }
         });
 
@@ -78,38 +65,10 @@ export async function applyForScholarship(req: Request, res: Response) {
             });
         });
 
-        // Generate tokens so user is logged in
-        const access_token = jwt.sign(
-            {
-                email: user.email,
-                id: user.id,
-                role: user.role,
-            },
-            process.env.JWT_SECRET as string,
-            { expiresIn: "30d" }
-        );
-
-        const refresh_token = jwt.sign(
-            {
-                email: user.email,
-                id: user.id,
-                role: user.role,
-            },
-            process.env.JWT_SECRET as string,
-            { expiresIn: "30d" }
-        );
-
-        await prismadb.user.update({
-            where: { id: user.id },
-            data: { access_token }
-        });
-
         return res.status(201).json({
             status: "success",
             message: "Scholarship application submitted successfully!",
-            refresh_token,
-            data: { ...user, access_token },
-            application
+            data: application
         });
     } catch (error) {
         console.log("[SCHOLARSHIP_APPLY]:", error);
