@@ -64,19 +64,25 @@ async function applyForScholarship(req, res) {
     try {
         const { fullName, email, phone_number, country, gender, program, cohort, discountCode, password } = req.body;
         // 1. INPUT VALIDATION
-        if (!email || !fullName || !password || !phone_number || !program || !cohort) {
+        if (!email || !fullName || !phone_number || !program || !cohort) {
             console.warn(`${TRACE_ID} Validation Failed: Missing required fields.`);
             return res.status(400).json({
                 status: "error",
-                message: "Please fill in all mandatory fields (Name, Email, Password, Phone, Program, Cohort)."
+                message: "Please fill in all mandatory fields (Name, Email, Phone, Program, Cohort)."
             });
         }
         const emailLower = email.trim().toLowerCase();
         const phoneTrimmed = phone_number.trim();
-        // 2. PASSWORD SECURITY
-        console.log(`${TRACE_ID} Hashing password for secure storage.`);
-        const salt = await bcryptjs_1.default.genSalt(10);
-        const hashedPassword = await bcryptjs_1.default.hash(password.trim(), salt);
+        // 2. PASSWORD SECURITY (OPTIONAL)
+        let hashedPassword = null;
+        if (password && typeof password === 'string' && password.trim() !== "") {
+            console.log(`${TRACE_ID} Hashing password for secure storage.`);
+            const salt = await bcryptjs_1.default.genSalt(10);
+            hashedPassword = await bcryptjs_1.default.hash(password.trim(), salt);
+        }
+        else {
+            console.log(`${TRACE_ID} No password provided. User may set it later.`);
+        }
         // 3. ATOMIC TRANSACTIONS (FOOLPROOF IDENTITY MANAGEMENT)
         const result = await index_1.prismadb.$transaction(async (tx) => {
             // A. Identity management (User)
@@ -84,15 +90,18 @@ async function applyForScholarship(req, res) {
                 where: { email: emailLower }
             });
             if (user) {
-                console.log(`${TRACE_ID} Updating existing user profilce for ID: ${user.id}`);
+                console.log(`${TRACE_ID} Updating existing user profile for ID: ${user.id}`);
+                const updateData = {
+                    name: fullName,
+                    phone_number: phoneTrimmed,
+                    emailVerified: user.emailVerified || new Date()
+                };
+                if (hashedPassword) {
+                    updateData.password = hashedPassword;
+                }
                 user = await tx.user.update({
                     where: { id: user.id },
-                    data: {
-                        name: fullName,
-                        phone_number: phoneTrimmed,
-                        password: hashedPassword, // Forces password update/init
-                        emailVerified: user.emailVerified || new Date()
-                    }
+                    data: updateData
                 });
             }
             else {
