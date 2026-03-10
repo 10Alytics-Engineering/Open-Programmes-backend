@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.applyForScholarship = applyForScholarship;
 exports.getScholarshipApplications = getScholarshipApplications;
 const index_1 = require("../../index");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const mail_1 = require("./mail");
 async function applyForScholarship(req, res) {
@@ -68,6 +69,34 @@ async function applyForScholarship(req, res) {
             const salt = await bcryptjs_1.default.genSalt(10);
             hashedPassword = await bcryptjs_1.default.hash(password, salt);
         }
+        // Check if user already exists by email OR phone number
+        let user = await index_1.prismadb.user.findFirst({
+            where: {
+                OR: [
+                    { email: emailLower },
+                    { phone_number: phone_number }
+                ]
+            }
+        });
+        if (!user) {
+            // Create user if not exists
+            user = await index_1.prismadb.user.create({
+                data: {
+                    name: fullName,
+                    email: emailLower,
+                    phone_number: phone_number,
+                    password: hashedPassword,
+                    emailVerified: new Date(),
+                },
+            });
+        }
+        else if (hashedPassword && !user.password) {
+            // Update password if user exists but has no password (e.g. from social login or previous lead)
+            user = await index_1.prismadb.user.update({
+                where: { id: user.id },
+                data: { password: hashedPassword }
+            });
+        }
         // Create scholarship application
         const application = await index_1.prismadb.scholarshipApplication.create({
             data: {
@@ -79,8 +108,9 @@ async function applyForScholarship(req, res) {
                 program,
                 cohort,
                 discountCode,
-                password: hashedPassword, // Store hashed password for later user creation
+                password: hashedPassword,
                 paymentStatus: "PENDING",
+                userId: user.id
             }
         });
         // Send confirmation email in the background
@@ -93,10 +123,27 @@ async function applyForScholarship(req, res) {
                 console.error("[GOOGLE_SHEETS_SYNC_ERROR]:", err);
             });
         });
+        // Generate tokens so user is logged in for the next step
+        const access_token = jsonwebtoken_1.default.sign({
+            email: user.email,
+            id: user.id,
+            role: user.role,
+        }, process.env.JWT_SECRET, { expiresIn: "30d" });
+        const refresh_token = jsonwebtoken_1.default.sign({
+            email: user.email,
+            id: user.id,
+            role: user.role,
+        }, process.env.JWT_SECRET, { expiresIn: "30d" });
+        await index_1.prismadb.user.update({
+            where: { id: user.id },
+            data: { access_token }
+        });
         return res.status(201).json({
             status: "success",
             message: "Scholarship application submitted successfully!",
-            data: application
+            refresh_token,
+            data: { ...user, access_token },
+            application
         });
     }
     catch (error) {

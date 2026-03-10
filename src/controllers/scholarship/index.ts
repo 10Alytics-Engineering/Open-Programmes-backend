@@ -37,6 +37,35 @@ export async function applyForScholarship(req: Request, res: Response) {
             hashedPassword = await bcrypt.hash(password, salt);
         }
 
+        // Check if user already exists by email OR phone number
+        let user = await prismadb.user.findFirst({
+            where: {
+                OR: [
+                    { email: emailLower },
+                    { phone_number: phone_number }
+                ]
+            }
+        });
+
+        if (!user) {
+            // Create user if not exists
+            user = await prismadb.user.create({
+                data: {
+                    name: fullName,
+                    email: emailLower,
+                    phone_number: phone_number,
+                    password: hashedPassword,
+                    emailVerified: new Date(),
+                },
+            });
+        } else if (hashedPassword && !user.password) {
+            // Update password if user exists but has no password (e.g. from social login or previous lead)
+            user = await prismadb.user.update({
+                where: { id: user.id },
+                data: { password: hashedPassword }
+            });
+        }
+
         // Create scholarship application
         const application = await prismadb.scholarshipApplication.create({
             data: {
@@ -48,8 +77,9 @@ export async function applyForScholarship(req: Request, res: Response) {
                 program,
                 cohort,
                 discountCode,
-                password: hashedPassword, // Store hashed password for later user creation
+                password: hashedPassword,
                 paymentStatus: "PENDING",
+                userId: user.id
             }
         });
 
@@ -65,10 +95,38 @@ export async function applyForScholarship(req: Request, res: Response) {
             });
         });
 
+        // Generate tokens so user is logged in for the next step
+        const access_token = jwt.sign(
+            {
+                email: user.email,
+                id: user.id,
+                role: user.role,
+            },
+            process.env.JWT_SECRET as string,
+            { expiresIn: "30d" }
+        );
+
+        const refresh_token = jwt.sign(
+            {
+                email: user.email,
+                id: user.id,
+                role: user.role,
+            },
+            process.env.JWT_SECRET as string,
+            { expiresIn: "30d" }
+        );
+
+        await prismadb.user.update({
+            where: { id: user.id },
+            data: { access_token }
+        });
+
         return res.status(201).json({
             status: "success",
             message: "Scholarship application submitted successfully!",
-            data: application
+            refresh_token,
+            data: { ...user, access_token },
+            application
         });
     } catch (error) {
         console.log("[SCHOLARSHIP_APPLY]:", error);
