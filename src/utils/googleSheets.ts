@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
 import * as dotenv from 'dotenv';
+import { prismadb } from '../lib/prismadb';
 
 dotenv.config();
 
@@ -54,53 +55,105 @@ export class GoogleSheetsSyncService {
 
     /**
      * Re-syncs all applications from the database to the Google Sheet.
-     * This is useful for cron jobs to ensure the sheet is perfectly in sync.
+     * This checks real-time payment status from both ScholarshipApplication and the main PaymentStatus tables.
      */
     public static async syncAllApplications() {
+        console.log('[GOOGLE_SHEETS_SYNC]: Starting comprehensive sync...');
         try {
             const spreadsheetId = process.env.GOOGLE_SHEETS_IWD_2026_SPREADSHEET_ID;
             const range = process.env.GOOGLE_SHEETS_IWD_2026_RANGE || 'Sheet1!A1';
 
             if (!spreadsheetId) {
                 console.warn('[GOOGLE_SHEETS_SYNC]: SPREADSHEET_ID not configured for full sync.');
-                return;
+                return { success: false, error: 'Spreadsheet ID missing' };
             }
 
-            // Import prismadb dynamically to avoid circular dependencies
-            const { prismadb } = await import('../lib/prismadb');
+            // Fetch all applications with their associated users and main payment records
             const applications = await prismadb.scholarshipApplication.findMany({
+                include: {
+                    user: {
+                        include: {
+                            paymentStatus: {
+                                include: {
+                                    cohort: true
+                                }
+                            }
+                        }
+                    }
+                },
                 orderBy: { createdAt: 'desc' }
             });
 
             if (applications.length === 0) {
                 console.log('[GOOGLE_SHEETS_SYNC]: No applications found in DB to sync.');
-                return;
+                return { success: true, count: 0 };
             }
 
             const auth = this.getAuth();
             const sheets = google.sheets({ version: 'v4', auth });
 
             // 1. Clear the sheet first for a clean export
-            await sheets.spreadsheets.values.clear({
-                spreadsheetId,
-                range,
-                requestBody: {}
-            });
+            try {
+                await sheets.spreadsheets.values.clear({
+                    spreadsheetId,
+                    range,
+                    requestBody: {}
+                });
+            } catch (clearErr: any) {
+                console.warn('[GOOGLE_SHEETS_SYNC]: Clear failed:', clearErr.message);
+            }
 
             // 2. Prepare Header and Data
-            const header = ['Full Name', 'Email', 'Phone', 'Country', 'Gender', 'Program', 'Cohort', 'Discount Code', 'Payment Status', 'Submitted At'];
-            const rows = applications.map(app => [
-                app.fullName,
-                app.email,
-                app.phone_number,
-                app.country,
-                app.gender,
-                app.program,
-                app.cohort,
-                app.discountCode || 'IWD 2026',
-                app.paymentStatus || 'PENDING',
-                new Date(app.createdAt).toLocaleString('en-GB')
-            ]);
+            const header = [
+                'Full Name',
+                'Email',
+                'Phone',
+                'Country',
+                'Gender',
+                'Program',
+                'Selected Cohort',
+                'Discount Code',
+                'Payment Status (IWD)',
+                'Account Overall Status',
+                'Paid Cohort',
+                'Submitted At'
+            ];
+
+            const rows = applications.map(app => {
+                let realStatus = app.paymentStatus || 'PENDING';
+                let paidCohort = 'N/A';
+
+                // Verification Logic:
+                // 1. If app is marked PAID, we trust it.
+                // 2. If PENDING, check User's Account Status or PaymentStatus table
+                if (realStatus !== 'PAID' && app.user) {
+                    // Check if they have a COMPLETE payment status for the IWD cohorts
+                    const iwdPaidStatus = app.user.paymentStatus.find(ps =>
+                        ps.status === 'COMPLETE' &&
+                        (ps.cohort?.name?.includes('April 2026') || ps.cohort?.name?.includes('May 2026'))
+                    );
+
+                    if (iwdPaidStatus || app.user.accountPaymentStatus === 'PAID') {
+                        realStatus = 'PAID';
+                        paidCohort = iwdPaidStatus?.cohort?.name || 'IWD Cohort';
+                    }
+                }
+
+                return [
+                    app.fullName,
+                    app.email,
+                    app.phone_number,
+                    app.country,
+                    app.gender,
+                    app.program,
+                    app.cohort,
+                    app.discountCode || 'IWD 2026',
+                    realStatus,
+                    app.user?.accountPaymentStatus || 'UNPAID',
+                    paidCohort,
+                    new Date(app.createdAt).toLocaleString('en-GB')
+                ];
+            });
 
             const values = [header, ...rows];
 
@@ -113,8 +166,10 @@ export class GoogleSheetsSyncService {
             });
 
             console.log(`[GOOGLE_SHEETS_SYNC]: Full sync completed. ${applications.length} applications exported.`);
+            return { success: true, count: applications.length };
         } catch (error: any) {
             console.error('[GOOGLE_SHEETS_SYNC]: Full sync failed:', error.message);
+            return { success: false, error: error.message };
         }
     }
 

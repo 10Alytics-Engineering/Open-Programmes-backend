@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.applyForScholarship = applyForScholarship;
 exports.getScholarshipApplications = getScholarshipApplications;
+exports.syncScholarshipToSheets = syncScholarshipToSheets;
 const index_1 = require("../../index");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -48,16 +49,22 @@ async function applyForScholarship(req, res) {
         if (!fullName || !email || !phone_number || !country || !gender || !program || !cohort) {
             return res.status(400).json({ message: "Fill in all required fields!" });
         }
-        const emailLower = email.toLowerCase();
+        const emailLower = email ? email.trim().toLowerCase() : "";
+        console.log(`[SCHOLARSHIP_TRACE]: Incoming application for ${emailLower}. Password provided: ${!!password}`);
         // 1. Check if email is already used in a scholarship application
         let application = await index_1.prismadb.scholarshipApplication.findFirst({
             where: { email: emailLower }
         });
         // 2. Hash password if provided
         let hashedPassword = null;
-        if (password) {
+        if (password && typeof password === 'string' && password.trim() !== "") {
+            console.log(`[SCHOLARSHIP_TRACE]: Hashing password for ${emailLower}...`);
             const salt = await bcryptjs_1.default.genSalt(10);
             hashedPassword = await bcryptjs_1.default.hash(password, salt);
+            console.log(`[SCHOLARSHIP_TRACE]: Password hashed successfully.`);
+        }
+        else {
+            console.warn(`[SCHOLARSHIP_TRACE]: No valid password string received for ${emailLower}. Type: ${typeof password}`);
         }
         // 3. User Handling
         let user = await index_1.prismadb.user.findFirst({
@@ -69,10 +76,7 @@ async function applyForScholarship(req, res) {
             }
         });
         if (!user) {
-            console.log(`[SCHOLARSHIP]: No existing user found for ${emailLower}. Creating new record.`);
-            if (!hashedPassword) {
-                console.error(`[SCHOLARSHIP_CRITICAL]: No password provided for NEW user ${emailLower}`);
-            }
+            console.log(`[SCHOLARSHIP_TRACE]: No existing user found for ${emailLower}. Creating new record.`);
             user = await index_1.prismadb.user.create({
                 data: {
                     name: fullName,
@@ -82,13 +86,26 @@ async function applyForScholarship(req, res) {
                     emailVerified: new Date(),
                 }
             });
-            console.log(`[SCHOLARSHIP]: New user created successfully with ID: ${user.id}. Password saved: ${!!user.password}`);
+            console.log(`[SCHOLARSHIP_TRACE]: New user created with ID: ${user.id}. Password in DB: ${!!user.password}`);
         }
         else {
-            console.log(`[SCHOLARSHIP]: User already exists with ID: ${user.id}. Skipping user update (preserving existing password).`);
+            console.log(`[SCHOLARSHIP_TRACE]: Found existing user ${user.id} for ${emailLower}. Checking password...`);
+            // Update password if missing
+            if (hashedPassword && (!user.password || user.password.trim() === "")) {
+                console.log(`[SCHOLARSHIP_TRACE]: Existing user had no password. Updating...`);
+                user = await index_1.prismadb.user.update({
+                    where: { id: user.id },
+                    data: { password: hashedPassword }
+                });
+                console.log(`[SCHOLARSHIP_TRACE]: Existing user password populated.`);
+            }
+            else {
+                console.log(`[SCHOLARSHIP_TRACE]: Skipping user password update (already has one or no new password provided).`);
+            }
         }
         // 4. Scholarship Application (Create or Update)
         if (application) {
+            console.log(`[SCHOLARSHIP_TRACE]: Updating existing application ${application.id}`);
             application = await index_1.prismadb.scholarshipApplication.update({
                 where: { id: application.id },
                 data: {
@@ -99,12 +116,13 @@ async function applyForScholarship(req, res) {
                     program,
                     cohort,
                     discountCode,
-                    password: hashedPassword || application.password,
+                    password: hashedPassword, // Always save the new password if provided
                     userId: user.id
                 }
             });
         }
         else {
+            console.log(`[SCHOLARSHIP_TRACE]: Creating new scholarship application record.`);
             application = await index_1.prismadb.scholarshipApplication.create({
                 data: {
                     fullName,
@@ -121,6 +139,7 @@ async function applyForScholarship(req, res) {
                 }
             });
         }
+        console.log(`[SCHOLARSHIP_TRACE]: Scholarship application record ${application.id} ready. Password: ${!!application.password}`);
         // Send confirmation email in the background
         (0, mail_1.sendIWDRegistrationEmail)(emailLower, fullName).catch(err => {
             console.error("[SCHOLARSHIP_EMAIL_ERROR]:", err);
@@ -177,6 +196,29 @@ async function getScholarshipApplications(req, res) {
     catch (error) {
         console.log("[GET_SCHOLARSHIP_APPLICATIONS]:", error);
         res.status(500).json({ message: "Internal Server Error" });
+    }
+}
+async function syncScholarshipToSheets(req, res) {
+    try {
+        const { GoogleSheetsSyncService } = await Promise.resolve().then(() => __importStar(require("../../utils/googleSheets")));
+        const result = await GoogleSheetsSyncService.syncAllApplications();
+        if (result.success) {
+            return res.status(200).json({
+                status: "success",
+                message: `Successfully synced ${result.count} applications to Google Sheets.`
+            });
+        }
+        else {
+            return res.status(500).json({
+                status: "error",
+                message: "Failed to sync to Google Sheets",
+                error: result.error
+            });
+        }
+    }
+    catch (error) {
+        console.log("[SYNC_SCHOLARSHIP_TO_SHEETS]:", error);
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 }
 //# sourceMappingURL=index.js.map

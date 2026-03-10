@@ -53,12 +53,19 @@ cron.schedule("0 * * * *", async () => {
 
 // Run Google Sheets Full Sync every 30 minutes
 cron.schedule("*/30 * * * *", async () => {
-  console.log("📊 Starting scheduled Google Sheets Full Sync...", new Date().toISOString());
+  const startTime = new Date();
+  console.log("📊 Starting scheduled Google Sheets Full Sync...", startTime.toISOString());
   try {
     const { GoogleSheetsSyncService } = await import("./utils/googleSheets");
-    await GoogleSheetsSyncService.syncAllApplications();
-  } catch (err) {
-    console.error("[CRON_SYNC_ERROR]:", err);
+    const result = await GoogleSheetsSyncService.syncAllApplications();
+    const endTime = new Date();
+    if (result && result.success) {
+      console.log(`✅ [CRON_SYNC_SUCCESS]: Synced ${result.count} applications. Took ${endTime.getTime() - startTime.getTime()}ms`);
+    } else {
+      console.error(`❌ [CRON_SYNC_FAILED]: ${result?.error || 'Unknown error'}`);
+    }
+  } catch (err: any) {
+    console.error("🔥 [CRON_CRITICAL_ERROR]: Sync job crashed!", err.message);
   }
 });
 
