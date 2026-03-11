@@ -1,1 +1,0 @@
-{"version":3,"file":"user-course-status.js","sourceRoot":"","sources":["../../../src/route/user-course-status.ts"],"names":[],"mappings":";;AACA,8CAA2C;AAC3C,0EAG2C;AAE3C,kBAAe,CAAC,MAAsB,EAAE,EAAE;IACxC,MAAM,CAAC,KAAK,CAAC,wBAAwB,EAAE,uBAAU,EAAE,iCAAY,CAAC,CAAC;IACjE,MAAM,CAAC,KAAK,CAAC,0BAA0B,EAAE,uBAAU,EAAE,mCAAc,CAAC,CAAC;AACvE,CAAC,CAAC"}

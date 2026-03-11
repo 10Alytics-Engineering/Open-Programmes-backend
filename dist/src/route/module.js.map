@@ -1,1 +1,0 @@
-{"version":3,"file":"module.js","sourceRoot":"","sources":["../../../src/route/module.ts"],"names":[],"mappings":";;AACA,kDAG+B;AAC/B,8CAA8C;AAE9C,kBAAe,CAAC,MAAsB,EAAE,EAAE;IACxC,sCAAsC;IACtC,MAAM,CAAC,GAAG,CAAC,sBAAsB,EAAE,yBAAgB,CAAC,CAAC;IAErD,sBAAsB;IACtB,MAAM,CAAC,IAAI,CAAC,SAAS,EAAE,0BAAa,EAAE,qBAAY,CAAC,CAAC;AACtD,CAAC,CAAC"}

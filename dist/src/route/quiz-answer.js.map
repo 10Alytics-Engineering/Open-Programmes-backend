@@ -1,1 +1,0 @@
-{"version":3,"file":"quiz-answer.js","sourceRoot":"","sources":["../../../src/route/quiz-answer.ts"],"names":[],"mappings":";;AACA,8CAAiF;AACjF,4DAA0D;AAE1D,kBAAe,CAAC,MAAsB,EAAE,EAAE;IACxC,MAAM,CAAC,IAAI,CAAC,qBAAqB,EAAE,uBAAU,EAAE,0BAAY,CAAC,CAAC;IAC7D,MAAM,CAAC,MAAM,CACX,yCAAyC,EACzC,0BAAa,EACb,0BAAY,CACb,CAAC;AACJ,CAAC,CAAC"}
