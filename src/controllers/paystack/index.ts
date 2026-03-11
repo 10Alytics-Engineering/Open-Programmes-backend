@@ -345,7 +345,7 @@ paymentApp.get("/payment-status", async (req: Request, res: Response) => {
 
 //#region Link Generation
 paymentApp.get("/payment-link", async (req: Request, res: Response) => {
-  const { userId, courseId, planType } = req.query;
+  const { userId, courseId, planType, channels } = req.query;
 
   if (!userId || !courseId) {
     return res.status(400).json({ error: "Missing userId or courseId" });
@@ -415,6 +415,7 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
       const paymentLink = await paystack.transaction.initialize({
         amount: `${paymentData.amount * 100}`,
         email: user.email!,
+        channels: (channels as string[]) || ["card", "bank_transfer", "mobile_money", "ussd", "qr"],
         metadata: {
           ...paymentData.metadata,
           userId,
@@ -458,7 +459,7 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
 
 //#region Payment Initialization Endpoints
 paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
-  const { courseId, userId, planType, cohortName, isIWD, applicationId, amount } = req.body;
+  const { courseId, userId, planType, cohortName, isIWD, applicationId, amount, channels } = req.body;
 
   try {
     let email = "";
@@ -520,6 +521,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     const paymentLink = await paystack.transaction.initialize({
       amount: `${paymentData.amount * 100}`,
       email: email,
+      channels: channels || ["card", "bank_transfer", "mobile_money", "ussd", "qr"],
       metadata: {
         ...paymentData.metadata,
         userId,
