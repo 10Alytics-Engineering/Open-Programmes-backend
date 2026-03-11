@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
-import { User } from "../../middleware";
+import { NebiantUser } from "../../middleware";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -232,7 +232,7 @@ export const updateQuiz = async (req: Request, res: Response) => {
 
 export const submitQuizAnswer = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const userId = user.id;
     const { quizId, answerId } = req.body;
 
@@ -320,7 +320,7 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
 
 export const getUserQuizAnswers = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const userId = user.id;
 
     if (!userId) {

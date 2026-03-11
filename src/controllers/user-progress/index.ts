@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
-import { User } from "../../middleware";
+import { NebiantUser } from "../../middleware";
 
 const handleError = (error: any, res: Response) => {
   console.error("Error:", error);
@@ -9,7 +9,7 @@ const handleError = (error: any, res: Response) => {
 
 export const updateCourseVideoProgress = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const { courseId } = req.params;
     const { videoId } = req.body;
 
@@ -46,7 +46,7 @@ export const updateCourseVideoProgress = async (req: Request, res: Response) => 
 
 export const submitQuizAnswer = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const { quizAnswerId } = req.body;
 
     if (!user?.id) return res.status(401).json({ message: "Unauthorized" });
@@ -57,12 +57,12 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
     // Get answer with quiz info using your schema relations
     const answer = await prismadb.quizAnswer.findUnique({
       where: { id: quizAnswerId },
-      include: { 
+      include: {
         quiz: {
           include: {
             courseModule: true
           }
-        } 
+        }
       }
     });
 
@@ -119,7 +119,7 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
 
 export const getCourseProgress = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const { courseId } = req.params;
 
     if (!user?.id) return res.status(401).json({ message: "Unauthorized" });
@@ -185,7 +185,7 @@ export const getCourseProgress = async (req: Request, res: Response) => {
         total: totalQuizzes,
         percentage: totalQuizzes > 0 ? Math.round((quizCompletion / totalQuizzes) * 100) : 0
       },
-      overallProgress: totalVideos + totalQuizzes > 0 
+      overallProgress: totalVideos + totalQuizzes > 0
         ? Math.round(((videoCompletion + quizCompletion) / (totalVideos + totalQuizzes)) * 100)
         : 0
     });

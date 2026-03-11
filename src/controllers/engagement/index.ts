@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
-import { User } from "../../middleware";
+import { NebiantUser } from "../../middleware";
 
 export const getStudentEngagement = async (req: Request, res: Response) => {
   try {
@@ -111,7 +111,7 @@ export const getStudentEngagement = async (req: Request, res: Response) => {
         (item) =>
           ("videoId" in item
             ? videoDetails.find((v) => v.id === item.videoId)?.courseModule
-                ?.CourseWeek?.courseId
+              ?.CourseWeek?.courseId
             : item.quizAnswer.quiz.courseModule?.CourseWeek?.courseId) ===
           course.courseId
       );

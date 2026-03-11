@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
-import { User } from "../../middleware/index";
+import { NebiantUser } from "../../middleware/index";
 import { Purchase } from "@prisma/client";
 
 const handleServerError = (error: any, res: Response) => {
@@ -74,7 +74,7 @@ export const getCourse = async (req: Request, res: Response) => {
   try {
     const { courseId } = req.params;
 
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const userId = user?.id;
     const isAdmin = user?.role === "ADMIN" || user?.role === "COURSE_ADMIN";
 

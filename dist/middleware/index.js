@@ -5,7 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isAdmin = exports.isCourseAdmin = exports.isAuthorized = exports.isLoggedIn = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const isLoggedIn = (req, res, next) => {
+const prismadb_1 = require("../lib/prismadb");
+const isLoggedIn = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
         console.log("🔍 [isLoggedIn] Checking authentication...");
@@ -21,14 +22,40 @@ const isLoggedIn = (req, res, next) => {
         }
         console.log("🔍 [isLoggedIn] Token found, verifying...");
         //@ts-ignore
-        jsonwebtoken_1.default.verify(auth_token, process.env.JWT_SECRET, (err, user) => {
+        jsonwebtoken_1.default.verify(auth_token, process.env.JWT_SECRET, async (err, decoded) => {
             if (err) {
                 console.log("❌ [isLoggedIn] Token verification failed:", err.message);
                 return res.status(401).json({ message: "Invalid Token" }).end();
             }
-            req.user = user;
-            console.log("✅ [isLoggedIn] Authentication successful for user:", user.email, "Role:", user.role);
-            next();
+            try {
+                // Fetch the latest user data from the database to ensure roles are up-to-date
+                const dbUser = await prismadb_1.prismadb.user.findUnique({
+                    where: { id: decoded.id },
+                    select: {
+                        id: true,
+                        email: true,
+                        role: true,
+                        name: true,
+                    }
+                });
+                if (!dbUser) {
+                    console.log("❌ [isLoggedIn] User not found in database:", decoded.id);
+                    return res.status(401).json({ message: "User not found" }).end();
+                }
+                const userObj = {
+                    id: dbUser.id,
+                    email: dbUser.email || "",
+                    role: dbUser.role,
+                    name: dbUser.name,
+                };
+                req.user = userObj;
+                console.log("✅ [isLoggedIn] Authentication successful for user:", userObj.email, "Role:", userObj.role);
+                next();
+            }
+            catch (dbError) {
+                console.error("❌ [isLoggedIn] Database verification error:", dbError);
+                return res.status(500).json({ message: "Internal server error during verification" }).end();
+            }
         });
     }
     catch (error) {

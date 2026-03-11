@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAssignmentQuizResults = exports.createQuizAssignment = exports.bulkGradeSubmissions = exports.gradeSubmission = exports.getAssignmentSubmissions = exports.submitAssignment = exports.getAssignmentSubmission = exports.getAssignment = void 0;
 const index_1 = require("../../index");
+const mail_1 = require("../authentication/mail");
 // Updated getAssignment to include assignment quiz questions
 const getAssignment = async (req, res) => {
     try {
@@ -240,8 +241,24 @@ const gradeSubmission = async (req, res) => {
                         email: true,
                     },
                 },
+                assignment: {
+                    include: {
+                        cohortCourse: {
+                            include: { cohort: true }
+                        }
+                    }
+                }
             },
         });
+        // Send Notification to the specific student
+        try {
+            if (submission?.student?.email) {
+                await (0, mail_1.sendClassroomNotificationEmail)([submission.student.email], submission.assignment.cohortCourse.cohort.name, "grade", submission.assignment.title, `Your submission has been graded. Grade: ${grade}/${maxPoints}. Feedback: ${feedback || 'No feedback provided.'}`, submission.gradedBy?.name || "Instructor");
+            }
+        }
+        catch (notifError) {
+            console.error("Failed to send grade notification:", notifError);
+        }
         res.json({
             submission,
             message: "Submission graded successfully"
@@ -412,9 +429,23 @@ const createQuizAssignment = async (req, res) => {
                         cohort: true
                     }
                 },
-                classroomTopic: true
-            }
+            },
         });
+        // Send Notification to all students in the cohort
+        try {
+            const students = await index_1.prismadb.userCohort.findMany({
+                where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+                include: { user: { select: { email: true } } }
+            });
+            const emails = students.map(s => s.user.email).filter(Boolean);
+            const currentUser = req.user;
+            if (emails.length > 0) {
+                await (0, mail_1.sendClassroomNotificationEmail)(emails, assignment.cohortCourse.cohort.name, "quiz assignment", title, description || instructions || "", currentUser?.name || "Instructor");
+            }
+        }
+        catch (notifError) {
+            console.error("Failed to send quiz assignment notification:", notifError);
+        }
         res.status(201).json({
             assignment,
             message: "Quiz assignment created successfully"

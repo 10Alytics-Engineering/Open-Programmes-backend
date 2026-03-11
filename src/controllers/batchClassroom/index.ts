@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
+import { sendClassroomNotificationEmail } from "../authentication/mail";
+import { NebiantUser } from "../../middleware";
 
 interface BatchItemData {
   type: "assignment" | "material" | "recording";
@@ -19,8 +21,8 @@ export const addBatchItem = async (req: Request, res: Response) => {
     const { type, data, topicIds }: BatchItemData = req.body;
 
     if (!type || !data || !topicIds || !Array.isArray(topicIds)) {
-      return res.status(400).json({ 
-        error: "Type, data, and topicIds array are required" 
+      return res.status(400).json({
+        error: "Type, data, and topicIds array are required"
       });
     }
 
@@ -31,9 +33,8 @@ export const addBatchItem = async (req: Request, res: Response) => {
       },
       include: {
         cohortCourse: {
-          select: {
-            id: true,
-            cohortId: true
+          include: {
+            cohort: true
           }
         }
       }
@@ -42,9 +43,9 @@ export const addBatchItem = async (req: Request, res: Response) => {
     if (topics.length !== topicIds.length) {
       const foundIds = topics.map(t => t.id);
       const missingIds = topicIds.filter(id => !foundIds.includes(id));
-      return res.status(404).json({ 
-        error: "Some topics not found", 
-        missingIds 
+      return res.status(404).json({
+        error: "Some topics not found",
+        missingIds
       });
     }
 
@@ -55,7 +56,7 @@ export const addBatchItem = async (req: Request, res: Response) => {
     for (const topic of topics) {
       try {
         let result;
-        
+
         switch (type) {
           case "assignment":
             result = await prismadb.assignment.create({
@@ -115,11 +116,35 @@ export const addBatchItem = async (req: Request, res: Response) => {
             });
             continue;
         }
-        
+
+        // Send Notification to all students in the cohort
+        try {
+          const students = await prismadb.userCohort.findMany({
+            where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+            include: { user: { select: { email: true } } }
+          });
+
+          const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+          const currentUser = req.user as NebiantUser;
+
+          if (emails.length > 0) {
+            await sendClassroomNotificationEmail(
+              emails,
+              topic.cohortCourse.cohort.name,
+              type,
+              data.title,
+              data.description || data.instructions || "",
+              currentUser?.name || "Instructor"
+            );
+          }
+        } catch (notifError) {
+          console.error("Failed to send batch classroom notification:", notifError);
+        }
+
         results.push({
           topicId: topic.id,
           topicTitle: topic.title,
-          cohortName: topic.cohortCourse,
+          cohortName: topic.cohortCourse.cohort.name,
           item: result
         });
       } catch (error) {
@@ -130,7 +155,7 @@ export const addBatchItem = async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ 
+    res.json({
       success: results.length > 0,
       results,
       errors,
@@ -151,8 +176,8 @@ export const createBatchTopics = async (req: Request, res: Response) => {
     const { title, description, isPinned, cohortCourseIds }: BatchTopicData = req.body;
 
     if (!title || !cohortCourseIds || !Array.isArray(cohortCourseIds)) {
-      return res.status(400).json({ 
-        error: "Title and cohortCourseIds array are required" 
+      return res.status(400).json({
+        error: "Title and cohortCourseIds array are required"
       });
     }
 
@@ -170,9 +195,9 @@ export const createBatchTopics = async (req: Request, res: Response) => {
     if (cohortCourses.length !== cohortCourseIds.length) {
       const foundIds = cohortCourses.map(cc => cc.id);
       const missingIds = cohortCourseIds.filter(id => !foundIds.includes(id));
-      return res.status(404).json({ 
-        error: "Some cohort courses not found", 
-        missingIds 
+      return res.status(404).json({
+        error: "Some cohort courses not found",
+        missingIds
       });
     }
 
@@ -205,7 +230,31 @@ export const createBatchTopics = async (req: Request, res: Response) => {
             }
           }
         });
-        
+
+        // Send Notification to all students in the cohort (optional for topic creation, but user said "every action")
+        try {
+          const students = await prismadb.userCohort.findMany({
+            where: { cohortId: cohortCourse.cohort.id, isActive: true },
+            include: { user: { select: { email: true } } }
+          });
+
+          const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+          const currentUser = req.user as NebiantUser;
+
+          if (emails.length > 0) {
+            await sendClassroomNotificationEmail(
+              emails,
+              cohortCourse.cohort.name,
+              "topic",
+              title,
+              description || "",
+              currentUser?.name || "Instructor"
+            );
+          }
+        } catch (notifError) {
+          console.error("Failed to send batch topic notification:", notifError);
+        }
+
         results.push({
           cohortCourseId: cohortCourse.id,
           cohortName: cohortCourse.cohort.name,
@@ -220,7 +269,7 @@ export const createBatchTopics = async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ 
+    res.json({
       success: results.length > 0,
       results,
       errors,
@@ -240,7 +289,7 @@ export const createBatchTopics = async (req: Request, res: Response) => {
 export const getTopicsForCohorts = async (req: Request, res: Response) => {
   try {
     const { cohortIds } = req.query;
-    
+
     if (!cohortIds || typeof cohortIds !== 'string') {
       return res.status(400).json({ error: "cohortIds query parameter is required" });
     }
@@ -288,7 +337,7 @@ export const getTopicsForCohorts = async (req: Request, res: Response) => {
       return acc;
     }, {} as any);
 
-    res.json({ 
+    res.json({
       topics: groupedByCohort,
       total: topics.length
     });

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteRecording = exports.deleteMaterial = exports.deleteAssignment = exports.getStreamActivities = exports.createStreamPost = exports.getStreamPosts = exports.addSubItem = exports.deleteTopic = exports.updateTopic = exports.createTopic = exports.getClassroomTopics = exports.getClassroomData = void 0;
 const index_1 = require("../../index");
+const mail_1 = require("../authentication/mail");
 const getClassroomData = async (req, res) => {
     try {
         const { cohortId } = req.params;
@@ -104,7 +105,29 @@ const createTopic = async (req, res) => {
                 order: (highestOrderTopic?.order || 0) + 1,
                 cohortCourseId,
             },
+            include: {
+                cohortCourse: {
+                    include: {
+                        cohort: true
+                    }
+                }
+            }
         });
+        // Send Notification to all students in the cohort
+        try {
+            const students = await index_1.prismadb.userCohort.findMany({
+                where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+                include: { user: { select: { email: true } } }
+            });
+            const emails = students.map(s => s.user.email).filter(Boolean);
+            const currentUser = req.user;
+            if (emails.length > 0) {
+                await (0, mail_1.sendClassroomNotificationEmail)(emails, topic.cohortCourse.cohort.name, "topic", title, description || "", currentUser?.name || "Instructor");
+            }
+        }
+        catch (notifError) {
+            console.error("Failed to send topic notification:", notifError);
+        }
         res.json({ topic });
     }
     catch (error) {
@@ -188,6 +211,11 @@ const addSubItem = async (req, res) => {
                     select: {
                         id: true,
                         cohortId: true,
+                        cohort: {
+                            select: {
+                                name: true
+                            }
+                        }
                     },
                 },
             },
@@ -231,6 +259,21 @@ const addSubItem = async (req, res) => {
                 break;
             default:
                 return res.status(400).json({ error: "Invalid item type" });
+        }
+        // Send Notification to all students in the cohort
+        try {
+            const students = await index_1.prismadb.userCohort.findMany({
+                where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+                include: { user: { select: { email: true } } }
+            });
+            const emails = students.map(s => s.user.email).filter(Boolean);
+            const user = req.user;
+            if (emails.length > 0) {
+                await (0, mail_1.sendClassroomNotificationEmail)(emails, topic.cohortCourse.cohort.name, type, data.title, data.description || data.instructions || "", user?.name || "Instructor");
+            }
+        }
+        catch (notifError) {
+            console.error("Failed to send classroom notification:", notifError);
         }
         res.json({ item: result });
     }
@@ -277,6 +320,7 @@ const createStreamPost = async (req, res) => {
         // Find the cohort course for this cohort
         const cohortCourse = await index_1.prismadb.cohortCourse.findFirst({
             where: { cohortId: cohortId },
+            include: { cohort: true }
         });
         if (!cohortCourse) {
             return res.status(404).json({ error: "Cohort course not found" });
@@ -293,6 +337,20 @@ const createStreamPost = async (req, res) => {
                 comments: true,
             },
         });
+        // Send Notification to all students in the cohort
+        try {
+            const students = await index_1.prismadb.userCohort.findMany({
+                where: { cohortId: cohortId, isActive: true },
+                include: { user: { select: { email: true } } }
+            });
+            const emails = students.map(s => s.user.email).filter(Boolean);
+            if (emails.length > 0) {
+                await (0, mail_1.sendClassroomNotificationEmail)(emails, cohortCourse.cohort.name, "announcement", title, content, post.author.name || "Instructor");
+            }
+        }
+        catch (notifError) {
+            console.error("Failed to send stream post notification:", notifError);
+        }
         res.json({ post });
     }
     catch (error) {

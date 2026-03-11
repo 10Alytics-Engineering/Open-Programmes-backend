@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
 import { User, AssignmentType } from "@prisma/client";
+import { NebiantUser } from "../../middleware";
+import { sendClassroomNotificationEmail } from "../authentication/mail";
 
 // Updated getAssignment to include assignment quiz questions
 export const getAssignment = async (req: Request, res: Response) => {
@@ -98,7 +100,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
     const { content, fileUrl, quizAnswers } = req.body;
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
 
     const studentId = user.id;
 
@@ -261,12 +263,35 @@ export const gradeSubmission = async (req: Request, res: Response) => {
             email: true,
           },
         },
+        assignment: {
+          include: {
+            cohortCourse: {
+              include: { cohort: true }
+            }
+          }
+        }
       },
     });
 
-    res.json({ 
-      submission, 
-      message: "Submission graded successfully" 
+    // Send Notification to the specific student
+    try {
+      if (submission?.student?.email) {
+        await sendClassroomNotificationEmail(
+          [submission.student.email],
+          submission.assignment.cohortCourse.cohort.name,
+          "grade",
+          submission.assignment.title,
+          `Your submission has been graded. Grade: ${grade}/${maxPoints}. Feedback: ${feedback || 'No feedback provided.'}`,
+          submission.gradedBy?.name || "Instructor"
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send grade notification:", notifError);
+    }
+
+    res.json({
+      submission,
+      message: "Submission graded successfully"
     });
   } catch (error) {
     console.error("Grade submission error:", error);
@@ -299,8 +324,8 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
     // Validate all grades first
     for (const gradeData of grades) {
       if (gradeData.grade < 0 || gradeData.grade > maxPoints) {
-        return res.status(400).json({ 
-          error: `Grade for submission ${gradeData.submissionId} must be between 0 and ${maxPoints}` 
+        return res.status(400).json({
+          error: `Grade for submission ${gradeData.submissionId} must be between 0 and ${maxPoints}`
         });
       }
     }
@@ -329,9 +354,9 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
       )
     );
 
-    res.json({ 
-      submissions: results, 
-      message: `${results.length} submissions graded successfully` 
+    res.json({
+      submissions: results,
+      message: `${results.length} submissions graded successfully`
     });
   } catch (error) {
     console.error("Bulk grade error:", error);
@@ -342,21 +367,21 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
 //create quiz assignment
 export const createQuizAssignment = async (req: Request, res: Response) => {
   try {
-    const { 
-      title, 
-      description, 
-      instructions, 
-      dueDate, 
+    const {
+      title,
+      description,
+      instructions,
+      dueDate,
       points,
       classroomTopicId,
-      questions 
+      questions
     } = req.body;
 
 
     // Validate required fields
     if (!title || !classroomTopicId) {
-      return res.status(400).json({ 
-        error: "Title and topic ID are required" 
+      return res.status(400).json({
+        error: "Title and topic ID are required"
       });
     }
 
@@ -385,8 +410,8 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
 
     // Validate questions
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({ 
-        error: "At least one question is required" 
+      return res.status(400).json({
+        error: "At least one question is required"
       });
     }
 
@@ -394,27 +419,27 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
       if (!question.question?.trim()) {
-        return res.status(400).json({ 
-          error: `Question ${i + 1} text is required` 
+        return res.status(400).json({
+          error: `Question ${i + 1} text is required`
         });
       }
       if (!question.options || !Array.isArray(question.options) || question.options.length === 0) {
-        return res.status(400).json({ 
-          error: `Question ${i + 1} must have at least one option` 
+        return res.status(400).json({
+          error: `Question ${i + 1} must have at least one option`
         });
       }
-      
+
       const correctOptions = question.options.filter((opt: any) => opt.isCorrect);
       if (correctOptions.length !== 1) {
-        return res.status(400).json({ 
-          error: `Question ${i + 1} must have exactly one correct answer` 
+        return res.status(400).json({
+          error: `Question ${i + 1} must have exactly one correct answer`
         });
       }
 
       for (let j = 0; j < question.options.length; j++) {
         if (!question.options[j].text?.trim()) {
-          return res.status(400).json({ 
-            error: `Option ${j + 1} for question ${i + 1} is required` 
+          return res.status(400).json({
+            error: `Option ${j + 1} for question ${i + 1} is required`
           });
         }
       }
@@ -462,31 +487,54 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
             cohort: true
           }
         },
-        classroomTopic: true
-      }
+      },
     });
 
-    res.status(201).json({ 
-      assignment, 
-      message: "Quiz assignment created successfully" 
+    // Send Notification to all students in the cohort
+    try {
+      const students = await prismadb.userCohort.findMany({
+        where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+        include: { user: { select: { email: true } } }
+      });
+
+      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const currentUser = req.user as NebiantUser;
+
+      if (emails.length > 0) {
+        await sendClassroomNotificationEmail(
+          emails,
+          assignment.cohortCourse.cohort.name,
+          "quiz assignment",
+          title,
+          description || instructions || "",
+          currentUser?.name || "Instructor"
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send quiz assignment notification:", notifError);
+    }
+
+    res.status(201).json({
+      assignment,
+      message: "Quiz assignment created successfully"
     });
   } catch (error) {
     console.error("Create quiz assignment error:", error);
-    
+
     if (error instanceof Error && 'code' in error) {
       const prismaError = error as any;
       switch (prismaError.code) {
         case 'P2003':
-          return res.status(400).json({ 
-            error: "Invalid reference: One of the provided IDs does not exist" 
+          return res.status(400).json({
+            error: "Invalid reference: One of the provided IDs does not exist"
           });
         case 'P2002':
-          return res.status(400).json({ 
-            error: "A assignment with similar details already exists" 
+          return res.status(400).json({
+            error: "A assignment with similar details already exists"
           });
       }
     }
-    
+
     res.status(500).json({ error: "Failed to create quiz assignment" });
   }
 };
@@ -520,10 +568,10 @@ const handleAssignmentQuizSubmission = async (
     quizAnswers.map(async (answer) => {
       const question = assignment.assignmentQuizQuestions.find((q: any) => q.id === answer.questionId);
       const selectedOption = question.assignmentQuizOptions.find((opt: any) => opt.id === answer.selectedOptionId);
-      
+
       const isCorrect = selectedOption?.isCorrect || false;
       const pointsEarned = isCorrect ? (question.points || 1) : 0;
-      
+
       totalScore += pointsEarned;
 
       return {

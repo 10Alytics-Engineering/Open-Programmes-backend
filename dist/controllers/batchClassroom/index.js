@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getTopicsForCohorts = exports.createBatchTopics = exports.addBatchItem = void 0;
 const index_1 = require("../../index");
+const mail_1 = require("../authentication/mail");
 const addBatchItem = async (req, res) => {
     try {
         const { type, data, topicIds } = req.body;
@@ -17,9 +18,8 @@ const addBatchItem = async (req, res) => {
             },
             include: {
                 cohortCourse: {
-                    select: {
-                        id: true,
-                        cohortId: true
+                    include: {
+                        cohort: true
                     }
                 }
             }
@@ -97,10 +97,25 @@ const addBatchItem = async (req, res) => {
                         });
                         continue;
                 }
+                // Send Notification to all students in the cohort
+                try {
+                    const students = await index_1.prismadb.userCohort.findMany({
+                        where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+                        include: { user: { select: { email: true } } }
+                    });
+                    const emails = students.map(s => s.user.email).filter(Boolean);
+                    const currentUser = req.user;
+                    if (emails.length > 0) {
+                        await (0, mail_1.sendClassroomNotificationEmail)(emails, topic.cohortCourse.cohort.name, type, data.title, data.description || data.instructions || "", currentUser?.name || "Instructor");
+                    }
+                }
+                catch (notifError) {
+                    console.error("Failed to send batch classroom notification:", notifError);
+                }
                 results.push({
                     topicId: topic.id,
                     topicTitle: topic.title,
-                    cohortName: topic.cohortCourse,
+                    cohortName: topic.cohortCourse.cohort.name,
                     item: result
                 });
             }
@@ -181,6 +196,21 @@ const createBatchTopics = async (req, res) => {
                         }
                     }
                 });
+                // Send Notification to all students in the cohort (optional for topic creation, but user said "every action")
+                try {
+                    const students = await index_1.prismadb.userCohort.findMany({
+                        where: { cohortId: cohortCourse.cohort.id, isActive: true },
+                        include: { user: { select: { email: true } } }
+                    });
+                    const emails = students.map(s => s.user.email).filter(Boolean);
+                    const currentUser = req.user;
+                    if (emails.length > 0) {
+                        await (0, mail_1.sendClassroomNotificationEmail)(emails, cohortCourse.cohort.name, "topic", title, description || "", currentUser?.name || "Instructor");
+                    }
+                }
+                catch (notifError) {
+                    console.error("Failed to send batch topic notification:", notifError);
+                }
                 results.push({
                     cohortCourseId: cohortCourse.id,
                     cohortName: cohortCourse.cohort.name,

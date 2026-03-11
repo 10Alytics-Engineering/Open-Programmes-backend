@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
 import { incrementPoints } from "../../helpers/increment-points";
-import { User } from "../../middleware";
+import { NebiantUser } from "../../middleware";
 
 export const submitAnswer = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const userId = user?.id;
 
     const {
@@ -105,5 +105,5 @@ export const deleteQuizAnswer = async (req: Request, res: Response) => {
     return res
       .status(200)
       .json({ message: "Quiz answer deleted successfully" });
-  } catch (error) {}
+  } catch (error) { }
 };

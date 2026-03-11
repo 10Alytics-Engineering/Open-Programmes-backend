@@ -1,6 +1,7 @@
-// controllers/classroom.ts
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
+import { sendClassroomNotificationEmail } from "../authentication/mail";
+import { NebiantUser } from "../../middleware";
 
 export const getClassroomData = async (req: Request, res: Response) => {
   try {
@@ -111,7 +112,38 @@ export const createTopic = async (req: Request, res: Response) => {
         order: (highestOrderTopic?.order || 0) + 1,
         cohortCourseId,
       },
+      include: {
+        cohortCourse: {
+          include: {
+            cohort: true
+          }
+        }
+      }
     });
+
+    // Send Notification to all students in the cohort
+    try {
+      const students = await prismadb.userCohort.findMany({
+        where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+        include: { user: { select: { email: true } } }
+      });
+
+      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const currentUser = req.user as NebiantUser;
+
+      if (emails.length > 0) {
+        await sendClassroomNotificationEmail(
+          emails,
+          topic.cohortCourse.cohort.name,
+          "topic",
+          title,
+          description || "",
+          currentUser?.name || "Instructor"
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send topic notification:", notifError);
+    }
 
     res.json({ topic });
   } catch (error) {
@@ -173,7 +205,7 @@ export const deleteTopic = async (req: Request, res: Response) => {
       where: { id: topicId },
     });
 
-    res.json({ 
+    res.json({
       message: "Topic and all related items deleted successfully",
       deletedItems: {
         topic: topic.title,
@@ -201,6 +233,11 @@ export const addSubItem = async (req: Request, res: Response) => {
           select: {
             id: true,
             cohortId: true,
+            cohort: {
+              select: {
+                name: true
+              }
+            }
           },
         },
       },
@@ -250,6 +287,30 @@ export const addSubItem = async (req: Request, res: Response) => {
         return res.status(400).json({ error: "Invalid item type" });
     }
 
+    // Send Notification to all students in the cohort
+    try {
+      const students = await prismadb.userCohort.findMany({
+        where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+        include: { user: { select: { email: true } } }
+      });
+
+      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const user = req.user as NebiantUser;
+
+      if (emails.length > 0) {
+        await sendClassroomNotificationEmail(
+          emails,
+          topic.cohortCourse.cohort.name,
+          type,
+          data.title,
+          data.description || data.instructions || "",
+          user?.name || "Instructor"
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send classroom notification:", notifError);
+    }
+
     res.json({ item: result });
   } catch (error) {
     console.error("Add sub item error:", error);
@@ -296,6 +357,7 @@ export const createStreamPost = async (req: Request, res: Response) => {
     // Find the cohort course for this cohort
     const cohortCourse = await prismadb.cohortCourse.findFirst({
       where: { cohortId: cohortId },
+      include: { cohort: true }
     });
 
     if (!cohortCourse) {
@@ -314,6 +376,29 @@ export const createStreamPost = async (req: Request, res: Response) => {
         comments: true,
       },
     });
+
+    // Send Notification to all students in the cohort
+    try {
+      const students = await prismadb.userCohort.findMany({
+        where: { cohortId: cohortId, isActive: true },
+        include: { user: { select: { email: true } } }
+      });
+
+      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+
+      if (emails.length > 0) {
+        await sendClassroomNotificationEmail(
+          emails,
+          cohortCourse.cohort.name,
+          "announcement",
+          title,
+          content,
+          post.author.name || "Instructor"
+        );
+      }
+    } catch (notifError) {
+      console.error("Failed to send stream post notification:", notifError);
+    }
 
     res.json({ post });
   } catch (error) {
@@ -352,7 +437,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      
+
       // Assignments - only those that still exist
       prismadb.assignment.findMany({
         where: {
@@ -371,7 +456,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      
+
       // Materials - only those that still exist
       prismadb.classMaterial.findMany({
         where: {
@@ -390,7 +475,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      
+
       // Recordings - only those that still exist
       prismadb.classRecording.findMany({
         where: {
@@ -409,7 +494,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      
+
       // Announcements
       prismadb.announcement.findMany({
         where: {
@@ -428,7 +513,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      
+
       // Stream Posts
       prismadb.streamPost.findMany({
         where: {
@@ -462,7 +547,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           topicId: topic.id,
         },
       })),
-      
+
       ...assignments.map(assignment => ({
         id: `assignment-${assignment.id}`,
         type: 'assignment' as const,
@@ -477,7 +562,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           topicTitle: assignment.classroomTopic?.title, // Include topic if exists
         },
       })),
-      
+
       ...materials.map(material => ({
         id: `material-${material.id}`,
         type: 'material' as const,
@@ -491,7 +576,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           topicTitle: material.classroomTopic?.title, // Include topic if exists
         },
       })),
-      
+
       ...recordings.map(recording => ({
         id: `recording-${recording.id}`,
         type: 'recording' as const,
@@ -505,7 +590,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           topicTitle: recording.classroomTopic?.title, // Include topic if exists
         },
       })),
-      
+
       ...announcements.map(announcement => ({
         id: `announcement-${announcement.id}`,
         type: 'announcement' as const,
@@ -521,7 +606,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           announcementId: announcement.id,
         },
       })),
-      
+
       ...streamPosts.map(post => ({
         id: `post-${post.id}`,
         type: 'announcement' as const,
@@ -575,7 +660,7 @@ export const deleteAssignment = async (req: Request, res: Response) => {
       where: { id: assignmentId }
     });
 
-    res.json({ 
+    res.json({
       message: "Assignment deleted successfully",
       deletedAssignment: {
         id: assignment.id,
@@ -608,7 +693,7 @@ export const deleteMaterial = async (req: Request, res: Response) => {
       where: { id: materialId }
     });
 
-    res.json({ 
+    res.json({
       message: "Material deleted successfully",
       deletedMaterial: {
         id: material.id,
@@ -639,7 +724,7 @@ export const deleteRecording = async (req: Request, res: Response) => {
       where: { id: recordingId }
     });
 
-    res.json({ 
+    res.json({
       message: "Recording deleted successfully",
       deletedRecording: {
         id: recording.id,

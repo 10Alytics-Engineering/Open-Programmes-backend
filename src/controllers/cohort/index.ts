@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
-import { User } from "../../middleware";
+import { NebiantUser } from "../../middleware";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -64,7 +64,7 @@ export const getCohorts = async (req: Request, res: Response) => {
 
 export const getCohort = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const userId = user?.id;
     const isAdmin = user?.role === "ADMIN" || user?.role === "COURSE_ADMIN";
 
@@ -141,7 +141,7 @@ export const getCohortsForChangeRequests = async (req: Request, res: Response) =
     const currentDate = new Date();
     const twoMonthsFromNow = new Date();
     twoMonthsFromNow.setMonth(twoMonthsFromNow.getMonth() + 2);
-    
+
     // Only get cohorts from current date up to 2 months in the future
     const cohorts = await prismadb.cohort.findMany({
       where: {
@@ -519,7 +519,7 @@ export const uploadOnboardingBrochure = async (req: Request, res: Response) => {
         id: cohortCourse.id,
       },
       data: {
-        onboardingBrochureUrl : brochureUrl,
+        onboardingBrochureUrl: brochureUrl,
       },
     });
 

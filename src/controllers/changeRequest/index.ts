@@ -1,18 +1,18 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../index";
-import { User } from "../../middleware";
-import { 
-  sendChangeRequestNotification, 
-  sendApprovalEmail, 
+import { NebiantUser } from "../../middleware";
+import {
+  sendChangeRequestNotification,
+  sendApprovalEmail,
   sendRejectionEmail,
-  sendCompletionEmail 
+  sendCompletionEmail
 } from "./mail";
 import { generatePaymentLink, verifyPaystackPayment } from "../../utils/paymentService";
 import { RequestStatus, RequestType } from "@prisma/client";
 
 export const createChangeRequest = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const { type, currentCourseId, desiredCourseId, currentCohortId, desiredCohortId, reason } = req.body;
 
     if (!type || !reason) {
@@ -41,7 +41,7 @@ export const createChangeRequest = async (req: Request, res: Response) => {
           }
         }
       });
-      
+
       // If no payment status found, check if user has purchased the course
       if (!paymentStatus) {
         const purchase = await prismadb.purchase.findFirst({
@@ -50,13 +50,13 @@ export const createChangeRequest = async (req: Request, res: Response) => {
             courseId: currentCourseId
           }
         });
-        
+
         if (!purchase) {
-          return res.status(400).json({ 
-            message: "You don't have an active enrollment for this course" 
+          return res.status(400).json({
+            message: "You don't have an active enrollment for this course"
           });
         }
-        
+
         // Create a payment status record if purchase exists but no payment status
         paymentStatus = await prismadb.paymentStatus.create({
           data: {
@@ -79,10 +79,10 @@ export const createChangeRequest = async (req: Request, res: Response) => {
           }
         }
       });
-      
+
       if (!paymentStatus) {
-        return res.status(400).json({ 
-          message: "You don't have an active payment for this cohort" 
+        return res.status(400).json({
+          message: "You don't have an active payment for this cohort"
         });
       }
     }
@@ -102,7 +102,7 @@ export const createChangeRequest = async (req: Request, res: Response) => {
           isActive: true
         }
       });
-      
+
       cohortIdToCheck = userCohort?.cohortId;
     }
 
@@ -110,15 +110,15 @@ export const createChangeRequest = async (req: Request, res: Response) => {
       where: { id: cohortIdToCheck }
     }) : null;
 
-    const isWithinTwoWeeks = currentCohort && 
+    const isWithinTwoWeeks = currentCohort &&
       new Date() <= new Date(currentCohort.startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
 
     let status: RequestStatus = RequestStatus.PENDING;
-    
+
     // If within two weeks, auto-approve for immediate change
     if (isWithinTwoWeeks) {
       status = RequestStatus.APPROVED;
-      
+
       // Process immediate change
       if (type === RequestType.COURSE_CHANGE) {
         await processCourseChange(user.id, currentCourseId, desiredCourseId, paymentStatus.id);
@@ -167,8 +167,8 @@ export const createChangeRequest = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       status: "success",
-      message: isWithinTwoWeeks 
-        ? "Change processed successfully" 
+      message: isWithinTwoWeeks
+        ? "Change processed successfully"
         : "Request submitted for admin approval",
       data: request
     });
@@ -180,8 +180,8 @@ export const createChangeRequest = async (req: Request, res: Response) => {
 
 export const getUserChangeRequests = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
-    
+    const user = req.user as NebiantUser;
+
     const requests = await prismadb.changeRequest.findMany({
       where: { userId: user.id },
       include: {
@@ -214,12 +214,12 @@ export const getUserChangeRequests = async (req: Request, res: Response) => {
 export const getAllChangeRequests = async (req: Request, res: Response) => {
   try {
     const { status, type } = req.query;
-    
+
     const whereClause: any = {};
-    
+
     if (status) whereClause.status = status;
     if (type) whereClause.type = type;
-    
+
     const requests = await prismadb.changeRequest.findMany({
       where: whereClause,
       include: {
@@ -257,7 +257,7 @@ export const getAllChangeRequests = async (req: Request, res: Response) => {
 
 export const updateChangeRequest = async (req: Request, res: Response) => {
   try {
-    const user = req.user as User;
+    const user = req.user as NebiantUser;
     const { requestId } = req.params;
     const { status, adminReason } = req.body;
 
@@ -266,8 +266,8 @@ export const updateChangeRequest = async (req: Request, res: Response) => {
     }
 
     if (status === "REJECTED" && !adminReason) {
-      return res.status(400).json({ 
-        message: "Reason is required when rejecting a request" 
+      return res.status(400).json({
+        message: "Reason is required when rejecting a request"
       });
     }
 
@@ -288,8 +288,8 @@ export const updateChangeRequest = async (req: Request, res: Response) => {
     }
 
     if (request.status !== RequestStatus.PENDING) {
-      return res.status(400).json({ 
-        message: "This request has already been processed" 
+      return res.status(400).json({
+        message: "This request has already been processed"
       });
     }
 
@@ -364,7 +364,7 @@ export const handlePaymentVerification = async (req: Request, res: Response) => 
 
     // Verify payment with Paystack
     const verification = await verifyPaystackPayment(reference);
-    
+
     if (verification.status === "success") {
       // Update request status to completed
       const request = await prismadb.changeRequest.update({
@@ -383,16 +383,16 @@ export const handlePaymentVerification = async (req: Request, res: Response) => 
       // Process the actual change
       if (request.type === RequestType.COURSE_CHANGE) {
         await processCourseChange(
-          request.userId, 
-          request.currentCourseId, 
-          request.desiredCourseId, 
+          request.userId,
+          request.currentCourseId,
+          request.desiredCourseId,
           request.paymentStatusId
         );
       } else {
         await processCohortChange(
-          request.userId, 
-          request.currentCohortId, 
-          request.desiredCohortId, 
+          request.userId,
+          request.currentCohortId,
+          request.desiredCohortId,
           request.paymentStatusId
         );
       }
@@ -431,7 +431,7 @@ async function processCourseChange(userId: string, currentCourseId: string, desi
       where: { id: paymentStatusId },
       data: { courseId: desiredCourseId, cohortId: null }
     }),
-    
+
     // Update user's ongoing courses
     prismadb.user.update({
       where: { id: userId },
@@ -443,17 +443,17 @@ async function processCourseChange(userId: string, currentCourseId: string, desi
         }
       }
     }),
-    
+
     // Remove from current cohort if enrolled
     prismadb.userCohort.updateMany({
-      where: { 
+      where: {
         userId: userId,
         courseId: currentCourseId
       },
-      data: { 
-        isActive: false, 
+      data: {
+        isActive: false,
         isPaymentActive: false,
-        archivedAt: new Date() 
+        archivedAt: new Date()
       }
     }),
 
@@ -476,7 +476,7 @@ async function processCourseChange(userId: string, currentCourseId: string, desi
 }
 
 async function processCohortChange(userId: string, currentCohortId: string, desiredCohortId: string, paymentStatusId: string) {
-  const desiredCohort = await prismadb.cohort.findUnique({ 
+  const desiredCohort = await prismadb.cohort.findUnique({
     where: { id: desiredCohortId },
     select: { courseId: true }
   });
@@ -491,19 +491,19 @@ async function processCohortChange(userId: string, currentCohortId: string, desi
       where: { id: paymentStatusId },
       data: { cohortId: desiredCohortId }
     }),
-    
+
     // Update user cohort relationship
     prismadb.userCohort.updateMany({
-      where: { 
+      where: {
         userId: userId,
         cohortId: currentCohortId
       },
-      data: { 
+      data: {
         isActive: false,
-        archivedAt: new Date() 
+        archivedAt: new Date()
       }
     }),
-    
+
     // Create new user cohort relationship
     prismadb.userCohort.create({
       data: {
@@ -520,18 +520,18 @@ async function processCohortChange(userId: string, currentCohortId: string, desi
 export const getChangeRequestsCount = async (req: Request, res: Response) => {
   try {
     const { status, type } = req.query;
-    
+
     // Build where clause based on query parameters
     const whereClause: any = {};
-    
+
     if (status) {
       whereClause.status = status;
     }
-    
+
     if (type) {
       whereClause.type = type;
     }
-    
+
     // Get counts for all statuses if no specific status is requested
     if (!status && !type) {
       const counts = await prismadb.changeRequest.groupBy({
@@ -541,12 +541,12 @@ export const getChangeRequestsCount = async (req: Request, res: Response) => {
           id: true,
         },
       });
-      
+
       // Also get total count
       const totalCount = await prismadb.changeRequest.count({
         where: whereClause,
       });
-      
+
       // Format the response
       const result = {
         total: totalCount,
@@ -555,18 +555,18 @@ export const getChangeRequestsCount = async (req: Request, res: Response) => {
           return acc;
         }, {} as Record<string, number>),
       };
-      
+
       return res.status(200).json({
         status: "success",
         data: result
       });
     }
-    
+
     // Get count with filters
     const count = await prismadb.changeRequest.count({
       where: whereClause,
     });
-    
+
     return res.status(200).json({
       status: "success",
       data: {
