@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
 import { NebiantUser } from "../../middleware";
 

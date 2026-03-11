@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteAttachment = exports.createAttachment = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -70,7 +70,7 @@ const createAttachment = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -78,7 +78,7 @@ const createAttachment = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        const attachment = await index_1.prismadb.attachment.create({
+        const attachment = await prismadb_1.prismadb.attachment.create({
             data: {
                 name,
                 url,
@@ -106,7 +106,7 @@ const deleteAttachment = async (req, res) => {
         if (!attachmentId) {
             return res.status(400).json({ message: "AttachmentId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -114,7 +114,7 @@ const deleteAttachment = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        await index_1.prismadb.attachment.delete({
+        await prismadb_1.prismadb.attachment.delete({
             where: {
                 id: attachmentId,
                 courseWeekId: weekId,

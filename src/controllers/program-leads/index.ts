@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import excel from 'exceljs';
 
 export async function createProgramLead(req: Request, res: Response) {

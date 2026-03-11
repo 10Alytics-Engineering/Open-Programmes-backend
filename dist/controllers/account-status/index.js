@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserAccountStatus = exports.toggleUserAccountStatus = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const toggleUserAccountStatus = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -14,7 +14,7 @@ const toggleUserAccountStatus = async (req, res) => {
             return res.status(400).json({ error: "Invalid status value. Must be boolean" });
         }
         // Check if user exists
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
             select: { id: true, name: true, email: true, inactive: true }
         });
@@ -22,7 +22,7 @@ const toggleUserAccountStatus = async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
         // Update user status
-        const updatedUser = await index_1.prismadb.user.update({
+        const updatedUser = await prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: { inactive },
             select: {
@@ -52,7 +52,7 @@ const getUserAccountStatus = async (req, res) => {
         if (!userId) {
             return res.status(400).json({ error: "User ID is required" });
         }
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
             select: {
                 id: true,

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 
 export const getCurrentWeek = async (req: Request, res: Response) => {
   try {

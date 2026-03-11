@@ -4,14 +4,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uploadOnboardingBrochure = exports.upload = exports.updateCohortCourseTimeTable = exports.updateCohortCourseWeekPublishStatus = exports.deleteCohort = exports.updateCohort = exports.createCohort = exports.getCohortsForChangeRequests = exports.getCohort = exports.getCohorts = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
 };
 const getCohorts = async (req, res) => {
     try {
-        const cohorts = await index_1.prismadb.cohort.findMany({
+        const cohorts = await prismadb_1.prismadb.cohort.findMany({
             include: {
                 course: {
                     include: {
@@ -78,7 +78,7 @@ const getCohort = async (req, res) => {
                 .status(400)
                 .json({ message: "Token is required, UserId is required" });
         }
-        const cohort = await index_1.prismadb.cohort.findUnique({
+        const cohort = await prismadb_1.prismadb.cohort.findUnique({
             where: {
                 id: cohortId,
             },
@@ -111,7 +111,7 @@ const getCohort = async (req, res) => {
             },
         });
         //check if user is enrolled in cohort
-        const userInCohort = await index_1.prismadb.userCohort.findFirst({
+        const userInCohort = await prismadb_1.prismadb.userCohort.findFirst({
             where: {
                 userId,
                 cohortId,
@@ -137,7 +137,7 @@ const getCohortsForChangeRequests = async (req, res) => {
         const twoMonthsFromNow = new Date();
         twoMonthsFromNow.setMonth(twoMonthsFromNow.getMonth() + 2);
         // Only get cohorts from current date up to 2 months in the future
-        const cohorts = await index_1.prismadb.cohort.findMany({
+        const cohorts = await prismadb_1.prismadb.cohort.findMany({
             where: {
                 startDate: {
                     gte: currentDate, // Greater than or equal to current date
@@ -169,7 +169,7 @@ const createCohort = async (req, res) => {
         if (!name) {
             return res.status(400).json({ message: "Name is required" });
         }
-        const result = await index_1.prismadb.$transaction(async (prisma) => {
+        const result = await prismadb_1.prismadb.$transaction(async (prisma) => {
             // Step 1: Create a new Cohort
             const cohort = await prisma.cohort.create({
                 data: {
@@ -321,7 +321,7 @@ const updateCohort = async (req, res) => {
         if (!cohortId) {
             return res.status(400).json({ message: "CohortId is required" });
         }
-        const cohort = await index_1.prismadb.cohort.update({
+        const cohort = await prismadb_1.prismadb.cohort.update({
             where: {
                 id: cohortId,
             },
@@ -344,7 +344,7 @@ const deleteCohort = async (req, res) => {
         if (!cohortId) {
             return res.status(400).json({ message: "CohortId is required" });
         }
-        await index_1.prismadb.cohort.delete({
+        await prismadb_1.prismadb.cohort.delete({
             where: {
                 id: cohortId,
             },
@@ -362,7 +362,7 @@ const updateCohortCourseWeekPublishStatus = async (req, res) => {
         if (!courseWeekId) {
             return res.status(400).json({ message: "Course week ID is required" });
         }
-        const updatedCohortCourseWeek = await index_1.prismadb.cohortCourseWeek.update({
+        const updatedCohortCourseWeek = await prismadb_1.prismadb.cohortCourseWeek.update({
             where: {
                 id: courseWeekId,
             },
@@ -390,7 +390,7 @@ const updateCohortCourseTimeTable = async (req, res) => {
                 .status(400)
                 .json({ message: "Course Timetable ID is required" });
         }
-        const updatedCohortCourseTimetable = await index_1.prismadb.cohortCourseTimeTable.update({
+        const updatedCohortCourseTimetable = await prismadb_1.prismadb.cohortCourseTimeTable.update({
             where: {
                 id: cohortCourseTimeTableId,
             },
@@ -446,7 +446,7 @@ const uploadOnboardingBrochure = async (req, res) => {
             return res.status(400).json({ message: "No file uploaded" });
         }
         // Find the cohortCourse related to the cohortId
-        const cohortCourse = await index_1.prismadb.cohortCourse.findFirst({
+        const cohortCourse = await prismadb_1.prismadb.cohortCourse.findFirst({
             where: { cohortId },
         });
         if (!cohortCourse) {
@@ -455,7 +455,7 @@ const uploadOnboardingBrochure = async (req, res) => {
         // Save relative file path or URL to DB (assume files served from /uploads/brochures)
         const brochureUrl = `/uploads/brochures/${req.file.filename}`;
         // Update cohortCourse record
-        const updated = await index_1.prismadb.cohortCourse.update({
+        const updated = await prismadb_1.prismadb.cohortCourse.update({
             where: {
                 id: cohortCourse.id,
             },

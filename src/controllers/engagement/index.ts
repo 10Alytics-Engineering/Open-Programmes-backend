@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { NebiantUser } from "../../middleware";
 
 export const getStudentEngagement = async (req: Request, res: Response) => {

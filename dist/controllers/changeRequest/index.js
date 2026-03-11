@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getChangeRequestsCount = exports.handlePaymentVerification = exports.updateChangeRequest = exports.getAllChangeRequests = exports.getUserChangeRequests = exports.createChangeRequest = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("./mail");
 const paymentService_1 = require("../../utils/paymentService");
 const client_1 = require("@prisma/client");
@@ -23,7 +23,7 @@ const createChangeRequest = async (req, res) => {
         let paymentStatus;
         if (type === client_1.RequestType.COURSE_CHANGE) {
             // For course change, find payment status for the current course
-            paymentStatus = await index_1.prismadb.paymentStatus.findFirst({
+            paymentStatus = await prismadb_1.prismadb.paymentStatus.findFirst({
                 where: {
                     userId: user.id,
                     courseId: currentCourseId,
@@ -34,7 +34,7 @@ const createChangeRequest = async (req, res) => {
             });
             // If no payment status found, check if user has purchased the course
             if (!paymentStatus) {
-                const purchase = await index_1.prismadb.purchase.findFirst({
+                const purchase = await prismadb_1.prismadb.purchase.findFirst({
                     where: {
                         userId: user.id,
                         courseId: currentCourseId
@@ -46,7 +46,7 @@ const createChangeRequest = async (req, res) => {
                     });
                 }
                 // Create a payment status record if purchase exists but no payment status
-                paymentStatus = await index_1.prismadb.paymentStatus.create({
+                paymentStatus = await prismadb_1.prismadb.paymentStatus.create({
                     data: {
                         userId: user.id,
                         courseId: currentCourseId,
@@ -59,7 +59,7 @@ const createChangeRequest = async (req, res) => {
         }
         else {
             // For deferment, find payment status for the current cohort
-            paymentStatus = await index_1.prismadb.paymentStatus.findFirst({
+            paymentStatus = await prismadb_1.prismadb.paymentStatus.findFirst({
                 where: {
                     userId: user.id,
                     cohortId: currentCohortId,
@@ -84,7 +84,7 @@ const createChangeRequest = async (req, res) => {
         }
         else {
             // For course changes without a cohort, use the desired cohort or find one
-            const userCohort = await index_1.prismadb.userCohort.findFirst({
+            const userCohort = await prismadb_1.prismadb.userCohort.findFirst({
                 where: {
                     userId: user.id,
                     courseId: currentCourseId,
@@ -93,7 +93,7 @@ const createChangeRequest = async (req, res) => {
             });
             cohortIdToCheck = userCohort?.cohortId;
         }
-        const currentCohort = cohortIdToCheck ? await index_1.prismadb.cohort.findUnique({
+        const currentCohort = cohortIdToCheck ? await prismadb_1.prismadb.cohort.findUnique({
             where: { id: cohortIdToCheck }
         }) : null;
         const isWithinTwoWeeks = currentCohort &&
@@ -111,7 +111,7 @@ const createChangeRequest = async (req, res) => {
             }
         }
         // Create the request
-        const request = await index_1.prismadb.changeRequest.create({
+        const request = await prismadb_1.prismadb.changeRequest.create({
             data: {
                 type,
                 userId: user.id,
@@ -164,7 +164,7 @@ exports.createChangeRequest = createChangeRequest;
 const getUserChangeRequests = async (req, res) => {
     try {
         const user = req.user;
-        const requests = await index_1.prismadb.changeRequest.findMany({
+        const requests = await prismadb_1.prismadb.changeRequest.findMany({
             where: { userId: user.id },
             include: {
                 currentCourse: {
@@ -201,7 +201,7 @@ const getAllChangeRequests = async (req, res) => {
             whereClause.status = status;
         if (type)
             whereClause.type = type;
-        const requests = await index_1.prismadb.changeRequest.findMany({
+        const requests = await prismadb_1.prismadb.changeRequest.findMany({
             where: whereClause,
             include: {
                 user: {
@@ -249,7 +249,7 @@ const updateChangeRequest = async (req, res) => {
                 message: "Reason is required when rejecting a request"
             });
         }
-        const request = await index_1.prismadb.changeRequest.findUnique({
+        const request = await prismadb_1.prismadb.changeRequest.findUnique({
             where: { id: requestId },
             include: {
                 paymentStatus: true,
@@ -269,7 +269,7 @@ const updateChangeRequest = async (req, res) => {
             });
         }
         // Update the request
-        const updatedRequest = await index_1.prismadb.changeRequest.update({
+        const updatedRequest = await prismadb_1.prismadb.changeRequest.update({
             where: { id: requestId },
             data: {
                 status: status === "APPROVED" ? client_1.RequestStatus.PAYMENT_PENDING : client_1.RequestStatus.REJECTED,
@@ -303,7 +303,7 @@ const updateChangeRequest = async (req, res) => {
             const paymentLink = await (0, paymentService_1.generatePaymentLink)(request.user.id, "change_request", requestId, 50000, // 50,000 in kobo (₦500)
             `${request.type === client_1.RequestType.COURSE_CHANGE ? "Course Change" : "Deferment"} Fee`);
             // Update request with payment link
-            await index_1.prismadb.changeRequest.update({
+            await prismadb_1.prismadb.changeRequest.update({
                 where: { id: requestId },
                 data: { paymentLink }
             });
@@ -333,7 +333,7 @@ const handlePaymentVerification = async (req, res) => {
         const verification = await (0, paymentService_1.verifyPaystackPayment)(reference);
         if (verification.status === "success") {
             // Update request status to completed
-            const request = await index_1.prismadb.changeRequest.update({
+            const request = await prismadb_1.prismadb.changeRequest.update({
                 where: { id: requestId },
                 data: { status: client_1.RequestStatus.COMPLETED },
                 include: {
@@ -374,19 +374,19 @@ const handlePaymentVerification = async (req, res) => {
 exports.handlePaymentVerification = handlePaymentVerification;
 // Helper functions
 async function processCourseChange(userId, currentCourseId, desiredCourseId, paymentStatusId) {
-    const user = await index_1.prismadb.user.findUnique({ where: { id: userId } });
-    const desiredCourse = await index_1.prismadb.course.findUnique({ where: { id: desiredCourseId } });
+    const user = await prismadb_1.prismadb.user.findUnique({ where: { id: userId } });
+    const desiredCourse = await prismadb_1.prismadb.course.findUnique({ where: { id: desiredCourseId } });
     if (!user || !desiredCourse) {
         throw new Error("User or desired course not found");
     }
-    await index_1.prismadb.$transaction([
+    await prismadb_1.prismadb.$transaction([
         // Update payment status to point to the new course
-        index_1.prismadb.paymentStatus.update({
+        prismadb_1.prismadb.paymentStatus.update({
             where: { id: paymentStatusId },
             data: { courseId: desiredCourseId, cohortId: null }
         }),
         // Update user's ongoing courses
-        index_1.prismadb.user.update({
+        prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: {
                 ongoing_courses: {
@@ -395,7 +395,7 @@ async function processCourseChange(userId, currentCourseId, desiredCourseId, pay
             }
         }),
         // Remove from current cohort if enrolled
-        index_1.prismadb.userCohort.updateMany({
+        prismadb_1.prismadb.userCohort.updateMany({
             where: {
                 userId: userId,
                 courseId: currentCourseId
@@ -407,14 +407,14 @@ async function processCourseChange(userId, currentCourseId, desiredCourseId, pay
             }
         }),
         // Remove purchase record for old course
-        index_1.prismadb.purchase.deleteMany({
+        prismadb_1.prismadb.purchase.deleteMany({
             where: {
                 userId: userId,
                 courseId: currentCourseId
             }
         }),
         // Create new purchase record for desired course
-        index_1.prismadb.purchase.create({
+        prismadb_1.prismadb.purchase.create({
             data: {
                 userId: userId,
                 courseId: desiredCourseId
@@ -423,21 +423,21 @@ async function processCourseChange(userId, currentCourseId, desiredCourseId, pay
     ]);
 }
 async function processCohortChange(userId, currentCohortId, desiredCohortId, paymentStatusId) {
-    const desiredCohort = await index_1.prismadb.cohort.findUnique({
+    const desiredCohort = await prismadb_1.prismadb.cohort.findUnique({
         where: { id: desiredCohortId },
         select: { courseId: true }
     });
     if (!desiredCohort) {
         throw new Error("Desired cohort not found");
     }
-    await index_1.prismadb.$transaction([
+    await prismadb_1.prismadb.$transaction([
         // Update payment status to point to the new cohort
-        index_1.prismadb.paymentStatus.update({
+        prismadb_1.prismadb.paymentStatus.update({
             where: { id: paymentStatusId },
             data: { cohortId: desiredCohortId }
         }),
         // Update user cohort relationship
-        index_1.prismadb.userCohort.updateMany({
+        prismadb_1.prismadb.userCohort.updateMany({
             where: {
                 userId: userId,
                 cohortId: currentCohortId
@@ -448,7 +448,7 @@ async function processCohortChange(userId, currentCohortId, desiredCohortId, pay
             }
         }),
         // Create new user cohort relationship
-        index_1.prismadb.userCohort.create({
+        prismadb_1.prismadb.userCohort.create({
             data: {
                 userId: userId,
                 cohortId: desiredCohortId,
@@ -472,7 +472,7 @@ const getChangeRequestsCount = async (req, res) => {
         }
         // Get counts for all statuses if no specific status is requested
         if (!status && !type) {
-            const counts = await index_1.prismadb.changeRequest.groupBy({
+            const counts = await prismadb_1.prismadb.changeRequest.groupBy({
                 by: ['status'],
                 where: whereClause,
                 _count: {
@@ -480,7 +480,7 @@ const getChangeRequestsCount = async (req, res) => {
                 },
             });
             // Also get total count
-            const totalCount = await index_1.prismadb.changeRequest.count({
+            const totalCount = await prismadb_1.prismadb.changeRequest.count({
                 where: whereClause,
             });
             // Format the response
@@ -497,7 +497,7 @@ const getChangeRequestsCount = async (req, res) => {
             });
         }
         // Get count with filters
-        const count = await index_1.prismadb.changeRequest.count({
+        const count = await prismadb_1.prismadb.changeRequest.count({
             where: whereClause,
         });
         return res.status(200).json({

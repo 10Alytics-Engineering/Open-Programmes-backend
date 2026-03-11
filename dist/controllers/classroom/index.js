@@ -1,12 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteRecording = exports.deleteMaterial = exports.deleteAssignment = exports.getStreamActivities = exports.createStreamPost = exports.getStreamPosts = exports.addSubItem = exports.deleteTopic = exports.updateTopic = exports.createTopic = exports.getClassroomTopics = exports.getClassroomData = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("../authentication/mail");
 const getClassroomData = async (req, res) => {
     try {
         const { cohortId } = req.params;
-        const cohort = await index_1.prismadb.cohort.findUnique({
+        const cohort = await prismadb_1.prismadb.cohort.findUnique({
             where: { id: cohortId },
             include: {
                 course: true,
@@ -55,7 +55,7 @@ exports.getClassroomData = getClassroomData;
 const getClassroomTopics = async (req, res) => {
     try {
         const { cohortId } = req.params;
-        const topics = await index_1.prismadb.classroomTopic.findMany({
+        const topics = await prismadb_1.prismadb.classroomTopic.findMany({
             where: {
                 cohortCourse: {
                     cohortId: cohortId,
@@ -86,18 +86,18 @@ const createTopic = async (req, res) => {
     try {
         const { cohortCourseId, title, description, isPinned } = req.body;
         // First, find the cohort course to ensure it exists
-        const cohortCourse = await index_1.prismadb.cohortCourse.findFirst({
+        const cohortCourse = await prismadb_1.prismadb.cohortCourse.findFirst({
             where: { id: cohortCourseId },
         });
         if (!cohortCourse) {
             return res.status(404).json({ error: "Cohort course not found" });
         }
         // Get the highest order number
-        const highestOrderTopic = await index_1.prismadb.classroomTopic.findFirst({
+        const highestOrderTopic = await prismadb_1.prismadb.classroomTopic.findFirst({
             where: { cohortCourseId },
             orderBy: { order: "desc" },
         });
-        const topic = await index_1.prismadb.classroomTopic.create({
+        const topic = await prismadb_1.prismadb.classroomTopic.create({
             data: {
                 title,
                 description,
@@ -115,7 +115,7 @@ const createTopic = async (req, res) => {
         });
         // Send Notification to all students in the cohort
         try {
-            const students = await index_1.prismadb.userCohort.findMany({
+            const students = await prismadb_1.prismadb.userCohort.findMany({
                 where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
                 include: { user: { select: { email: true } } }
             });
@@ -140,7 +140,7 @@ const updateTopic = async (req, res) => {
     try {
         const { topicId } = req.params;
         const { title, description, isPinned, order } = req.body;
-        const topic = await index_1.prismadb.classroomTopic.update({
+        const topic = await prismadb_1.prismadb.classroomTopic.update({
             where: { id: topicId },
             data: {
                 ...(title && { title }),
@@ -161,7 +161,7 @@ const deleteTopic = async (req, res) => {
     try {
         const { topicId } = req.params;
         // First, verify the topic exists and get its related items for logging
-        const topic = await index_1.prismadb.classroomTopic.findUnique({
+        const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
             where: { id: topicId },
             include: {
                 assignments: { select: { id: true, title: true } },
@@ -180,7 +180,7 @@ const deleteTopic = async (req, res) => {
         });
         // Delete the topic - this will cascade delete all related items
         // due to the onDelete: Cascade in the Prisma schema
-        await index_1.prismadb.classroomTopic.delete({
+        await prismadb_1.prismadb.classroomTopic.delete({
             where: { id: topicId },
         });
         res.json({
@@ -202,7 +202,7 @@ exports.deleteTopic = deleteTopic;
 const addSubItem = async (req, res) => {
     try {
         const { topicId, type, data } = req.body;
-        const topic = await index_1.prismadb.classroomTopic.findUnique({
+        const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
             where: { id: topicId },
             select: {
                 id: true,
@@ -231,7 +231,7 @@ const addSubItem = async (req, res) => {
         let result;
         switch (type) {
             case "assignment":
-                result = await index_1.prismadb.assignment.create({
+                result = await prismadb_1.prismadb.assignment.create({
                     data: {
                         ...data,
                         classroomTopicId: topicId,
@@ -240,7 +240,7 @@ const addSubItem = async (req, res) => {
                 });
                 break;
             case "material":
-                result = await index_1.prismadb.classMaterial.create({
+                result = await prismadb_1.prismadb.classMaterial.create({
                     data: {
                         ...data,
                         classroomTopicId: topicId,
@@ -249,7 +249,7 @@ const addSubItem = async (req, res) => {
                 });
                 break;
             case "recording":
-                result = await index_1.prismadb.classRecording.create({
+                result = await prismadb_1.prismadb.classRecording.create({
                     data: {
                         ...data,
                         classroomTopicId: topicId,
@@ -262,7 +262,7 @@ const addSubItem = async (req, res) => {
         }
         // Send Notification to all students in the cohort
         try {
-            const students = await index_1.prismadb.userCohort.findMany({
+            const students = await prismadb_1.prismadb.userCohort.findMany({
                 where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
                 include: { user: { select: { email: true } } }
             });
@@ -287,7 +287,7 @@ exports.addSubItem = addSubItem;
 const getStreamPosts = async (req, res) => {
     try {
         const { cohortId } = req.params;
-        const posts = await index_1.prismadb.streamPost.findMany({
+        const posts = await prismadb_1.prismadb.streamPost.findMany({
             where: {
                 cohortCourse: {
                     cohortId: cohortId,
@@ -318,14 +318,14 @@ const createStreamPost = async (req, res) => {
         const { cohortId } = req.params;
         const { title, content, authorId } = req.body;
         // Find the cohort course for this cohort
-        const cohortCourse = await index_1.prismadb.cohortCourse.findFirst({
+        const cohortCourse = await prismadb_1.prismadb.cohortCourse.findFirst({
             where: { cohortId: cohortId },
             include: { cohort: true }
         });
         if (!cohortCourse) {
             return res.status(404).json({ error: "Cohort course not found" });
         }
-        const post = await index_1.prismadb.streamPost.create({
+        const post = await prismadb_1.prismadb.streamPost.create({
             data: {
                 title,
                 content,
@@ -339,7 +339,7 @@ const createStreamPost = async (req, res) => {
         });
         // Send Notification to all students in the cohort
         try {
-            const students = await index_1.prismadb.userCohort.findMany({
+            const students = await prismadb_1.prismadb.userCohort.findMany({
                 where: { cohortId: cohortId, isActive: true },
                 include: { user: { select: { email: true } } }
             });
@@ -365,7 +365,7 @@ const getStreamActivities = async (req, res) => {
         // Get all activities from different sources and combine them
         const [topics, assignments, materials, recordings, announcements, streamPosts] = await Promise.all([
             // Topics
-            index_1.prismadb.classroomTopic.findMany({
+            prismadb_1.prismadb.classroomTopic.findMany({
                 where: {
                     cohortCourse: {
                         cohortId: cohortId,
@@ -382,7 +382,7 @@ const getStreamActivities = async (req, res) => {
                 take: 50,
             }),
             // Assignments - only those that still exist
-            index_1.prismadb.assignment.findMany({
+            prismadb_1.prismadb.assignment.findMany({
                 where: {
                     cohortCourse: {
                         cohortId: cohortId,
@@ -400,7 +400,7 @@ const getStreamActivities = async (req, res) => {
                 take: 50,
             }),
             // Materials - only those that still exist
-            index_1.prismadb.classMaterial.findMany({
+            prismadb_1.prismadb.classMaterial.findMany({
                 where: {
                     cohortCourse: {
                         cohortId: cohortId,
@@ -418,7 +418,7 @@ const getStreamActivities = async (req, res) => {
                 take: 50,
             }),
             // Recordings - only those that still exist
-            index_1.prismadb.classRecording.findMany({
+            prismadb_1.prismadb.classRecording.findMany({
                 where: {
                     cohortCourse: {
                         cohortId: cohortId,
@@ -436,7 +436,7 @@ const getStreamActivities = async (req, res) => {
                 take: 50,
             }),
             // Announcements
-            index_1.prismadb.announcement.findMany({
+            prismadb_1.prismadb.announcement.findMany({
                 where: {
                     cohortCourse: {
                         cohortId: cohortId,
@@ -454,7 +454,7 @@ const getStreamActivities = async (req, res) => {
                 take: 50,
             }),
             // Stream Posts
-            index_1.prismadb.streamPost.findMany({
+            prismadb_1.prismadb.streamPost.findMany({
                 where: {
                     cohortCourse: {
                         cohortId: cohortId,
@@ -570,7 +570,7 @@ const deleteAssignment = async (req, res) => {
     try {
         const { assignmentId } = req.params;
         // Check if assignment exists
-        const assignment = await index_1.prismadb.assignment.findUnique({
+        const assignment = await prismadb_1.prismadb.assignment.findUnique({
             where: { id: assignmentId },
             include: {
                 submissions: {
@@ -585,7 +585,7 @@ const deleteAssignment = async (req, res) => {
             return res.status(404).json({ error: "Assignment not found" });
         }
         // Delete the assignment (cascade will handle related records)
-        await index_1.prismadb.assignment.delete({
+        await prismadb_1.prismadb.assignment.delete({
             where: { id: assignmentId }
         });
         res.json({
@@ -608,14 +608,14 @@ const deleteMaterial = async (req, res) => {
     try {
         const { materialId } = req.params;
         // Check if material exists
-        const material = await index_1.prismadb.classMaterial.findUnique({
+        const material = await prismadb_1.prismadb.classMaterial.findUnique({
             where: { id: materialId }
         });
         if (!material) {
             return res.status(404).json({ error: "Material not found" });
         }
         // Delete the material
-        await index_1.prismadb.classMaterial.delete({
+        await prismadb_1.prismadb.classMaterial.delete({
             where: { id: materialId }
         });
         res.json({
@@ -636,14 +636,14 @@ const deleteRecording = async (req, res) => {
     try {
         const { recordingId } = req.params;
         // Check if recording exists
-        const recording = await index_1.prismadb.classRecording.findUnique({
+        const recording = await prismadb_1.prismadb.classRecording.findUnique({
             where: { id: recordingId }
         });
         if (!recording) {
             return res.status(404).json({ error: "Recording not found" });
         }
         // Delete the recording
-        await index_1.prismadb.classRecording.delete({
+        await prismadb_1.prismadb.classRecording.delete({
             where: { id: recordingId }
         });
         res.json({

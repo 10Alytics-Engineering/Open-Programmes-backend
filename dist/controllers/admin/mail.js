@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendWelcomeEmail = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const dotenv = __importStar(require("dotenv"));
 const nodemailer_1 = require("../../utils/nodemailer");
 // Load environment variables
@@ -42,7 +42,7 @@ dotenv.config();
 const domain = process.env.NEXT_PUBLIC_APP_URL;
 const sendWelcomeEmail = async ({ email, name, password, courseId }) => {
     try {
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: { id: courseId },
             select: { title: true },
         });

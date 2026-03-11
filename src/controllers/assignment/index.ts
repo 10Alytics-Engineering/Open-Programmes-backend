@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { User, AssignmentType } from "@prisma/client";
 import { NebiantUser } from "../../middleware";
 import { sendClassroomNotificationEmail } from "../authentication/mail";

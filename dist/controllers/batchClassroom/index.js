@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getTopicsForCohorts = exports.createBatchTopics = exports.addBatchItem = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("../authentication/mail");
 const addBatchItem = async (req, res) => {
     try {
@@ -12,7 +12,7 @@ const addBatchItem = async (req, res) => {
             });
         }
         // Validate all topics exist and get their cohortCourseIds
-        const topics = await index_1.prismadb.classroomTopic.findMany({
+        const topics = await prismadb_1.prismadb.classroomTopic.findMany({
             where: {
                 id: { in: topicIds }
             },
@@ -40,7 +40,7 @@ const addBatchItem = async (req, res) => {
                 let result;
                 switch (type) {
                     case "assignment":
-                        result = await index_1.prismadb.assignment.create({
+                        result = await prismadb_1.prismadb.assignment.create({
                             data: {
                                 ...data,
                                 classroomTopicId: topic.id,
@@ -57,7 +57,7 @@ const addBatchItem = async (req, res) => {
                         });
                         break;
                     case "material":
-                        result = await index_1.prismadb.classMaterial.create({
+                        result = await prismadb_1.prismadb.classMaterial.create({
                             data: {
                                 ...data,
                                 classroomTopicId: topic.id,
@@ -74,7 +74,7 @@ const addBatchItem = async (req, res) => {
                         });
                         break;
                     case "recording":
-                        result = await index_1.prismadb.classRecording.create({
+                        result = await prismadb_1.prismadb.classRecording.create({
                             data: {
                                 ...data,
                                 classroomTopicId: topic.id,
@@ -99,7 +99,7 @@ const addBatchItem = async (req, res) => {
                 }
                 // Send Notification to all students in the cohort
                 try {
-                    const students = await index_1.prismadb.userCohort.findMany({
+                    const students = await prismadb_1.prismadb.userCohort.findMany({
                         where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
                         include: { user: { select: { email: true } } }
                     });
@@ -152,7 +152,7 @@ const createBatchTopics = async (req, res) => {
             });
         }
         // Validate all cohort courses exist
-        const cohortCourses = await index_1.prismadb.cohortCourse.findMany({
+        const cohortCourses = await prismadb_1.prismadb.cohortCourse.findMany({
             where: {
                 id: { in: cohortCourseIds }
             },
@@ -175,11 +175,11 @@ const createBatchTopics = async (req, res) => {
         for (const cohortCourse of cohortCourses) {
             try {
                 // Get the highest order number for this cohort course
-                const highestOrderTopic = await index_1.prismadb.classroomTopic.findFirst({
+                const highestOrderTopic = await prismadb_1.prismadb.classroomTopic.findFirst({
                     where: { cohortCourseId: cohortCourse.id },
                     orderBy: { order: "desc" },
                 });
-                const topic = await index_1.prismadb.classroomTopic.create({
+                const topic = await prismadb_1.prismadb.classroomTopic.create({
                     data: {
                         title,
                         description,
@@ -198,7 +198,7 @@ const createBatchTopics = async (req, res) => {
                 });
                 // Send Notification to all students in the cohort (optional for topic creation, but user said "every action")
                 try {
-                    const students = await index_1.prismadb.userCohort.findMany({
+                    const students = await prismadb_1.prismadb.userCohort.findMany({
                         where: { cohortId: cohortCourse.cohort.id, isActive: true },
                         include: { user: { select: { email: true } } }
                     });
@@ -250,7 +250,7 @@ const getTopicsForCohorts = async (req, res) => {
             return res.status(400).json({ error: "cohortIds query parameter is required" });
         }
         const cohortIdsArray = cohortIds.split(',');
-        const topics = await index_1.prismadb.classroomTopic.findMany({
+        const topics = await prismadb_1.prismadb.classroomTopic.findMany({
             where: {
                 cohortCourse: {
                     cohortId: { in: cohortIdsArray }

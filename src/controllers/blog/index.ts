@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { BlogImage } from "@prisma/client";
 
 const handleServerError = (error: any, res: Response) => {

@@ -1,14 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserQuizAnswers = exports.submitQuizAnswer = exports.updateQuiz = exports.getQuizzesByWeek = exports.deleteQuiz = exports.createQuiz = exports.getQuiz = exports.getQuizzes = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
 };
 const getQuizzes = async (req, res) => {
     try {
-        const quizzes = await index_1.prismadb.quiz.findMany({
+        const quizzes = await prismadb_1.prismadb.quiz.findMany({
             include: {
                 answers: true,
             },
@@ -29,7 +29,7 @@ const getQuiz = async (req, res) => {
         if (!quizId) {
             return res.status(400).json({ message: "QuizId is required" });
         }
-        const quiz = await index_1.prismadb.quiz.findUnique({
+        const quiz = await prismadb_1.prismadb.quiz.findUnique({
             where: {
                 id: quizId,
             },
@@ -63,7 +63,7 @@ const createQuiz = async (req, res) => {
         return res.status(400).json({ message: "Answer is required" });
     }
     try {
-        const quiz = await index_1.prismadb.quiz.create({
+        const quiz = await prismadb_1.prismadb.quiz.create({
             data: {
                 question,
                 moduleId,
@@ -97,7 +97,7 @@ const deleteQuiz = async (req, res) => {
         if (!quizId) {
             return res.status(400).json({ message: "QuizId is required" });
         }
-        const quiz = await index_1.prismadb.quiz.findUnique({
+        const quiz = await prismadb_1.prismadb.quiz.findUnique({
             where: {
                 id: quizId,
             },
@@ -105,7 +105,7 @@ const deleteQuiz = async (req, res) => {
         if (!quiz) {
             return res.status(404).json({ message: "Quiz not found" });
         }
-        await index_1.prismadb.quiz.delete({
+        await prismadb_1.prismadb.quiz.delete({
             where: {
                 id: quizId,
             },
@@ -127,7 +127,7 @@ const getQuizzesByWeek = async (req, res) => {
             return res.status(400).json({ message: "WeekId is required" });
         }
         // Get all modules for this week
-        const modules = await index_1.prismadb.module.findMany({
+        const modules = await prismadb_1.prismadb.module.findMany({
             where: { courseWeekId: weekId },
         });
         // If no modules exist, return empty array
@@ -135,7 +135,7 @@ const getQuizzesByWeek = async (req, res) => {
             return res.status(200).json({ data: [] });
         }
         // Get quizzes for these modules
-        const quizzes = await index_1.prismadb.quiz.findMany({
+        const quizzes = await prismadb_1.prismadb.quiz.findMany({
             where: { moduleId: { in: modules.map((m) => m.id) } },
             include: { answers: true },
             orderBy: { createdAt: "asc" },
@@ -159,7 +159,7 @@ const updateQuiz = async (req, res) => {
             return res.status(400).json({ message: "Question is required" });
         }
         // First update the quiz question
-        const updatedQuiz = await index_1.prismadb.quiz.update({
+        const updatedQuiz = await prismadb_1.prismadb.quiz.update({
             where: { id: quizId },
             data: { question },
             include: { answers: true },
@@ -168,7 +168,7 @@ const updateQuiz = async (req, res) => {
         for (const answer of answers) {
             if (answer.id) {
                 // Update existing answer
-                await index_1.prismadb.quizAnswer.update({
+                await prismadb_1.prismadb.quizAnswer.update({
                     where: { id: answer.id },
                     data: {
                         name: answer.name,
@@ -178,7 +178,7 @@ const updateQuiz = async (req, res) => {
             }
             else {
                 // Create new answer
-                await index_1.prismadb.quizAnswer.create({
+                await prismadb_1.prismadb.quizAnswer.create({
                     data: {
                         name: answer.name,
                         isCorrect: answer.isCorrect,
@@ -188,7 +188,7 @@ const updateQuiz = async (req, res) => {
             }
         }
         // Fetch the updated quiz with answers
-        const finalQuiz = await index_1.prismadb.quiz.findUnique({
+        const finalQuiz = await prismadb_1.prismadb.quiz.findUnique({
             where: { id: quizId },
             include: { answers: true },
         });
@@ -217,7 +217,7 @@ const submitQuizAnswer = async (req, res) => {
                 .json({ message: "QuizId and AnswerId are required" });
         }
         // Check if user already answered this quiz
-        const existingAnswer = await index_1.prismadb.userQuizAnswer.findFirst({
+        const existingAnswer = await prismadb_1.prismadb.userQuizAnswer.findFirst({
             where: {
                 userId,
                 quizAnswer: {
@@ -231,7 +231,7 @@ const submitQuizAnswer = async (req, res) => {
                 .json({ message: "You've already answered this quiz" });
         }
         // Get the answer to check if it's correct
-        const answer = await index_1.prismadb.quizAnswer.findUnique({
+        const answer = await prismadb_1.prismadb.quizAnswer.findUnique({
             where: { id: answerId },
             include: { quiz: true },
         });
@@ -239,7 +239,7 @@ const submitQuizAnswer = async (req, res) => {
             return res.status(404).json({ message: "Answer not found" });
         }
         // Record the user's answer
-        await index_1.prismadb.userQuizAnswer.create({
+        await prismadb_1.prismadb.userQuizAnswer.create({
             data: {
                 userId,
                 quizAnswerId: answerId,
@@ -248,7 +248,7 @@ const submitQuizAnswer = async (req, res) => {
         // If answer is correct, update leaderboard
         if (answer.isCorrect) {
             // Check if user already has a leaderboard entry for this quiz
-            const existingLeaderboard = await index_1.prismadb.leaderboard.findFirst({
+            const existingLeaderboard = await prismadb_1.prismadb.leaderboard.findFirst({
                 where: {
                     userId,
                     quizId,
@@ -256,14 +256,14 @@ const submitQuizAnswer = async (req, res) => {
             });
             if (existingLeaderboard) {
                 // Update existing points
-                await index_1.prismadb.leaderboard.update({
+                await prismadb_1.prismadb.leaderboard.update({
                     where: { id: existingLeaderboard.id },
                     data: { points: existingLeaderboard.points + 1 },
                 });
             }
             else {
                 // Create new leaderboard entry
-                await index_1.prismadb.leaderboard.create({
+                await prismadb_1.prismadb.leaderboard.create({
                     data: {
                         userId,
                         quizId,
@@ -290,7 +290,7 @@ const getUserQuizAnswers = async (req, res) => {
         if (!userId) {
             return res.status(401).json({ message: "Not authenticated" });
         }
-        const userAnswers = await index_1.prismadb.userQuizAnswer.findMany({
+        const userAnswers = await prismadb_1.prismadb.userQuizAnswer.findMany({
             where: { userId },
             include: {
                 quizAnswer: {

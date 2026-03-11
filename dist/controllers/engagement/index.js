@@ -1,12 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserCourseVideos = exports.getCourseVideos = exports.getCourseEngagementOverview = exports.getVideoEngagementDetails = exports.getStudentEngagement = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const getStudentEngagement = async (req, res) => {
     try {
         const { userId } = req.params;
         // Get all courses the student is enrolled in
-        const enrolledCourses = await index_1.prismadb.purchase.findMany({
+        const enrolledCourses = await prismadb_1.prismadb.purchase.findMany({
             where: { userId },
             include: {
                 course: {
@@ -26,7 +26,7 @@ const getStudentEngagement = async (req, res) => {
             },
         });
         // Get all completed videos - FIXED: Use videoId instead of video relation
-        const completedVideos = await index_1.prismadb.userProgress.findMany({
+        const completedVideos = await prismadb_1.prismadb.userProgress.findMany({
             where: { userId, isCompleted: true },
             select: {
                 videoId: true,
@@ -37,7 +37,7 @@ const getStudentEngagement = async (req, res) => {
             },
         });
         // Get video details separately
-        const videoDetails = await index_1.prismadb.projectVideo.findMany({
+        const videoDetails = await prismadb_1.prismadb.projectVideo.findMany({
             where: {
                 id: { in: completedVideos.map((v) => v.videoId) },
             },
@@ -50,7 +50,7 @@ const getStudentEngagement = async (req, res) => {
             },
         });
         // Get all completed quizzes - FIXED: Simplified query
-        const quizAnswers = await index_1.prismadb.userQuizAnswer.findMany({
+        const quizAnswers = await prismadb_1.prismadb.userQuizAnswer.findMany({
             where: { userId },
             include: {
                 quizAnswer: {
@@ -117,7 +117,7 @@ const getVideoEngagementDetails = async (req, res) => {
     try {
         const { videoId } = req.params;
         // First get video details
-        const videoDetails = await index_1.prismadb.projectVideo.findUnique({
+        const videoDetails = await prismadb_1.prismadb.projectVideo.findUnique({
             where: { id: videoId },
             select: {
                 id: true,
@@ -143,7 +143,7 @@ const getVideoEngagementDetails = async (req, res) => {
             return res.status(404).json({ message: "Video not found" });
         }
         // Get all user progress records for this video
-        const videoEngagement = await index_1.prismadb.userProgress.findMany({
+        const videoEngagement = await prismadb_1.prismadb.userProgress.findMany({
             where: { videoId },
             select: {
                 id: true,
@@ -194,7 +194,7 @@ const getCourseEngagementOverview = async (req, res) => {
     try {
         const { courseId } = req.params;
         // Get all students enrolled in the course
-        const enrolledStudents = await index_1.prismadb.purchase.findMany({
+        const enrolledStudents = await prismadb_1.prismadb.purchase.findMany({
             where: { courseId },
             select: {
                 user: {
@@ -207,17 +207,17 @@ const getCourseEngagementOverview = async (req, res) => {
             },
         });
         // Get all videos in the course
-        const courseVideos = await index_1.prismadb.projectVideo.findMany({
+        const courseVideos = await prismadb_1.prismadb.projectVideo.findMany({
             where: { courseId },
             select: {
                 id: true,
             },
         });
         // Get all quizzes in the course
-        const courseQuizzes = await index_1.prismadb.quiz.findMany({
+        const courseQuizzes = await prismadb_1.prismadb.quiz.findMany({
             where: {
                 moduleId: {
-                    in: await index_1.prismadb.module
+                    in: await prismadb_1.prismadb.module
                         .findMany({
                         where: {
                             CourseWeek: {
@@ -235,14 +235,14 @@ const getCourseEngagementOverview = async (req, res) => {
         });
         // Get all engagement data for these students
         const engagementData = await Promise.all(enrolledStudents.map(async ({ user }) => {
-            const completedVideos = await index_1.prismadb.userProgress.count({
+            const completedVideos = await prismadb_1.prismadb.userProgress.count({
                 where: {
                     userId: user.id,
                     videoId: { in: courseVideos.map((v) => v.id) },
                     isCompleted: true,
                 },
             });
-            const quizAnswers = await index_1.prismadb.userQuizAnswer.count({
+            const quizAnswers = await prismadb_1.prismadb.userQuizAnswer.count({
                 where: {
                     userId: user.id,
                     quizAnswer: {
@@ -250,7 +250,7 @@ const getCourseEngagementOverview = async (req, res) => {
                     },
                 },
             });
-            const lastActivity = await index_1.prismadb.userProgress.findFirst({
+            const lastActivity = await prismadb_1.prismadb.userProgress.findFirst({
                 where: { userId: user.id },
                 orderBy: { updatedAt: "desc" },
                 select: { updatedAt: true },
@@ -289,7 +289,7 @@ const getCourseVideos = async (req, res) => {
     try {
         const { courseId } = req.params;
         // Get all videos for the course with their module and week information
-        const videos = await index_1.prismadb.projectVideo.findMany({
+        const videos = await prismadb_1.prismadb.projectVideo.findMany({
             where: { courseId },
             select: {
                 id: true,
@@ -338,7 +338,7 @@ const getUserCourseVideos = async (req, res) => {
     try {
         const { userId, courseId } = req.params;
         // First get all user progress records for this course
-        const userProgress = await index_1.prismadb.userProgress.findMany({
+        const userProgress = await prismadb_1.prismadb.userProgress.findMany({
             where: {
                 userId,
                 courseId
@@ -357,7 +357,7 @@ const getUserCourseVideos = async (req, res) => {
             return res.status(404).json({ message: "No video progress found for this user in the selected course" });
         }
         // Get details for all videos the user has progress for
-        const videos = await index_1.prismadb.projectVideo.findMany({
+        const videos = await prismadb_1.prismadb.projectVideo.findMany({
             where: {
                 id: { in: userProgress.map(p => p.videoId) },
                 courseId

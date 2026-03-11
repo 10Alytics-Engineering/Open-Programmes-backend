@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { sendIWDRegistrationEmail } from "./mail";

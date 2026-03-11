@@ -7,7 +7,7 @@ exports.createProgramLead = createProgramLead;
 exports.getProgramLeads = getProgramLeads;
 exports.getProgramLeadsCount = getProgramLeadsCount;
 exports.exportProgramLeads = exportProgramLeads;
-const index_1 = require("../../../src/index");
+const prismadb_1 = require("../../lib/prismadb");
 const exceljs_1 = __importDefault(require("exceljs"));
 async function createProgramLead(req, res) {
     try {
@@ -25,7 +25,7 @@ async function createProgramLead(req, res) {
                 .json({ message: "All required fields must be provided" });
         }
         // Check if email already exists
-        const existingLead = await index_1.prismadb.programLeads.findFirst({
+        const existingLead = await prismadb_1.prismadb.programLeads.findFirst({
             where: {
                 email,
                 programType,
@@ -38,7 +38,7 @@ async function createProgramLead(req, res) {
             });
         }
         // Create new program lead
-        const programLead = await index_1.prismadb.programLeads.create({
+        const programLead = await prismadb_1.prismadb.programLeads.create({
             data: {
                 programType,
                 firstName,
@@ -61,7 +61,7 @@ async function getProgramLeads(req, res) {
     try {
         const { programType } = req.query;
         const whereClause = programType ? { programType: String(programType) } : {};
-        const leads = await index_1.prismadb.programLeads.findMany({
+        const leads = await prismadb_1.prismadb.programLeads.findMany({
             where: whereClause,
             orderBy: {
                 createdAt: 'desc',
@@ -76,7 +76,7 @@ async function getProgramLeads(req, res) {
 }
 async function getProgramLeadsCount(req, res) {
     try {
-        const counts = await index_1.prismadb.programLeads.groupBy({
+        const counts = await prismadb_1.prismadb.programLeads.groupBy({
             by: ['programType'],
             _count: {
                 programType: true,
@@ -93,7 +93,7 @@ async function exportProgramLeads(req, res) {
     try {
         const { programType } = req.query;
         const whereClause = programType ? { programType: String(programType) } : {};
-        const leads = await index_1.prismadb.programLeads.findMany({
+        const leads = await prismadb_1.prismadb.programLeads.findMany({
             where: whereClause,
             orderBy: {
                 createdAt: 'desc',

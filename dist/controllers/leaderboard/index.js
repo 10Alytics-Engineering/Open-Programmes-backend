@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCohortLeaderboard = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const getCohortLeaderboard = async (req, res) => {
     try {
         const { cohortId } = req.params;
@@ -9,7 +9,7 @@ const getCohortLeaderboard = async (req, res) => {
             return res.status(400).json({ error: "Cohort ID is required" });
         }
         // 1. Get cohort and verify existence
-        const cohort = await index_1.prismadb.cohort.findUnique({
+        const cohort = await prismadb_1.prismadb.cohort.findUnique({
             where: { id: cohortId },
             select: {
                 id: true,
@@ -42,7 +42,7 @@ const getCohortLeaderboard = async (req, res) => {
         // 2. Get metrics ONLY for users in this cohort
         const [quizResults, videoProgress] = await Promise.all([
             // Quiz points (filtered by cohort users AND cohort course)
-            index_1.prismadb.leaderboard.groupBy({
+            prismadb_1.prismadb.leaderboard.groupBy({
                 by: ["userId"],
                 where: {
                     userId: { in: userIds },
@@ -55,7 +55,7 @@ const getCohortLeaderboard = async (req, res) => {
                 _sum: { points: true },
             }),
             // Video completions (filtered by cohort users AND cohort course)
-            index_1.prismadb.userProgress.findMany({
+            prismadb_1.prismadb.userProgress.findMany({
                 where: {
                     userId: { in: userIds },
                     courseId: cohort.courseId,

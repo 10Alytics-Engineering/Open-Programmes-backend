@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.exportFreeCourseApplicantsPDF = exports.getFreeCourseApplicants = exports.applyForCourse = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const pdfkit_1 = __importDefault(require("pdfkit"));
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
@@ -16,7 +16,7 @@ const applyForCourse = async (req, res) => {
         return res.status(400).json({ message: "Fill in details" });
     }
     try {
-        await index_1.prismadb.freeCourseApplication.create({
+        await prismadb_1.prismadb.freeCourseApplication.create({
             data: {
                 name,
                 email,
@@ -36,7 +36,7 @@ const applyForCourse = async (req, res) => {
 exports.applyForCourse = applyForCourse;
 const getFreeCourseApplicants = async (req, res) => {
     try {
-        const freeCourseApplicants = await index_1.prismadb.freeCourseApplication.findMany();
+        const freeCourseApplicants = await prismadb_1.prismadb.freeCourseApplication.findMany();
         res
             .status(200)
             .json({ status: "success", message: null, data: freeCourseApplicants });
@@ -48,7 +48,7 @@ const getFreeCourseApplicants = async (req, res) => {
 exports.getFreeCourseApplicants = getFreeCourseApplicants;
 const exportFreeCourseApplicantsPDF = async (req, res) => {
     try {
-        const freeCourseApplicants = await index_1.prismadb.freeCourseApplication.findMany();
+        const freeCourseApplicants = await prismadb_1.prismadb.freeCourseApplication.findMany();
         // Create a new PDF document
         const doc = new pdfkit_1.default();
         // Set response headers for PDF download

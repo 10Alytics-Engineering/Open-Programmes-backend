@@ -1,14 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTimetable = exports.deleteTimetable = exports.updateTimetable = exports.getTimetable = exports.getTimetables = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
 };
 const getTimetables = async (req, res) => {
     try {
-        const timetables = await index_1.prismadb.timeTable.findMany({
+        const timetables = await prismadb_1.prismadb.timeTable.findMany({
             orderBy: {
                 createdAt: "asc"
             }
@@ -28,7 +28,7 @@ const getTimetable = async (req, res) => {
         if (!timetableId) {
             return res.status(400).json({ message: "Timetable ID is required" });
         }
-        const timetable = await index_1.prismadb.timeTable.findUnique({
+        const timetable = await prismadb_1.prismadb.timeTable.findUnique({
             where: {
                 id: timetableId,
             },
@@ -47,7 +47,7 @@ const updateTimetable = async (req, res) => {
         if (!timetableId) {
             return res.status(400).json({ message: "Timetable ID is required" });
         }
-        const timeTable = await index_1.prismadb.timeTable.findUnique({
+        const timeTable = await prismadb_1.prismadb.timeTable.findUnique({
             where: {
                 id: timetableId,
             },
@@ -55,7 +55,7 @@ const updateTimetable = async (req, res) => {
         if (!timeTable) {
             return res.status(404).json({ message: "Timetable not found" });
         }
-        await index_1.prismadb.timeTable.update({
+        await prismadb_1.prismadb.timeTable.update({
             data: {
                 ...body,
             },
@@ -80,7 +80,7 @@ const deleteTimetable = async (req, res) => {
         if (!timetableId) {
             return res.status(400).json({ message: "Timetable ID is required" });
         }
-        const timeTable = await index_1.prismadb.timeTable.findUnique({
+        const timeTable = await prismadb_1.prismadb.timeTable.findUnique({
             where: {
                 id: timetableId,
             },
@@ -88,7 +88,7 @@ const deleteTimetable = async (req, res) => {
         if (!timeTable) {
             return res.status(404).json({ message: "Timetable not found" });
         }
-        await index_1.prismadb.timeTable.delete({
+        await prismadb_1.prismadb.timeTable.delete({
             where: {
                 id: timetableId,
             },
@@ -116,7 +116,7 @@ const createTimetable = async (req, res) => {
         return res.status(400).json({ message: "CohortId is required" });
     }
     try {
-        const timetable = await index_1.prismadb.timeTable.create({
+        const timetable = await prismadb_1.prismadb.timeTable.create({
             data: {
                 name,
                 category,

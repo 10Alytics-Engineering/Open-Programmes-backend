@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseVideosByCourseId = exports.deleteCourseVideo = exports.updateCourseVideo = exports.createCourseVideo = exports.getCourseVideo = exports.getCourseVideos = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -18,7 +18,7 @@ const getCourseVideos = async (req, res) => {
         if (!moduleId) {
             return res.status(400).json({ message: "ModuleId is required" });
         }
-        const existingModule = await index_1.prismadb.module.findUnique({
+        const existingModule = await prismadb_1.prismadb.module.findUnique({
             where: {
                 id: moduleId,
                 courseWeekId: weekId,
@@ -27,7 +27,7 @@ const getCourseVideos = async (req, res) => {
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const courseVideos = await index_1.prismadb.projectVideo.findMany({
+        const courseVideos = await prismadb_1.prismadb.projectVideo.findMany({
             where: {
                 moduleId,
                 courseId,
@@ -60,7 +60,7 @@ const getCourseVideo = async (req, res) => {
         if (!videoId) {
             return res.status(400).json({ message: "VideoId is required" });
         }
-        const existingModule = await index_1.prismadb.module.findUnique({
+        const existingModule = await prismadb_1.prismadb.module.findUnique({
             where: {
                 id: moduleId,
                 courseWeekId: weekId,
@@ -69,7 +69,7 @@ const getCourseVideo = async (req, res) => {
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const video = await index_1.prismadb.projectVideo.findUnique({
+        const video = await prismadb_1.prismadb.projectVideo.findUnique({
             where: {
                 id: videoId,
                 moduleId,
@@ -101,7 +101,7 @@ const createCourseVideo = async (req, res) => {
         if (!moduleId) {
             return res.status(400).json({ message: "ModuleId is required" });
         }
-        const existingCourse = await index_1.prismadb.course.findUnique({
+        const existingCourse = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -109,7 +109,7 @@ const createCourseVideo = async (req, res) => {
         if (!existingCourse) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const existingModule = await index_1.prismadb.module.findUnique({
+        const existingModule = await prismadb_1.prismadb.module.findUnique({
             where: {
                 id: moduleId,
                 courseWeekId: weekId,
@@ -118,7 +118,7 @@ const createCourseVideo = async (req, res) => {
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const courseVideo = await index_1.prismadb.projectVideo.create({
+        const courseVideo = await prismadb_1.prismadb.projectVideo.create({
             data: {
                 title,
                 videoUrl,
@@ -161,7 +161,7 @@ const updateCourseVideo = async (req, res) => {
         if (!videoId) {
             return res.status(400).json({ message: "VideoId is required" });
         }
-        const existingCourse = await index_1.prismadb.course.findUnique({
+        const existingCourse = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -169,7 +169,7 @@ const updateCourseVideo = async (req, res) => {
         if (!existingCourse) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const existingModule = await index_1.prismadb.module.findUnique({
+        const existingModule = await prismadb_1.prismadb.module.findUnique({
             where: {
                 id: moduleId,
                 courseWeekId: weekId,
@@ -178,7 +178,7 @@ const updateCourseVideo = async (req, res) => {
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const existingVideo = await index_1.prismadb.projectVideo.findUnique({
+        const existingVideo = await prismadb_1.prismadb.projectVideo.findUnique({
             where: {
                 id: videoId,
                 moduleId,
@@ -188,7 +188,7 @@ const updateCourseVideo = async (req, res) => {
         if (!existingVideo) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        await index_1.prismadb.projectVideo.update({
+        await prismadb_1.prismadb.projectVideo.update({
             where: {
                 id: videoId,
                 moduleId,
@@ -220,7 +220,7 @@ const deleteCourseVideo = async (req, res) => {
         if (!videoId) {
             return res.status(400).json({ message: "VideoId is required" });
         }
-        const existingCourse = await index_1.prismadb.course.findUnique({
+        const existingCourse = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -228,7 +228,7 @@ const deleteCourseVideo = async (req, res) => {
         if (!existingCourse) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const existingModule = await index_1.prismadb.module.findUnique({
+        const existingModule = await prismadb_1.prismadb.module.findUnique({
             where: {
                 id: moduleId,
                 courseWeekId: weekId,
@@ -237,7 +237,7 @@ const deleteCourseVideo = async (req, res) => {
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const existingVideo = await index_1.prismadb.projectVideo.findUnique({
+        const existingVideo = await prismadb_1.prismadb.projectVideo.findUnique({
             where: {
                 id: videoId,
                 moduleId,
@@ -247,7 +247,7 @@ const deleteCourseVideo = async (req, res) => {
         if (!existingVideo) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        await index_1.prismadb.projectVideo.delete({
+        await prismadb_1.prismadb.projectVideo.delete({
             where: {
                 id: videoId,
                 moduleId,
@@ -267,7 +267,7 @@ const getCourseVideosByCourseId = async (req, res) => {
         if (!courseId) {
             return res.status(400).json({ message: "CourseId is required" });
         }
-        const existingCourse = await index_1.prismadb.course.findUnique({
+        const existingCourse = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -275,7 +275,7 @@ const getCourseVideosByCourseId = async (req, res) => {
         if (!existingCourse) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const courseVideosId = await index_1.prismadb.projectVideo.findMany({
+        const courseVideosId = await prismadb_1.prismadb.projectVideo.findMany({
             where: {
                 courseId,
             },

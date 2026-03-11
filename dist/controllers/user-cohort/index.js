@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateUserCohort = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const updateUserCohort = async (req, res) => {
     try {
         const { cohortId } = req.params;
@@ -18,7 +18,7 @@ const updateUserCohort = async (req, res) => {
         if (!userId) {
             return res.status(400).json({ message: "UserId is required" });
         }
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: {
                 id: userId,
             },
@@ -26,7 +26,7 @@ const updateUserCohort = async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: "User does not exist" });
         }
-        const existingCohort = await index_1.prismadb.cohort.findUnique({
+        const existingCohort = await prismadb_1.prismadb.cohort.findUnique({
             where: {
                 id: cohortId,
             },
@@ -35,7 +35,7 @@ const updateUserCohort = async (req, res) => {
             return res.status(404).json({ message: "Cohort not found" });
         }
         // Find the existing UserCohort record
-        const userCohort = await index_1.prismadb.userCohort.findUnique({
+        const userCohort = await prismadb_1.prismadb.userCohort.findUnique({
             where: {
                 userId_cohortId_courseId: {
                     userId,
@@ -48,7 +48,7 @@ const updateUserCohort = async (req, res) => {
             return res.status(404).json({ message: "UserCohort not found" });
         }
         // Check if the new cohortId combination is unique
-        const existingRecord = await index_1.prismadb.userCohort.findUnique({
+        const existingRecord = await prismadb_1.prismadb.userCohort.findUnique({
             where: {
                 userId_cohortId_courseId: {
                     userId,
@@ -63,7 +63,7 @@ const updateUserCohort = async (req, res) => {
             });
         }
         // Update the UserCohort record
-        await index_1.prismadb.userCohort.update({
+        await prismadb_1.prismadb.userCohort.update({
             data: {
                 cohortId: newCohortId,
             },

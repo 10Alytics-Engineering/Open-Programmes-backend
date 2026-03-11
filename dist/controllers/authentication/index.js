@@ -45,7 +45,7 @@ exports.resendEmailVerification = resendEmailVerification;
 exports.forgotPassword = forgotPassword;
 exports.resetPassword = resetPassword;
 exports.refreshAccessToken = refreshAccessToken;
-const index_1 = require("../../../src/index");
+const prismadb_1 = require("../../lib/prismadb");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const token_1 = require("./token");
@@ -67,7 +67,7 @@ async function login(req, res) {
                 .status(400)
                 .json({ message: "Password should be at least 8 characters" });
         }
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 email,
             },
@@ -119,7 +119,7 @@ async function login(req, res) {
             id: existingUser?.id,
             role: existingUser?.role,
         }, process.env.JWT_SECRET, { expiresIn: "30d" });
-        const updatedExistingUser = await index_1.prismadb.user.update({
+        const updatedExistingUser = await prismadb_1.prismadb.user.update({
             data: {
                 access_token,
             },
@@ -189,12 +189,12 @@ async function googleAuth(req, res) {
             console.warn("Google authentication requested without ID token or Access Token. This is insecure.");
         }
         const normalizedEmail = email.toLowerCase();
-        let user = await index_1.prismadb.user.findUnique({
+        let user = await prismadb_1.prismadb.user.findUnique({
             where: { email: normalizedEmail },
         });
         if (!user) {
             // Creating new user if doesn't exist
-            user = await index_1.prismadb.user.create({
+            user = await prismadb_1.prismadb.user.create({
                 data: {
                     email: normalizedEmail,
                     name: name || "Google User",
@@ -205,7 +205,7 @@ async function googleAuth(req, res) {
             });
             console.log(`[GOOGLE_AUTH]: Created new user: ${normalizedEmail}`);
             // Creating account record for Google OAuth
-            await index_1.prismadb.account.create({
+            await prismadb_1.prismadb.account.create({
                 data: {
                     userId: user.id,
                     type: "oauth",
@@ -217,14 +217,14 @@ async function googleAuth(req, res) {
         else {
             // Update existing user's image if missing
             if (!user.image && image) {
-                await index_1.prismadb.user.update({
+                await prismadb_1.prismadb.user.update({
                     where: { id: user.id },
                     data: { image },
                 });
             }
         }
         // Checking if this Google account is linked to the user
-        const existingAccount = await index_1.prismadb.account.findFirst({
+        const existingAccount = await prismadb_1.prismadb.account.findFirst({
             where: {
                 userId: user.id,
                 provider: "google",
@@ -232,7 +232,7 @@ async function googleAuth(req, res) {
             },
         });
         if (!existingAccount) {
-            await index_1.prismadb.account.create({
+            await prismadb_1.prismadb.account.create({
                 data: {
                     userId: user.id,
                     type: "oauth",
@@ -246,7 +246,7 @@ async function googleAuth(req, res) {
         const access_token = jsonwebtoken_1.default.sign({ email: user.email, id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "30d" });
         const refresh_token = jsonwebtoken_1.default.sign({ email: user.email, id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "30d" });
         // Update user with new access token
-        const updatedUser = await index_1.prismadb.user.update({
+        const updatedUser = await prismadb_1.prismadb.user.update({
             where: { id: user.id },
             data: { access_token },
         });
@@ -268,7 +268,7 @@ async function account(req, res) {
         if (!type || !provider || !providerAccountId) {
             return res.status(400).json({ message: "Invalid field" });
         }
-        const oauthAccount = await index_1.prismadb.account.create({
+        const oauthAccount = await prismadb_1.prismadb.account.create({
             data: {
                 userId,
                 type,
@@ -309,7 +309,7 @@ async function register(req, res) {
         if (!isPasswordValid) {
             return;
         }
-        const existingUsers = await index_1.prismadb.user.findMany({
+        const existingUsers = await prismadb_1.prismadb.user.findMany({
             where: {
                 OR: [{ email }, { phone_number }],
             },
@@ -333,7 +333,7 @@ async function register(req, res) {
         }
         const salt = await bcryptjs_1.default.genSalt(10);
         const hashedPassword = await bcryptjs_1.default.hash(password, salt);
-        const user = await index_1.prismadb.user.create({
+        const user = await prismadb_1.prismadb.user.create({
             data: {
                 name,
                 email,
@@ -360,7 +360,7 @@ async function verifyEmail(req, res) {
         if (!code || typeof code !== "string") {
             return res.status(400).json({ message: "Invalid verification code" });
         }
-        const existingToken = await index_1.prismadb.verificationToken.findUnique({
+        const existingToken = await prismadb_1.prismadb.verificationToken.findUnique({
             where: {
                 token: code,
             },
@@ -372,12 +372,12 @@ async function verifyEmail(req, res) {
         if (hasExpired) {
             return res.status(403).json({ message: "Token has expired" });
         }
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 email: existingToken?.email,
             },
         });
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             where: {
                 id: existingUser?.id,
             },
@@ -386,7 +386,7 @@ async function verifyEmail(req, res) {
                 email: existingToken?.email,
             },
         });
-        await index_1.prismadb.verificationToken.delete({
+        await prismadb_1.prismadb.verificationToken.delete({
             where: {
                 id: existingToken?.id,
                 email: existingToken?.email,
@@ -407,7 +407,7 @@ async function resendEmailVerification(req, res) {
         if (!email || typeof email !== "string") {
             return res.status(400).json({ message: "Invalid field" });
         }
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 email,
             },
@@ -432,7 +432,7 @@ async function forgotPassword(req, res) {
         if (!email || typeof email !== "string") {
             return res.status(400).json({ message: "Invalid field" });
         }
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 email,
             },
@@ -461,7 +461,7 @@ async function resetPassword(req, res) {
         if (password !== password_confirmation) {
             return res.status(400).json({ message: "Password do not match!" });
         }
-        const existingToken = await index_1.prismadb.passwordResetToken.findUnique({
+        const existingToken = await prismadb_1.prismadb.passwordResetToken.findUnique({
             where: {
                 token: code,
             },
@@ -474,7 +474,7 @@ async function resetPassword(req, res) {
             return res.status(403).json({ message: "Token has expired" });
         }
         const hashedPassword = await bcryptjs_1.default.hash(password, 10);
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             data: {
                 password: hashedPassword,
                 email: existingToken?.email,
@@ -483,7 +483,7 @@ async function resetPassword(req, res) {
                 email: existingToken?.email,
             },
         });
-        await index_1.prismadb.passwordResetToken.delete({
+        await prismadb_1.prismadb.passwordResetToken.delete({
             where: {
                 token: existingToken.token,
             },
@@ -513,7 +513,7 @@ async function refreshAccessToken(req, res) {
             return res.status(403).json({ message: "Invalid refresh token" });
         }
         // Check if the refresh token is still valid
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 id: payload.id,
             },
@@ -527,7 +527,7 @@ async function refreshAccessToken(req, res) {
             id: existingUser.id,
             role: existingUser.role,
         }, process.env.JWT_SECRET, { expiresIn: "1h" });
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             data: {
                 access_token,
             },

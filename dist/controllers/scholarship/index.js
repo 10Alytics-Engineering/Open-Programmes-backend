@@ -39,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.applyForScholarship = applyForScholarship;
 exports.getScholarshipApplications = getScholarshipApplications;
 exports.syncScholarshipToSheets = syncScholarshipToSheets;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const mail_1 = require("./mail");
@@ -84,7 +84,7 @@ async function applyForScholarship(req, res) {
             console.log(`${TRACE_ID} No password provided. User may set it later.`);
         }
         // 3. ATOMIC TRANSACTIONS (FOOLPROOF IDENTITY MANAGEMENT)
-        const result = await index_1.prismadb.$transaction(async (tx) => {
+        const result = await prismadb_1.prismadb.$transaction(async (tx) => {
             // A. Check for existing application by email OR phone first
             // This satisfies the requirement to redirect existing applicants without errors.
             let application = await tx.scholarshipApplication.findFirst({
@@ -171,7 +171,7 @@ async function applyForScholarship(req, res) {
         const access_token = jsonwebtoken_1.default.sign(payload, secret, { expiresIn: "30d" });
         const refresh_token = jsonwebtoken_1.default.sign(payload, secret, { expiresIn: "30d" });
         // Synchronize access token to user record
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             where: { id: user.id },
             data: { access_token }
         });
@@ -217,7 +217,7 @@ async function applyForScholarship(req, res) {
  */
 async function getScholarshipApplications(req, res) {
     try {
-        const data = await index_1.prismadb.scholarshipApplication.findMany({
+        const data = await prismadb_1.prismadb.scholarshipApplication.findMany({
             include: { user: true },
             orderBy: { createdAt: "desc" }
         });

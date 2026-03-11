@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { UserRole, PaymentStatusType } from "@prisma/client";
 import { generateRandomPassword } from "./password";
 import { sendWelcomeEmail } from "./mail";

@@ -1,5 +1,5 @@
 import { generateRandom6DigitNumber } from "../../hooks/generate6digits";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { v4 as uuidv4 } from "uuid";
 
 export const generateVerificationToken = async (email: string) => {

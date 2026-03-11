@@ -1,10 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseAdminDashboard = exports.getCourseAdminStudentEngagement = exports.getCourseAdminStudents = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 // Helper function to get student engagement data
 async function getStudentEngagementData(userId, courseId) {
-    const enrolledCourses = await index_1.prismadb.purchase.findMany({
+    const enrolledCourses = await prismadb_1.prismadb.purchase.findMany({
         where: { userId },
         include: {
             course: {
@@ -23,14 +23,14 @@ async function getStudentEngagementData(userId, courseId) {
             },
         },
     });
-    const completedVideos = await index_1.prismadb.userProgress.findMany({
+    const completedVideos = await prismadb_1.prismadb.userProgress.findMany({
         where: {
             userId,
             isCompleted: true,
             ...(courseId ? { courseId } : {}),
         },
     });
-    const videoDetails = await index_1.prismadb.projectVideo.findMany({
+    const videoDetails = await prismadb_1.prismadb.projectVideo.findMany({
         where: {
             id: { in: completedVideos.map((v) => v.videoId) },
         },
@@ -42,7 +42,7 @@ async function getStudentEngagementData(userId, courseId) {
             },
         },
     });
-    const quizAnswers = await index_1.prismadb.userQuizAnswer.findMany({
+    const quizAnswers = await prismadb_1.prismadb.userQuizAnswer.findMany({
         where: { userId },
         include: {
             quizAnswer: {
@@ -104,7 +104,7 @@ const getCourseAdminStudents = async (req, res) => {
     try {
         const { courseId } = req.params;
         // Get all students enrolled in this course
-        const students = await index_1.prismadb.purchase.findMany({
+        const students = await prismadb_1.prismadb.purchase.findMany({
             where: { courseId },
             include: {
                 user: {
@@ -148,7 +148,7 @@ const getCourseAdminStudents = async (req, res) => {
         }
         // Get all completed videos for these users in this course
         const userIds = students.map((s) => s.user.id);
-        const completedVideos = await index_1.prismadb.userProgress.findMany({
+        const completedVideos = await prismadb_1.prismadb.userProgress.findMany({
             where: {
                 userId: { in: userIds },
                 courseId,
@@ -194,7 +194,7 @@ const getCourseAdminStudentEngagement = async (req, res) => {
     try {
         const { courseId, studentId } = req.params;
         // Verify the student is enrolled in this course
-        const enrollment = await index_1.prismadb.purchase.findFirst({
+        const enrollment = await prismadb_1.prismadb.purchase.findFirst({
             where: {
                 courseId,
                 userId: studentId,
@@ -229,7 +229,7 @@ const getCourseAdminDashboard = async (req, res) => {
         const user = req.user;
         // For admins, show all courses
         if (user.role === "ADMIN") {
-            const courses = await index_1.prismadb.course.findMany({
+            const courses = await prismadb_1.prismadb.course.findMany({
                 include: {
                     _count: {
                         select: {
@@ -248,7 +248,7 @@ const getCourseAdminDashboard = async (req, res) => {
         // For course admins, we need to determine which courses they manage
         // Since we're not modifying schema, we'll assume course admins manage all courses
         // In a real implementation, you'd want to add a CourseAdmin model
-        const courses = await index_1.prismadb.course.findMany({
+        const courses = await prismadb_1.prismadb.course.findMany({
             include: {
                 _count: {
                     select: {

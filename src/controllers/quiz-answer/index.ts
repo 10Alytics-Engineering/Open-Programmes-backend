@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { incrementPoints } from "../../helpers/increment-points";
 import { NebiantUser } from "../../middleware";
 

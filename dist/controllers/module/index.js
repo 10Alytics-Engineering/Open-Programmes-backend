@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createModule = exports.getModulesByWeek = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -12,7 +12,7 @@ const getModulesByWeek = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const modules = await index_1.prismadb.module.findMany({
+        const modules = await prismadb_1.prismadb.module.findMany({
             where: { courseWeekId: weekId },
             orderBy: { createdAt: "asc" },
         });
@@ -35,7 +35,7 @@ const createModule = async (req, res) => {
                 message: "Title and courseWeekId are required",
             });
         }
-        const newModule = await index_1.prismadb.module.create({
+        const newModule = await prismadb_1.prismadb.module.create({
             data: {
                 title,
                 description: description || "",

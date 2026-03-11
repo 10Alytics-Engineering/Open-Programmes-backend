@@ -1,14 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteBlog = exports.updateBlog = exports.createBlog = exports.getBlog = exports.getBlogs = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
 };
 const getBlogs = async (req, res) => {
     try {
-        const blogs = await index_1.prismadb.blog.findMany({
+        const blogs = await prismadb_1.prismadb.blog.findMany({
             include: {
                 images: true,
             },
@@ -26,7 +26,7 @@ exports.getBlogs = getBlogs;
 const getBlog = async (req, res) => {
     const { blogId } = req.params;
     try {
-        const existingBlog = await index_1.prismadb.blog.findUnique({
+        const existingBlog = await prismadb_1.prismadb.blog.findUnique({
             where: {
                 id: blogId,
             },
@@ -56,7 +56,7 @@ const createBlog = async (req, res) => {
         return res.status(400).json({ message: "Image is required" });
     }
     try {
-        const blog = await index_1.prismadb.blog.create({
+        const blog = await prismadb_1.prismadb.blog.create({
             data: {
                 title,
                 content,
@@ -84,7 +84,7 @@ const updateBlog = async (req, res) => {
     const { blogId } = req.params;
     const { title, content, mins_read, images, } = req.body;
     try {
-        const existingBlog = await index_1.prismadb.blog.findUnique({
+        const existingBlog = await prismadb_1.prismadb.blog.findUnique({
             where: {
                 id: blogId,
             },
@@ -92,7 +92,7 @@ const updateBlog = async (req, res) => {
         if (!existingBlog) {
             return res.status(404).json({ message: "Nonexistent Blog!" });
         }
-        await index_1.prismadb.blog.update({
+        await prismadb_1.prismadb.blog.update({
             where: {
                 id: existingBlog.id,
             },
@@ -105,7 +105,7 @@ const updateBlog = async (req, res) => {
                 },
             },
         });
-        const blog = await index_1.prismadb.blog.update({
+        const blog = await prismadb_1.prismadb.blog.update({
             where: {
                 id: existingBlog.id,
             },
@@ -138,7 +138,7 @@ exports.updateBlog = updateBlog;
 const deleteBlog = async (req, res) => {
     const { blogId } = req.params;
     try {
-        const existingBlog = await index_1.prismadb.blog.findUnique({
+        const existingBlog = await prismadb_1.prismadb.blog.findUnique({
             where: {
                 id: blogId,
             },
@@ -146,7 +146,7 @@ const deleteBlog = async (req, res) => {
         if (!existingBlog) {
             return res.status(404).json({ message: "Nonexistent Blog!" });
         }
-        await index_1.prismadb.blog.delete({
+        await prismadb_1.prismadb.blog.delete({
             where: {
                 id: existingBlog.id,
             },

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import { User } from "@prisma/client";
 // Helper function to get student engagement data
 async function getStudentEngagementData(userId: string, courseId?: string) {

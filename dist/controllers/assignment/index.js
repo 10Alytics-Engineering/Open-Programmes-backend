@@ -1,13 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAssignmentQuizResults = exports.createQuizAssignment = exports.bulkGradeSubmissions = exports.gradeSubmission = exports.getAssignmentSubmissions = exports.submitAssignment = exports.getAssignmentSubmission = exports.getAssignment = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("../authentication/mail");
 // Updated getAssignment to include assignment quiz questions
 const getAssignment = async (req, res) => {
     try {
         const { assignmentId } = req.params;
-        const assignment = await index_1.prismadb.assignment.findUnique({
+        const assignment = await prismadb_1.prismadb.assignment.findUnique({
             where: { id: assignmentId },
             include: {
                 attachments: true,
@@ -69,7 +69,7 @@ const getAssignmentSubmission = async (req, res) => {
         if (!studentId) {
             return res.status(400).json({ error: "Student ID is required" });
         }
-        const submission = await index_1.prismadb.assignmentSubmission.findUnique({
+        const submission = await prismadb_1.prismadb.assignmentSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
                     assignmentId,
@@ -97,7 +97,7 @@ const submitAssignment = async (req, res) => {
         const user = req.user;
         const studentId = user.id;
         // Check if assignment exists
-        const assignment = await index_1.prismadb.assignment.findUnique({
+        const assignment = await prismadb_1.prismadb.assignment.findUnique({
             where: { id: assignmentId },
             include: {
                 assignmentQuizQuestions: {
@@ -115,7 +115,7 @@ const submitAssignment = async (req, res) => {
             return await handleAssignmentQuizSubmission(assignment, quizAnswers, studentId, res);
         }
         // Handle regular assignment submission (existing code)
-        const existingSubmission = await index_1.prismadb.assignmentSubmission.findUnique({
+        const existingSubmission = await prismadb_1.prismadb.assignmentSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
                     assignmentId,
@@ -131,7 +131,7 @@ const submitAssignment = async (req, res) => {
             return res.status(400).json({ error: "Assignment submission is overdue" });
         }
         // Create submission with Cloudinary URL
-        const submission = await index_1.prismadb.assignmentSubmission.create({
+        const submission = await prismadb_1.prismadb.assignmentSubmission.create({
             data: {
                 content: content || null,
                 fileUrl: fileUrl || null,
@@ -167,7 +167,7 @@ exports.submitAssignment = submitAssignment;
 const getAssignmentSubmissions = async (req, res) => {
     try {
         const { assignmentId } = req.params;
-        const submissions = await index_1.prismadb.assignmentSubmission.findMany({
+        const submissions = await prismadb_1.prismadb.assignmentSubmission.findMany({
             where: { assignmentId },
             include: {
                 student: {
@@ -202,7 +202,7 @@ const gradeSubmission = async (req, res) => {
         const { submissionId } = req.params;
         const { grade, feedback, gradedById } = req.body;
         // Validate grade
-        const assignment = await index_1.prismadb.assignment.findFirst({
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
             where: {
                 submissions: {
                     some: { id: submissionId }
@@ -217,7 +217,7 @@ const gradeSubmission = async (req, res) => {
         if (grade < 0 || grade > maxPoints) {
             return res.status(400).json({ error: `Grade must be between 0 and ${maxPoints}` });
         }
-        const submission = await index_1.prismadb.assignmentSubmission.update({
+        const submission = await prismadb_1.prismadb.assignmentSubmission.update({
             where: { id: submissionId },
             data: {
                 grade: parseInt(grade),
@@ -279,7 +279,7 @@ const bulkGradeSubmissions = async (req, res) => {
             return res.status(400).json({ error: "No grades provided" });
         }
         // Get assignment to validate points
-        const assignment = await index_1.prismadb.assignment.findUnique({
+        const assignment = await prismadb_1.prismadb.assignment.findUnique({
             where: { id: assignmentId },
             select: { points: true }
         });
@@ -296,7 +296,7 @@ const bulkGradeSubmissions = async (req, res) => {
             }
         }
         // Update all submissions in a transaction
-        const results = await index_1.prismadb.$transaction(grades.map(gradeData => index_1.prismadb.assignmentSubmission.update({
+        const results = await prismadb_1.prismadb.$transaction(grades.map(gradeData => prismadb_1.prismadb.assignmentSubmission.update({
             where: { id: gradeData.submissionId },
             data: {
                 grade: parseInt(gradeData.grade),
@@ -336,7 +336,7 @@ const createQuizAssignment = async (req, res) => {
             });
         }
         // Get the topic to get the cohortCourseId (same as in addSubItem)
-        const topic = await index_1.prismadb.classroomTopic.findUnique({
+        const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
             where: { id: classroomTopicId },
             select: {
                 id: true,
@@ -391,7 +391,7 @@ const createQuizAssignment = async (req, res) => {
         // Calculate total points
         const totalPoints = points || questions.reduce((sum, q) => sum + (q.points || 1), 0);
         // Create the quiz assignment using the same pattern as regular assignments
-        const assignment = await index_1.prismadb.assignment.create({
+        const assignment = await prismadb_1.prismadb.assignment.create({
             data: {
                 title: title.trim(),
                 description: description?.trim(),
@@ -433,7 +433,7 @@ const createQuizAssignment = async (req, res) => {
         });
         // Send Notification to all students in the cohort
         try {
-            const students = await index_1.prismadb.userCohort.findMany({
+            const students = await prismadb_1.prismadb.userCohort.findMany({
                 where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
                 include: { user: { select: { email: true } } }
             });
@@ -473,7 +473,7 @@ exports.createQuizAssignment = createQuizAssignment;
 // Helper function for quiz submission
 const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId, res) => {
     // Check if already submitted
-    const existingSubmission = await index_1.prismadb.assignmentQuizSubmission.findUnique({
+    const existingSubmission = await prismadb_1.prismadb.assignmentQuizSubmission.findUnique({
         where: {
             assignmentId_studentId: {
                 assignmentId: assignment.id,
@@ -501,7 +501,7 @@ const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId
         };
     }));
     // Create quiz submission with answers
-    const submission = await index_1.prismadb.assignmentQuizSubmission.create({
+    const submission = await prismadb_1.prismadb.assignmentQuizSubmission.create({
         data: {
             assignmentId: assignment.id,
             studentId,
@@ -526,7 +526,7 @@ const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId
         }
     });
     // Also create a regular assignment submission for consistency
-    await index_1.prismadb.assignmentSubmission.create({
+    await prismadb_1.prismadb.assignmentSubmission.create({
         data: {
             assignmentId: assignment.id,
             studentId,
@@ -547,7 +547,7 @@ const getAssignmentQuizResults = async (req, res) => {
     try {
         const { assignmentId } = req.params;
         const { studentId } = req.query;
-        const assignmentQuizSubmission = await index_1.prismadb.assignmentQuizSubmission.findUnique({
+        const assignmentQuizSubmission = await prismadb_1.prismadb.assignmentQuizSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
                     assignmentId,

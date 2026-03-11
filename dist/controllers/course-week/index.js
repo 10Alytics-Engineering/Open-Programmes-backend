@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.unPublishCourseWeek = exports.publishCourseWeek = exports.deleteCourseWeek = exports.updateCourseWeek = exports.createCourseWeek = exports.getCourseWeek = exports.getCourseWeeks = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -12,7 +12,7 @@ const getCourseWeeks = async (req, res) => {
         return res.status(400).json({ message: "CourseId is required" });
     }
     try {
-        const courseWeeks = await index_1.prismadb.courseWeek.findMany({
+        const courseWeeks = await prismadb_1.prismadb.courseWeek.findMany({
             where: {
                 courseId,
             },
@@ -38,7 +38,7 @@ const getCourseWeek = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -46,7 +46,7 @@ const getCourseWeek = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const courseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const courseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -81,7 +81,7 @@ const createCourseWeek = async (req, res) => {
         if (!title) {
             return res.status(400).json({ message: "Title is required" });
         }
-        const courseWeek = await index_1.prismadb.courseWeek.create({
+        const courseWeek = await prismadb_1.prismadb.courseWeek.create({
             data: {
                 title,
                 courseId,
@@ -110,7 +110,7 @@ const updateCourseWeek = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -118,7 +118,7 @@ const updateCourseWeek = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const updatedCourseWeek = await index_1.prismadb.courseWeek.update({
+        const updatedCourseWeek = await prismadb_1.prismadb.courseWeek.update({
             where: {
                 id: weekId,
             },
@@ -148,7 +148,7 @@ const deleteCourseWeek = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -157,7 +157,7 @@ const deleteCourseWeek = async (req, res) => {
             return res.status(404).json({ message: "Course does not exist" });
         }
         // Use a transaction to ensure atomicity
-        await index_1.prismadb.$transaction(async (tx) => {
+        await prismadb_1.prismadb.$transaction(async (tx) => {
             // First, delete all related Module records
             await tx.module.deleteMany({
                 where: {
@@ -187,7 +187,7 @@ const publishCourseWeek = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -195,7 +195,7 @@ const publishCourseWeek = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const updatedCourseWeek = await index_1.prismadb.courseWeek.update({
+        const updatedCourseWeek = await prismadb_1.prismadb.courseWeek.update({
             where: {
                 id: weekId,
             },
@@ -225,7 +225,7 @@ const unPublishCourseWeek = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: {
                 id: courseId,
             },
@@ -233,7 +233,7 @@ const unPublishCourseWeek = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const updatedCourseWeek = await index_1.prismadb.courseWeek.update({
+        const updatedCourseWeek = await prismadb_1.prismadb.courseWeek.update({
             where: {
                 id: weekId,
             },

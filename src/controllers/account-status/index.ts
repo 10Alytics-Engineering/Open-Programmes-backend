@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 
 export const toggleUserAccountStatus = async (req: Request, res: Response) => {
   try {

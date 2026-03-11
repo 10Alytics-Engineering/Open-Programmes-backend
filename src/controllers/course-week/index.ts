@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });

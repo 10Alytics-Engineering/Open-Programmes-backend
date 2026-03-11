@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteModule = exports.updateModule = exports.createModule = exports.getModule = exports.getModules = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -15,7 +15,7 @@ const getModules = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -23,7 +23,7 @@ const getModules = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        const modules = await index_1.prismadb.module.findMany({
+        const modules = await prismadb_1.prismadb.module.findMany({
             where: {
                 courseWeekId: weekId,
             },
@@ -60,7 +60,7 @@ const getModule = async (req, res) => {
         if (!moduleId) {
             return res.status(400).json({ message: "ModuleId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -68,7 +68,7 @@ const getModule = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        const module = await index_1.prismadb.module.findUnique({
+        const module = await prismadb_1.prismadb.module.findUnique({
             where: {
                 id: moduleId,
                 courseWeekId: weekId,
@@ -107,7 +107,7 @@ const createModule = async (req, res) => {
         if (!weekId) {
             return res.status(400).json({ message: "WeekId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -115,7 +115,7 @@ const createModule = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        const module = await index_1.prismadb.module.create({
+        const module = await prismadb_1.prismadb.module.create({
             data: {
                 title,
                 courseWeekId: weekId,
@@ -147,7 +147,7 @@ const updateModule = async (req, res) => {
         if (!moduleId) {
             return res.status(400).json({ message: "ModuleId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -155,7 +155,7 @@ const updateModule = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        await index_1.prismadb.module.update({
+        await prismadb_1.prismadb.module.update({
             where: {
                 id: moduleId,
             },
@@ -182,7 +182,7 @@ const deleteModule = async (req, res) => {
         if (!moduleId) {
             return res.status(400).json({ message: "ModuleId is required" });
         }
-        const existingCourseWeek = await index_1.prismadb.courseWeek.findUnique({
+        const existingCourseWeek = await prismadb_1.prismadb.courseWeek.findUnique({
             where: {
                 id: weekId,
             },
@@ -190,7 +190,7 @@ const deleteModule = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        await index_1.prismadb.module.delete({
+        await prismadb_1.prismadb.module.delete({
             where: {
                 id: moduleId,
             },

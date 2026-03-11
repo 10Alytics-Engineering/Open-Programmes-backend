@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.addToCompleted = exports.addToOngoing = void 0;
-const index_1 = require("../../../src/index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({
@@ -14,7 +14,7 @@ const addToOngoing = async (req, res) => {
         const user = req.user;
         const userId = user?.id;
         const { courseId } = req.body;
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 id: userId,
             },
@@ -22,7 +22,7 @@ const addToOngoing = async (req, res) => {
         if (!existingUser) {
             return res.status(404).json({ message: "User does not exist" });
         }
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             data: {
                 ongoing_courses: {
                     push: courseId,
@@ -46,7 +46,7 @@ const addToCompleted = async (req, res) => {
         const user = req.user;
         const userId = user?.id;
         const { courseId } = req.body;
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: {
                 id: userId,
             },
@@ -55,7 +55,7 @@ const addToCompleted = async (req, res) => {
             return res.status(404).json({ message: "User does not exist" });
         }
         const updatedOngoingCourses = existingUser.ongoing_courses.filter((id) => id !== courseId);
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             data: {
                 ongoing_courses: updatedOngoingCourses,
                 completed_courses: {

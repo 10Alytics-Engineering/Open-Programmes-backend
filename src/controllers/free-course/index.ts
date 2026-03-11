@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import PDFDocument from "pdfkit";
 
 const handleServerError = (error: any, res: Response) => {

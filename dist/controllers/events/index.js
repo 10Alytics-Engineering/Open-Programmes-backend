@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCurrentWeek = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const getCurrentWeek = async (req, res) => {
     try {
         const { userId, courseId } = req.params;
@@ -12,7 +12,7 @@ const getCurrentWeek = async (req, res) => {
             return res.status(400).json({ message: "CourseId is required" });
         }
         // Get user's cohort for this course
-        const userCohort = await index_1.prismadb.userCohort.findFirst({
+        const userCohort = await prismadb_1.prismadb.userCohort.findFirst({
             where: {
                 userId,
                 courseId,
@@ -30,7 +30,7 @@ const getCurrentWeek = async (req, res) => {
         const diffInMs = now.getTime() - cohortStartDate.getTime();
         const diffInWeeks = Math.floor(diffInMs / (1000 * 60 * 60 * 24 * 7)) + 1; // +1 to count the current week
         // Get all weeks for this course
-        const courseWeeks = await index_1.prismadb.courseWeek.findMany({
+        const courseWeeks = await prismadb_1.prismadb.courseWeek.findMany({
             where: {
                 courseId,
             },
@@ -45,7 +45,7 @@ const getCurrentWeek = async (req, res) => {
         const currentWeekNumber = Math.min(diffInWeeks, courseWeeks.length);
         const currentWeek = courseWeeks[currentWeekNumber - 1]; // -1 because array is 0-indexed
         // Get upcoming events for this week
-        const upcomingEvents = await index_1.prismadb.timeTable.findMany({
+        const upcomingEvents = await prismadb_1.prismadb.timeTable.findMany({
             where: {
                 courseId,
                 date: {

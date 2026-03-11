@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.communityLinkChange = exports.createBulkUsers = exports.createUser = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const password_1 = require("./password");
 const mail_1 = require("./mail");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -24,7 +24,7 @@ const createUser = async (req, res) => {
             return res.status(400).json({ error: "Missing required fields" });
         }
         // Check if user exists
-        const existingUser = await index_1.prismadb.user.findUnique({ where: { email } });
+        const existingUser = await prismadb_1.prismadb.user.findUnique({ where: { email } });
         if (existingUser) {
             return res.status(409).json({ error: "User already exists" });
         }
@@ -34,7 +34,7 @@ const createUser = async (req, res) => {
         const salt = await bcryptjs_1.default.genSalt(10);
         const hashedPassword = await bcryptjs_1.default.hash(password, salt);
         // Create user
-        const user = await index_1.prismadb.user.create({
+        const user = await prismadb_1.prismadb.user.create({
             data: {
                 name,
                 email,
@@ -44,7 +44,7 @@ const createUser = async (req, res) => {
             },
         });
         // Add to cohort
-        await index_1.prismadb.userCohort.create({
+        await prismadb_1.prismadb.userCohort.create({
             data: {
                 userId: user.id,
                 cohortId,
@@ -64,7 +64,7 @@ const createUser = async (req, res) => {
         });
         */
         // Record purchase
-        await index_1.prismadb.purchase.create({
+        await prismadb_1.prismadb.purchase.create({
             data: {
                 userId: user.id,
                 courseId,
@@ -100,7 +100,7 @@ const createBulkUsers = async (req, res) => {
                     return res.status(400).json({ message: "Missing required Fields!" });
                 }
                 // Check if user exists
-                const existingUser = await index_1.prismadb.user.findUnique({
+                const existingUser = await prismadb_1.prismadb.user.findUnique({
                     where: { email },
                 });
                 if (existingUser) {
@@ -113,7 +113,7 @@ const createBulkUsers = async (req, res) => {
                 const salt = await bcryptjs_1.default.genSalt(10);
                 const hashedPassword = await bcryptjs_1.default.hash(password, salt);
                 // Create user
-                const user = await index_1.prismadb.user.create({
+                const user = await prismadb_1.prismadb.user.create({
                     data: {
                         name,
                         email,
@@ -123,7 +123,7 @@ const createBulkUsers = async (req, res) => {
                     },
                 });
                 // Add to cohort
-                await index_1.prismadb.userCohort.create({
+                await prismadb_1.prismadb.userCohort.create({
                     data: {
                         userId: user.id,
                         cohortId,
@@ -141,7 +141,7 @@ const createBulkUsers = async (req, res) => {
                   },
                 }); */
                 // Record purchase
-                await index_1.prismadb.purchase.create({
+                await prismadb_1.prismadb.purchase.create({
                     data: {
                         userId: user.id,
                         courseId,
@@ -181,7 +181,7 @@ const communityLinkChange = async (req, res) => {
             return res.status(400).json({ error: "Add a link to update" });
         }
         // Update the community link for the specified course and cohort
-        await index_1.prismadb.links.update({
+        await prismadb_1.prismadb.links.update({
             where: { id: 1 },
             data: { communityLink },
         });

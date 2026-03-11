@@ -1,4 +1,4 @@
-import { prismadb } from "../../index";
+import { prismadb } from "../../lib/prismadb";
 import * as dotenv from 'dotenv';
 import { sendMail } from '../../utils/nodemailer';
 

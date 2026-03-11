@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseProgress = exports.submitQuizAnswer = exports.updateCourseVideoProgress = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const handleError = (error, res) => {
     console.error("Error:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -17,7 +17,7 @@ const updateCourseVideoProgress = async (req, res) => {
             return res.status(400).json({ message: "Missing required fields" });
         }
         // Using your existing schema without progressPercentage
-        const progressRecord = await index_1.prismadb.userProgress.upsert({
+        const progressRecord = await prismadb_1.prismadb.userProgress.upsert({
             where: {
                 userId_videoId_courseId: {
                     userId: user.id,
@@ -52,7 +52,7 @@ const submitQuizAnswer = async (req, res) => {
             return res.status(400).json({ message: "Missing answer ID" });
         }
         // Get answer with quiz info using your schema relations
-        const answer = await index_1.prismadb.quizAnswer.findUnique({
+        const answer = await prismadb_1.prismadb.quizAnswer.findUnique({
             where: { id: quizAnswerId },
             include: {
                 quiz: {
@@ -65,7 +65,7 @@ const submitQuizAnswer = async (req, res) => {
         if (!answer)
             return res.status(404).json({ message: "Answer not found" });
         // Check for existing answer
-        const existingAnswer = await index_1.prismadb.userQuizAnswer.findFirst({
+        const existingAnswer = await prismadb_1.prismadb.userQuizAnswer.findFirst({
             where: {
                 userId: user.id,
                 quizAnswerId
@@ -75,7 +75,7 @@ const submitQuizAnswer = async (req, res) => {
             return res.status(400).json({ message: "Already answered this quiz" });
         }
         // Record answer
-        const userAnswer = await index_1.prismadb.userQuizAnswer.create({
+        const userAnswer = await prismadb_1.prismadb.userQuizAnswer.create({
             data: {
                 userId: user.id,
                 quizAnswerId
@@ -83,7 +83,7 @@ const submitQuizAnswer = async (req, res) => {
         });
         // Update leaderboard if correct
         if (answer.isCorrect) {
-            await index_1.prismadb.leaderboard.upsert({
+            await prismadb_1.prismadb.leaderboard.upsert({
                 where: {
                     userId_quizId: {
                         userId: user.id,
@@ -119,15 +119,15 @@ const getCourseProgress = async (req, res) => {
         if (!courseId)
             return res.status(400).json({ message: "Course ID required" });
         // Get all videos in course
-        const videos = await index_1.prismadb.projectVideo.findMany({
+        const videos = await prismadb_1.prismadb.projectVideo.findMany({
             where: { courseId },
             select: { id: true }
         });
         // Get all quizzes in course - fixed query to match your schema
-        const quizzes = await index_1.prismadb.quiz.findMany({
+        const quizzes = await prismadb_1.prismadb.quiz.findMany({
             where: {
                 moduleId: {
-                    in: await index_1.prismadb.module.findMany({
+                    in: await prismadb_1.prismadb.module.findMany({
                         where: {
                             CourseWeek: {
                                 courseId
@@ -140,7 +140,7 @@ const getCourseProgress = async (req, res) => {
             select: { id: true }
         });
         // Get completed videos
-        const completedVideos = await index_1.prismadb.userProgress.findMany({
+        const completedVideos = await prismadb_1.prismadb.userProgress.findMany({
             where: {
                 userId: user.id,
                 courseId,
@@ -149,7 +149,7 @@ const getCourseProgress = async (req, res) => {
             }
         });
         // Get completed quizzes
-        const quizAnswers = await index_1.prismadb.userQuizAnswer.findMany({
+        const quizAnswers = await prismadb_1.prismadb.userQuizAnswer.findMany({
             where: {
                 userId: user.id,
                 quizAnswer: {

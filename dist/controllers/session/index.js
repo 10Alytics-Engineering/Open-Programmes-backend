@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getActiveSessions = exports.createSession = void 0;
-const index_1 = require("../../index");
+const prismadb_1 = require("../../lib/prismadb");
 const createSession = async (req, res) => {
     try {
         const { title, description, startTime, endTime, sessionLink, } = req.body;
@@ -13,7 +13,7 @@ const createSession = async (req, res) => {
                 .status(400)
                 .json({ error: "End time must be after start time" });
         }
-        const session = await index_1.prismadb.sessions.create({
+        const session = await prismadb_1.prismadb.sessions.create({
             data: {
                 title,
                 description,

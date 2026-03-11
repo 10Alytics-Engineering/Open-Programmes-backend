@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserCourseProgress = exports.updateUserCohort = exports.removeUserCourse = exports.addUserCourse = exports.updateUserRole = exports.deleteUser = exports.updateUserImage = exports.updateUser = exports.getUserWithoutAuth = exports.getUserByEmail = exports.getUser = exports.searchUsers = exports.getUsers = void 0;
-const index_1 = require("../../../src/index");
+const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("./mail");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const handleServerError = (error, res) => {
@@ -50,11 +50,11 @@ const getUsers = async (req, res) => {
         const orderBy = {};
         orderBy[sortBy] = sortOrder;
         // Get total count for pagination
-        const totalUsers = await index_1.prismadb.user.count({
+        const totalUsers = await prismadb_1.prismadb.user.count({
             where: whereClause,
         });
         // Get paginated users
-        const users = await index_1.prismadb.user.findMany({
+        const users = await prismadb_1.prismadb.user.findMany({
             where: whereClause,
             include: {
                 course_purchased: {
@@ -140,7 +140,7 @@ const searchUsers = async (req, res) => {
                 data: [],
             });
         }
-        const users = await index_1.prismadb.user.findMany({
+        const users = await prismadb_1.prismadb.user.findMany({
             where: {
                 OR: [
                     { name: { contains: query, mode: "insensitive" } },
@@ -175,7 +175,7 @@ const getUser = async (req, res) => {
         if (!userId) {
             return res.status(400).json({ message: "UserId is required" });
         }
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
             include: {
                 completed_videos: true,
@@ -242,7 +242,7 @@ exports.getUser = getUser;
 const getUserByEmail = async (req, res) => {
     try {
         const { email } = req.params;
-        const user = await index_1.prismadb.user.findFirst({
+        const user = await prismadb_1.prismadb.user.findFirst({
             where: { email },
         });
         if (!user) {
@@ -260,7 +260,7 @@ exports.getUserByEmail = getUserByEmail;
 const getUserWithoutAuth = async (req, res) => {
     try {
         const { userId } = req.params;
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!user) {
@@ -283,7 +283,7 @@ const updateUser = async (req, res) => {
             return res.status(400).json({ message: "UserId is required" });
         }
         // Check if the user exists
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!existingUser) {
@@ -291,7 +291,7 @@ const updateUser = async (req, res) => {
         }
         // Check if email is already in use by another user
         if (email && email !== existingUser.email) {
-            const emailExists = await index_1.prismadb.user.findUnique({
+            const emailExists = await prismadb_1.prismadb.user.findUnique({
                 where: { email },
             });
             if (emailExists && emailExists.id !== userId) {
@@ -313,7 +313,7 @@ const updateUser = async (req, res) => {
             updateData.image = image;
         }
         // Update the user
-        const updatedUser = await index_1.prismadb.user.update({
+        const updatedUser = await prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: updateData,
             include: {
@@ -385,14 +385,14 @@ const updateUserImage = async (req, res) => {
             return res.status(400).json({ message: "UserId is required" });
         }
         // Check if the user exists
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!existingUser) {
             return res.status(404).json({ message: "User not found" });
         }
         // Update just the image field
-        const updatedUser = await index_1.prismadb.user.update({
+        const updatedUser = await prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: { image },
             include: {
@@ -452,13 +452,13 @@ exports.updateUserImage = updateUserImage;
 const deleteUser = async (req, res) => {
     try {
         const { userId } = req.params;
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!existingUser) {
             return res.status(404).json({ message: "Nonexistent User!" });
         }
-        await index_1.prismadb.$transaction(async (prisma) => {
+        await prismadb_1.prismadb.$transaction(async (prisma) => {
             await prisma.purchase.deleteMany({
                 where: {
                     userId,
@@ -496,13 +496,13 @@ const updateUserRole = async (req, res) => {
         if (!role) {
             return res.status(400).json({ message: "Invalid field" });
         }
-        const existingUser = await index_1.prismadb.user.findUnique({
+        const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!existingUser) {
             return res.status(404).json({ message: "Nonexistent User!" });
         }
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             data: {
                 role: role,
             },
@@ -528,20 +528,20 @@ const addUserCourse = async (req, res) => {
                 .status(400)
                 .json({ message: "UserId and CourseId are required" });
         }
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: { id: courseId },
         });
         if (!course) {
             return res.status(404).json({ message: "Course not found" });
         }
         // Checking if user already has this course
-        const existingPurchase = await index_1.prismadb.purchase.findFirst({
+        const existingPurchase = await prismadb_1.prismadb.purchase.findFirst({
             where: {
                 userId,
                 courseId,
@@ -551,7 +551,7 @@ const addUserCourse = async (req, res) => {
             return res.status(400).json({ message: "User already has this course" });
         }
         // Finding the latest cohort for this course
-        const latestCohort = await index_1.prismadb.cohort.findFirst({
+        const latestCohort = await prismadb_1.prismadb.cohort.findFirst({
             where: {
                 courseId,
             },
@@ -560,14 +560,14 @@ const addUserCourse = async (req, res) => {
             },
         });
         // Add the course to user
-        const purchase = await index_1.prismadb.purchase.create({
+        const purchase = await prismadb_1.prismadb.purchase.create({
             data: {
                 userId,
                 courseId,
             },
         });
         // Update user's ongoing courses if not included
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: {
                 ongoing_courses: {
@@ -577,7 +577,7 @@ const addUserCourse = async (req, res) => {
         });
         // if the cohort exists, the user is added to that cohort
         if (latestCohort) {
-            await index_1.prismadb.userCohort.create({
+            await prismadb_1.prismadb.userCohort.create({
                 data: {
                     userId,
                     cohortId: latestCohort.id,
@@ -611,19 +611,19 @@ const removeUserCourse = async (req, res) => {
                 .status(400)
                 .json({ message: "UserId and CourseId are required" });
         }
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
         });
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-        const course = await index_1.prismadb.course.findUnique({
+        const course = await prismadb_1.prismadb.course.findUnique({
             where: { id: courseId },
         });
         if (!course) {
             return res.status(404).json({ message: "Course not found" });
         }
-        const existingPurchase = await index_1.prismadb.purchase.findFirst({
+        const existingPurchase = await prismadb_1.prismadb.purchase.findFirst({
             where: {
                 userId,
                 courseId,
@@ -633,21 +633,21 @@ const removeUserCourse = async (req, res) => {
             return res.status(400).json({ message: "User doesn't have this course" });
         }
         // Remove user from any cohorts associated with this course
-        await index_1.prismadb.userCohort.deleteMany({
+        await prismadb_1.prismadb.userCohort.deleteMany({
             where: {
                 userId,
                 courseId,
             },
         });
         // Remove the course purchase
-        await index_1.prismadb.purchase.deleteMany({
+        await prismadb_1.prismadb.purchase.deleteMany({
             where: {
                 userId,
                 courseId,
             },
         });
         // Update user's ongoing and completed courses arrays
-        await index_1.prismadb.user.update({
+        await prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: {
                 ongoing_courses: {
@@ -678,7 +678,7 @@ const updateUserCohort = async (req, res) => {
             });
         }
         // Check if user exists
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
             include: {
                 cohorts: {
@@ -698,7 +698,7 @@ const updateUserCohort = async (req, res) => {
             });
         }
         // Check if new cohort exists
-        const newCohort = await index_1.prismadb.cohort.findUnique({
+        const newCohort = await prismadb_1.prismadb.cohort.findUnique({
             where: { id: newCohortId },
             include: { course: true },
         });
@@ -712,7 +712,7 @@ const updateUserCohort = async (req, res) => {
             });
         }
         // Archive current enrollment (don't delete to preserve data)
-        await index_1.prismadb.userCohort.update({
+        await prismadb_1.prismadb.userCohort.update({
             where: { id: currentCohortEnrollment.id },
             data: {
                 //  isActive: false,
@@ -721,7 +721,7 @@ const updateUserCohort = async (req, res) => {
             },
         });
         // Create new enrollment
-        const newEnrollment = await index_1.prismadb.userCohort.create({
+        const newEnrollment = await prismadb_1.prismadb.userCohort.create({
             data: {
                 userId,
                 cohortId: newCohortId,
@@ -754,7 +754,7 @@ const getUserCourseProgress = async (req, res) => {
                 .json({ message: "UserId and CourseId are required" });
         }
         // Get user with their completed videos for this course
-        const user = await index_1.prismadb.user.findUnique({
+        const user = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
             include: {
                 completed_videos: {
