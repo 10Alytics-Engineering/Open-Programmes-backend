@@ -242,3 +242,58 @@ export async function syncScholarshipToSheets(req: Request, res: Response) {
         res.status(500).json({ status: "error", message: "Internal Server Error" });
     }
 }
+
+/**
+ * Sync Payment Data to Google Sheets (requires admin auth)
+ */
+export async function syncPaymentToSheets(req: Request, res: Response) {
+    try {
+        const { GoogleSheetsSyncService } = await import("../../utils/googleSheets");
+        const resObj = await GoogleSheetsSyncService.syncPaymentData();
+
+        if (resObj.success) {
+            return res.status(200).json({
+                status: "success",
+                message: `Successfully synced ${resObj.count} payment records.`
+            });
+        } else {
+            return res.status(500).json({ status: "error", message: "Failed to sync payment data to Sheets." });
+        }
+    } catch (error: any) {
+        console.error("[PAYMENT_SYNC_ERR]:", error);
+        res.status(500).json({ status: "error", message: "Internal Server Error" });
+    }
+}
+
+/**
+ * Public Sync Payment Data to Google Sheets (with secret key)
+ */
+export async function publicSyncPaymentToSheets(req: Request, res: Response) {
+    try {
+        const secretKey = process.env.SYNC_SECRET_KEY || 'default-sync-key-change-in-env';
+        const providedKey = req.query.key as string;
+
+        if (providedKey !== secretKey) {
+            return res.status(401).json({
+                status: "error",
+                message: "Invalid or missing secret key"
+            });
+        }
+
+        const { GoogleSheetsSyncService } = await import("../../utils/googleSheets");
+        const resObj = await GoogleSheetsSyncService.syncPaymentData();
+
+        if (resObj.success) {
+            return res.status(200).json({
+                status: "success",
+                message: `Successfully synced ${resObj.count} payment records to Google Sheets.`,
+                recordsExported: resObj.count
+            });
+        } else {
+            return res.status(500).json({ status: "error", message: "Failed to sync payment data to Sheets." });
+        }
+    } catch (error: any) {
+        console.error("[PUBLIC_PAYMENT_SYNC_ERR]:", error);
+        res.status(500).json({ status: "error", message: "Internal Server Error" });
+    }
+}

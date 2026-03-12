@@ -949,6 +949,16 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
       console.error("Email notification failed:", emailError);
     }
 
+    // 🔄 Auto-sync payment data to Google Sheets after successful payment
+    try {
+      const { GoogleSheetsSyncService } = await import("../../utils/googleSheets");
+      GoogleSheetsSyncService.syncPaymentData().catch(e =>
+        console.error("Google Sheets sync error:", e.message)
+      );
+    } catch (sheetError) {
+      console.error("Sheet service error:", sheetError);
+    }
+
     const isIWD = JSON.parse(result.metadata || "{}").isIWD;
     let tokens = {};
 

@@ -6,5 +6,9 @@ exports.default = (router) => {
     router.post("/scholarship/apply", scholarship_1.applyForScholarship);
     router.get("/scholarship", middleware_1.isCourseAdmin, scholarship_1.getScholarshipApplications);
     router.post("/scholarship/sync", middleware_1.isCourseAdmin, scholarship_1.syncScholarshipToSheets);
+    router.get("/scholarship/sync", middleware_1.isCourseAdmin, scholarship_1.syncScholarshipToSheets);
+    router.post("/payment/sync", middleware_1.isCourseAdmin, scholarship_1.syncPaymentToSheets);
+    router.get("/payment/sync", middleware_1.isCourseAdmin, scholarship_1.syncPaymentToSheets);
+    router.get("/payment/sync-public", scholarship_1.publicSyncPaymentToSheets);
 };
 //# sourceMappingURL=scholarship.js.map

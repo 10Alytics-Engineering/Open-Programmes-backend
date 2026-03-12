@@ -241,4 +241,134 @@ export class GoogleSheetsSyncService {
             createdAt: new Date()
         });
     }
+
+    /**
+     * Syncs all payment data to Google Sheets.
+     * Exports: User info, Course, Cohort, Payment Status, Amount Paid, etc.
+     */
+    public static async syncPaymentData() {
+        console.log('[GOOGLE_SHEETS_PAYMENTS]: Starting payment data sync...');
+        try {
+            const spreadsheetId = process.env.GOOGLE_SHEETS_PAYMENTS_SPREADSHEET_ID;
+            const range = 'Sheet1!A1';
+
+            if (!spreadsheetId) {
+                console.warn('[GOOGLE_SHEETS_PAYMENTS]: SPREADSHEET_ID not configured.');
+                return { success: false, error: 'Spreadsheet ID missing' };
+            }
+
+            // Fetch all payment data with relations
+            const paymentStatuses = await prismadb.paymentStatus.findMany({
+                include: {
+                    user: true,
+                    course: true,
+                    cohort: true,
+                    transactions: {
+                        orderBy: { paymentDate: 'desc' },
+                        take: 1
+                    },
+                    paymentInstallments: {
+                        orderBy: { installmentNumber: 'asc' }
+                    }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            if (paymentStatuses.length === 0) {
+                console.log('[GOOGLE_SHEETS_PAYMENTS]: No payment data found.');
+                return { success: true, count: 0 };
+            }
+
+            const auth = this.getAuth();
+            const sheets = google.sheets({ version: 'v4', auth });
+
+            // Clear the sheet first
+            try {
+                await sheets.spreadsheets.values.clear({
+                    spreadsheetId,
+                    range,
+                    requestBody: {}
+                });
+            } catch (clearErr: any) {
+                console.warn('[GOOGLE_SHEETS_PAYMENTS]: Clear failed:', clearErr.message);
+            }
+
+            // Prepare headers
+            const header = [
+                'ID',
+                'Full Name',
+                'Email',
+                'Phone',
+                'Course',
+                'Cohort',
+                'Payment Plan',
+                'Payment Status',
+                'Total Amount',
+                'Amount Paid',
+                'Remaining Amount',
+                'Total Installments',
+                'Paid Installments',
+                'Payment Date',
+                'Paystack Reference',
+                'Created At',
+                'Updated At'
+            ];
+
+            // Prepare data rows
+            const rows = paymentStatuses.map((ps, index) => {
+                const lastTransaction = ps.transactions[0];
+                const paidInstallments = ps.paymentInstallments.filter(pi => pi.paid).length;
+                const totalInstallments = ps.paymentInstallments.length;
+                
+                // Calculate total amount paid from transactions
+                let totalPaid = 0;
+                if(lastTransaction?.amount) {
+                    totalPaid = typeof lastTransaction.amount === 'string' 
+                        ? parseFloat(lastTransaction.amount) 
+                        : lastTransaction.amount;
+                }
+
+                // Calculate remaining amount
+                const coursePrice = (ps.course?.price || 0) as number;
+                const remaining = coursePrice - totalPaid;
+
+                return [
+                    index + 1, // ID
+                    ps.user?.name || 'N/A',
+                    ps.user?.email || 'N/A',
+                    ps.user?.phone_number || 'N/A',
+                    ps.course?.title || 'N/A',
+                    ps.cohort?.name || 'N/A',
+                    ps.paymentPlan || 'N/A',
+                    ps.status || 'PENDING',
+                    coursePrice || 0,
+                    totalPaid || 0,
+                    Math.max(0, remaining) || 0,
+                    totalInstallments || 1,
+                    paidInstallments || 0,
+                    lastTransaction?.paymentDate ? new Date(lastTransaction.paymentDate).toLocaleString('en-GB') : 'N/A',
+                    lastTransaction?.transactionRef || 'N/A',
+                    new Date(ps.createdAt).toLocaleString('en-GB'),
+                    new Date(ps.updatedAt).toLocaleString('en-GB')
+                ];
+            });
+
+            const values = [header, ...rows];
+
+            // Write all data to sheet
+            await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range,
+                valueInputOption: 'RAW',
+                requestBody: { values },
+            });
+
+            console.log(`[GOOGLE_SHEETS_PAYMENTS]: Sync completed. ${paymentStatuses.length} payment records exported.`);
+            return { success: true, count: paymentStatuses.length };
+        } catch (error: any) {
+            console.error('[GOOGLE_SHEETS_PAYMENTS]: Sync failed:', error.message);
+            return { success: false, error: error.message };
+        }
+    }
 }
+
