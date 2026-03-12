@@ -55,24 +55,38 @@ const sendVerificationEmail = async (email, token) => {
           <title>Email Verification</title>
           <style>
             body {
-              font-family: Arial, sans-serif;
-              background-color: #f4f4f4;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background-color: #f9f9f9;
+              margin: 0;
+              padding: 0;
             }
             .container {
               max-width: 600px;
-              margin: 0 auto;
-              padding: 20px;
-              background-color: #fff;
-              border-radius: 5px;
-              box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+              margin: 20px auto;
+              background: #ffffff;
+              border-radius: 12px;
+              overflow: hidden;
+              box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            }
+            .header {
+              background-color: #6742FA;
+              padding: 30px;
+              text-align: center;
+              color: white;
             }
             h1 {
-              color: #333;
+              color: white;
               text-align: center;
+              margin: 20px 0 0 0;
+              font-size: 24px;
             }
             p {
               color: #555;
               line-height: 1.6;
+              margin: 15px 0;
+            }
+            .content {
+              padding: 40px 30px;
             }
             .token {
               font-size: 18px;
@@ -80,24 +94,53 @@ const sendVerificationEmail = async (email, token) => {
               text-align: center;
               margin-top: 20px;
               padding: 10px;
-              background-color: #eee;
+              background-color: #f0f0f0;
               border-radius: 5px;
             }
             .confirm-link {
-              display: block;
+              display: inline-block;
               text-align: center;
               margin-top: 20px;
+              padding: 12px 24px;
+              background-color: #6742FA;
+              color: white !important;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+            }
+            .footer {
+              background-color: #f4f4f4;
+              padding: 20px;
+              text-align: center;
+              font-size: 12px;
+              color: #777;
             }
           </style>
         </head>
         <body>
           <div class="container">
-            <h1>Email Verification</h1>
-            <p>Thank you for registering with our service. Please use the following token to verify your email address:</p>
-            <div class="token">${token}</div>
-            <p>or</p>
-            <a class="confirm-link" href="${confirmLink}">Click here to confirm your email</a>
-          </div>
+            <div class="header">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="vertical-align: middle; padding-right: 10px;">
+                    <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                  </td>
+                  <td style="vertical-align: middle;">
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
+                  </td>
+                </tr>
+              </table>
+            </div>
+            <div class="content">
+            <div class="content">
+              <p>Thank you for registering with our service. Please use the following token to verify your email address:</p>
+              <div class="token">${token}</div>
+              <p>or</p>
+              <a class="confirm-link" href="${confirmLink}">Click here to confirm your email</a>
+            </div>
+            <div class="footer">
+              <p>© 2026 10Alytics Inc. All rights reserved.</p>
+            </div>
         </body>
       </html>
     `,
@@ -125,24 +168,38 @@ const sendPasswordResetEmail = async (email, token) => {
           <title>Password Reset</title>
           <style>
             body {
-              font-family: Arial, sans-serif;
-              background-color: #f4f4f4;
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              background-color: #f9f9f9;
+              margin: 0;
+              padding: 0;
             }
             .container {
               max-width: 600px;
-              margin: 0 auto;
-              padding: 20px;
-              background-color: #fff;
-              border-radius: 5px;
-              box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+              margin: 20px auto;
+              background: #ffffff;
+              border-radius: 12px;
+              overflow: hidden;
+              box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            }
+            .header {
+              background-color: #6742FA;
+              padding: 30px;
+              text-align: center;
+              color: white;
             }
             h1 {
-              color: #333;
+              color: white;
               text-align: center;
+              margin: 20px 0 0 0;
+              font-size: 24px;
             }
             p {
               color: #555;
               line-height: 1.6;
+              margin: 15px 0;
+            }
+            .content {
+              padding: 40px 30px;
             }
             .token {
               font-size: 18px;
@@ -150,29 +207,52 @@ const sendPasswordResetEmail = async (email, token) => {
               text-align: center;
               margin-top: 20px;
               padding: 10px;
-              background-color: #eee;
+              background-color: #f0f0f0;
               border-radius: 5px;
             }
             .reset-link {
-              display: block;
+              display: inline-block;
               text-align: center;
               margin-top: 20px;
-              padding: 10px 20px;
-              background-color: #2563eb;
-              color: white;
+              padding: 12px 24px;
+              background-color: #6742FA;
+              color: white !important;
               text-decoration: none;
-              border-radius: 5px;
+              border-radius: 8px;
+              font-weight: bold;
+            }
+            .footer {
+              background-color: #f4f4f4;
+              padding: 20px;
+              text-align: center;
+              font-size: 12px;
+              color: #777;
             }
           </style>
         </head>
         <body>
           <div class="container">
-            <h1>Reset Your Password</h1>
-            <p>We received a request to reset your password. Use the following token or click the button below:</p>
-            <div class="token">${token}</div>
-            <a href="${resetLink}" class="reset-link">Reset Password</a>
-            <p>If you didn't request this, please ignore this email.</p>
-          </div>
+            <div class="header">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="vertical-align: middle; padding-right: 10px;">
+                    <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                  </td>
+                  <td style="vertical-align: middle;">
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
+                  </td>
+                </tr>
+              </table>
+            </div>
+            <div class="content">
+              <p>We received a request to reset your password. Use the following token or click the button below:</p>
+              <div class="token">${token}</div>
+              <a href="${resetLink}" class="reset-link">Reset Password</a>
+              <p>If you didn't request this, please ignore this email.</p>
+            </div>
+            <div class="footer">
+              <p>© 2026 10Alytics Inc. All rights reserved.</p>
+            </div>
         </body>
       </html>
     `,
@@ -200,23 +280,33 @@ const sendClassroomNotificationEmail = async (emails, cohortName, type, title, c
           <meta charset="UTF-8">
           <title>Classroom Notification</title>
           <style>
-            body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 20px auto; padding: 20px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-            .header { border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
-            .header h1 { color: #2563eb; margin: 0; font-size: 24px; }
-            .content { color: #333; line-height: 1.6; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9f9f9; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 20px auto; padding: 0; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+            .header { background-color: #6742FA; padding: 30px; text-align: center; color: white; }
+            .header h1 { margin: 0; font-size: 24px; color: white; }
+            .content { padding: 40px 30px; }
             .type-badge { display: inline-block; padding: 4px 12px; border-radius: 16px; background-color: #dbeafe; color: #1e40af; font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }
             .title { font-size: 20px; font-weight: bold; color: #111; margin-bottom: 10px; }
             .meta { font-size: 14px; color: #666; margin-bottom: 20px; }
-            .body-text { background-color: #f9fafb; padding: 15px; border-radius: 4px; border-left: 4px solid #2563eb; }
+            .body-text { background-color: #f9fafb; padding: 15px; border-radius: 4px; border-left: 4px solid #6742FA; }
             .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #999; text-align: center; }
-            .btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; }
+            .btn { display: inline-block; margin-top: 20px; padding: 12px 24px; background-color: #6742FA; color: white !important; text-decoration: none; border-radius: 6px; font-weight: bold; }
+            p { color: #555; line-height: 1.6; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="header">
-              <h1>Classroom Update</h1>
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="vertical-align: middle; padding-right: 10px;">
+                    <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                  </td>
+                  <td style="vertical-align: middle;">
+                    <h1 style="margin: 0; font-size: 24px; color: white;">Classroom Update</h1>
+                  </td>
+                </tr>
+              </table>
             </div>
             <div class="content">
               <div class="type-badge">${type}</div>
@@ -229,6 +319,7 @@ const sendClassroomNotificationEmail = async (emails, cohortName, type, title, c
             </div>
             <div class="footer">
               <p>You're receiving this because you're enrolled in ${cohortName} at ${process.env.NEXT_PUBLIC_APP_NAME || '10Alytics Business'}.</p>
+              <p>© 2026 10Alytics Inc. All rights reserved.</p>
             </div>
           </div>
         </body>

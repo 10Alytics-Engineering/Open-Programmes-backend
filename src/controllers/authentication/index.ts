@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../lib/prismadb";
+import { prismadb } from "../../../src/index";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { generatePasswordResetToken, generateVerificationToken } from "./token";
@@ -12,8 +12,7 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 export async function login(req: Request, res: Response) {
   try {
-    const { password: rawPassword }: { password: string } = req.body;
-    const password = rawPassword.trim();
+    const { password }: { password: string } = req.body;
     const email: string = req.body.email?.toLowerCase();
 
     if (!email || !password) {
@@ -336,8 +335,7 @@ export async function account(req: Request, res: Response) {
 
 export async function register(req: Request, res: Response) {
   try {
-    const { name, password: rawPassword, phone_number } = req.body;
-    const password = rawPassword.trim();
+    const { name, password, phone_number } = req.body;
     const email: string = req.body.email?.toLowerCase();
 
     if (!name || !email || !password || !phone_number) {

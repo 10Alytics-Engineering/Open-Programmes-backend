@@ -59,54 +59,66 @@ const sendWelcomeEmail = async ({ email, name, password, courseId }) => {
             <title>Welcome to Our Academy</title>
             <style>
               body {
-                font-family: Arial, sans-serif;
-                background-color: #f4f4f4;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background-color: #f9f9f9;
                 margin: 0;
                 padding: 0;
               }
               .container {
                 max-width: 600px;
                 margin: 20px auto;
-                padding: 20px;
-                background-color: #ffffff;
-                border-radius: 8px;
-                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                background: #ffffff;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+              }
+              .header {
+                background-color: #6742FA;
+                padding: 30px;
+                text-align: center;
+                color: white;
               }
               h1 {
-                color: #333333;
+                color: white;
                 text-align: center;
-                margin-bottom: 20px;
+                margin: 20px 0 0 0;
+                font-size: 24px;
               }
               p {
-                color: #555555;
+                color: #555;
                 line-height: 1.6;
-                margin-bottom: 15px;
+                margin: 15px 0;
+              }
+              .content {
+                padding: 40px 30px;
               }
               .credentials {
                 background-color: #f8f9fa;
                 padding: 15px;
                 border-radius: 5px;
                 margin: 20px 0;
+                border-left: 4px solid #6742FA;
               }
               .credentials strong {
                 color: #333333;
               }
               .login-button {
                 display: inline-block;
-                padding: 10px 20px;
-                background-color: #2563eb;
-                color: #ffffff;
+                padding: 12px 24px;
+                background-color: #6742FA;
+                color: #ffffff !important;
                 text-decoration: none;
-                border-radius: 5px;
+                border-radius: 8px;
                 font-weight: bold;
                 margin: 20px 0;
               }
               .course-name {
                 font-weight: bold;
-                color: #2563eb;
+                color: #6742FA;
               }
               .footer {
-                margin-top: 30px;
+                background-color: #f4f4f4;
+                padding: 20px;
                 text-align: center;
                 color: #999999;
                 font-size: 12px;
@@ -115,7 +127,20 @@ const sendWelcomeEmail = async ({ email, name, password, courseId }) => {
           </head>
           <body>
             <div class="container">
-              <h1>Welcome, ${name}!</h1>
+              <div class="header">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                  <tr>
+                    <td style="vertical-align: middle; padding-right: 10px;">
+                      <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                    </td>
+                    <td style="vertical-align: middle;">
+                      <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+              <div class="content">
+                <h1 style="color: #333; text-align: center; margin: 0 0 20px 0;">Welcome, ${name}!</h1>
               <p>Your account has been created by the academy admin.</p>
               
               <div class="credentials">
@@ -132,9 +157,9 @@ const sendWelcomeEmail = async ({ email, name, password, courseId }) => {
               </div>
 
               <p>If you didn't request this account, please contact our support team immediately.</p>
-
+              </div>
               <div class="footer">
-                <p>© ${new Date().getFullYear()} Academy. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} 10Alytics Inc. All rights reserved.</p>
               </div>
             </div>
           </body>

@@ -56,21 +56,44 @@ export const sendPaymentReminder = async (
       <head>
         <meta charset="UTF-8">
         <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+          }
           .container {
             max-width: 600px;
             margin: 20px auto;
-            padding: 40px;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 15px;
-            color: #333;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+          }
+          .header {
+            background-color: #6742FA;
+            padding: 30px;
+            text-align: center;
+            color: white;
+          }
+          .header h2 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+            color: white;
+          }
+          .header p {
+            margin: 5px 0 0 0;
+            font-size: 14px;
+            opacity: 0.9;
           }
           .content {
             background: white;
             padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+          }
+          p {
+            color: #555;
+            line-height: 1.6;
+            margin: 15px 0;
           }
           .header {
             text-align: center;
@@ -84,13 +107,13 @@ export const sendPaymentReminder = async (
             padding: 20px;
             border-radius: 8px;
             margin: 20px 0;
-            border-left: 4px solid #007bff;
+            border-left: 4px solid #6742FA;
           }
           .payment-button {
             display: block;
             width: 100%;
             padding: 15px;
-            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            background: #6742FA;
             color: white !important;
             text-decoration: none;
             border-radius: 8px;
@@ -101,7 +124,7 @@ export const sendPaymentReminder = async (
           }
           .payment-button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,123,255,0.3);
+            box-shadow: 0 5px 15px rgba(103, 66, 250, 0.3);
           }
           .timeline {
             margin: 25px 0;
@@ -125,16 +148,27 @@ export const sendPaymentReminder = async (
             font-weight: bold;
             margin-right: 10px;
           }
-          .badge-primary { background: #007bff; color: white; }
+          .badge-primary { background: #6742FA; color: white; }
           .badge-success { background: #28a745; color: white; }
           .badge-warning { background: #ffc107; color: black; }
         </style>
       </head>
       <body>
         <div class="container">
+          <div class="header">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+              <tr>
+                <td style="vertical-align: middle; padding-right: 10px;">
+                  <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                </td>
+                <td style="vertical-align: middle;">
+                  <h2 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h2>
+                </td>
+              </tr>
+            </table>
+          </div>
           <div class="content">
-            <div class="header">
-              <h1>⏰ Payment Reminder</h1>
+            <h3 style="color: #6742FA; text-align: center; margin: 0 0 10px 0;">⏰ Payment Reminder</h3>
               <p>Dear ${userName},</p>
             </div>
 
@@ -184,6 +218,9 @@ export const sendPaymentReminder = async (
               </p>
             </div>
           </div>
+          <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #777;">
+            <p>© 2026 10Alytics Inc. All rights reserved.</p>
+          </div>
         </div>
       </body>
       </html>
@@ -228,25 +265,47 @@ export const sendSecondHalfReminder = async (
       <head>
         <meta charset="UTF-8">
         <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+          }
           .container {
             max-width: 600px;
             margin: 20px auto;
-            padding: 40px;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 15px;
-            color: #333;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+          }
+          .header {
+            background-color: #6742FA;
+            padding: 30px;
+            text-align: center;
+            color: white;
+          }
+          .header h2 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+            color: white;
+          }
+          .header p {
+            margin: 5px 0 0 0;
+            font-size: 14px;
+            opacity: 0.9;
           }
           .content {
             background: white;
             padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
           }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
+          p {
+            color: #555;
+            line-height: 1.6;
+            margin: 15px 0;
+          }
+          h3 {
+            margin: 0 0 10px 0;
           }
           .urgency-high { color: #dc3545; font-weight: bold; }
           .urgency-medium { color: #fd7e14; font-weight: bold; }
@@ -256,13 +315,13 @@ export const sendSecondHalfReminder = async (
             padding: 20px;
             border-radius: 8px;
             margin: 20px 0;
-            border-left: 4px solid #28a745;
+            border-left: 4px solid #6742FA;
           }
           .payment-button {
             display: block;
             width: 100%;
             padding: 15px;
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            background: #6742FA;
             color: white !important;
             text-decoration: none;
             border-radius: 8px;
@@ -273,13 +332,14 @@ export const sendSecondHalfReminder = async (
           }
           .payment-button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(40,167,69,0.3);
+            box-shadow: 0 5px 15px rgba(103, 66, 250, 0.3);
           }
           .benefits {
             margin: 25px 0;
             padding: 20px;
-            background: #e8f5e8;
+            background: #f0e8ff;
             border-radius: 8px;
+            border-left: 4px solid #6742FA;
           }
           .footer {
             margin-top: 30px;
@@ -297,10 +357,10 @@ export const sendSecondHalfReminder = async (
             font-weight: bold;
             margin-right: 10px;
           }
-          .badge-success { background: #28a745; color: white; }
+          .badge-success { background: #6742FA; color: white; }
           .badge-warning { background: #ffc107; color: black; }
           .badge-danger { background: #dc3545; color: white; }
-          .badge-info { background: #17a2b8; color: white; }
+          .badge-info { background: #6742FA; color: white; }
           .milestone-icon {
             font-size: 1.2em;
             margin-right: 8px;
@@ -310,6 +370,18 @@ export const sendSecondHalfReminder = async (
       </head>
       <body>
         <div class="container">
+          <div class="header">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+              <tr>
+                <td style="vertical-align: middle; padding-right: 10px;">
+                  <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                </td>
+                <td style="vertical-align: middle;">
+                  <h2 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h2>
+                </td>
+              </tr>
+            </table>
+          </div>
           <div class="content">
             <div class="header">
               <h1 style="color: #28a745; margin-bottom: 10px;">🎓 Complete Your Journey</h1>
@@ -373,6 +445,9 @@ export const sendSecondHalfReminder = async (
               </p>
             </div>
           </div>
+          <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #777;">
+            <p>© 2026 10Alytics Inc. All rights reserved.</p>
+          </div>
         </div>
       </body>
       </html>
@@ -402,18 +477,91 @@ export const sendPaymentConfirmation = async (
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="UTF-8">
         <style>
-          /* Add your styles here */
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+          }
+          .header {
+            background-color: #6742FA;
+            padding: 30px;
+            text-align: center;
+            color: white;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 24px;
+            color: white;
+          }
+          .content {
+            padding: 40px 30px;
+          }
+          h1 {
+            color: white;
+            text-align: center;
+            margin: 20px 0 0 0;
+            font-size: 24px;
+          }
+          p {
+            color: #555;
+            line-height: 1.6;
+            margin: 15px 0;
+          }
+          .dashboard-button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #6742FA;
+            color: white !important;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            margin: 20px 0;
+          }
+          .footer {
+            background-color: #f4f4f4;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #777;
+          }
         </style>
       </head>
       <body>
         <div class="container">
-          <h1>Payment Received</h1>
+          <div class="header">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+              <tr>
+                <td style="vertical-align: middle; padding-right: 10px;">
+                  <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                </td>
+                <td style="vertical-align: middle;">
+                  <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
+                </td>
+              </tr>
+            </table>
+          </div>
+          <div class="content">
+            <h2 style="color: #333; text-align: center; margin: 0 0 20px 0;">Payment Received</h2>
           <p>Dear ${userName},</p>
           <p>We've successfully received your payment for installment ${installmentNumber} of ${courseTitle}.</p>
           <p>Thank you for staying current with your payments!</p>
           <a href="${domain}/dashboard" class="dashboard-button">Access Dashboard</a>
-          <p>Best regards,<br>Your Learning Team</p>
+          <p>Best regards,<br>10Alytics Team</p>
+          </div>
+          <div class="footer">
+            <p>© 2026 10Alytics Inc. All rights reserved.</p>
+          </div>
         </div>
       </body>
       </html>
@@ -444,23 +592,40 @@ export const sendPurchaseConfirmationMail = async (
     <html>
       <head>
         <meta charset="UTF-8">
-        <title>Course Payment Expired</title>
+        <title>Course Purchase Confirmation</title>
         <style>
           body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
           }
           .container {
-            max-width: 600px
-            margin: 0 auto;
-            padding: 20px;
+            max-width: 600px;
+            margin: 20px auto;
             background-color: #fff;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+          }
+          .header {
+            background-color: #6742FA;
+            padding: 30px;
+            text-align: center;
+            color: white;
+          }
+          .header h2 {
+            margin: 0;
+            font-size: 24px;
+            color: white;
+          }
+          .content {
+            padding: 40px 30px;
           }
           h1 {
             color: #333;
             text-align: center;
+            margin: 0 0 20px 0;
           }
           p {
             color: #555;
@@ -468,23 +633,44 @@ export const sendPurchaseConfirmationMail = async (
           }
           .course-name {
             font-weight: bold;
-            color: #0066cc;
+            color: #6742FA;
           }
-          .renew-link {
-            display: block;
+          .course-access-link {
+            display: inline-block;
             text-align: center;
             margin-top: 20px;
-            padding: 10px;
-            background-color: #0066cc;
-            color: #fff;
+            padding: 12px 24px;
+            background-color: #6742FA;
+            color: #fff !important;
             text-decoration: none;
-            border-radius: 5px;
+            border-radius: 8px;
+            font-weight: bold;
+          }
+          .footer {
+            background-color: #f4f4f4;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #777;
           }
         </style>
       </head>
-   <body>
-  <div class="container">
-    <h1>${courseTitle} Course Purchase Confirmation</h1>
+      <body>
+        <div class="container">
+          <div class="header">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+              <tr>
+                <td style="vertical-align: middle; padding-right: 10px;">
+                  <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                </td>
+                <td style="vertical-align: middle;">
+                  <h2 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h2>
+                </td>
+              </tr>
+            </table>
+          </div>
+          <div class="content">
+            <h1>${courseTitle} Course Purchase Confirmation</h1>
     <p>Dear ${user_name},</p>
     <p>Congratulations! Your purchase of the course <span class="course-name">${courseTitle}</span> has been successfully completed.</p>
     <p>We're thrilled to have you join our learning community. Your course access is now active, and you can start your learning journey immediately.</p>
@@ -499,9 +685,13 @@ export const sendPurchaseConfirmationMail = async (
     <a class="course-access-link" href="${courseAccessLink}">Access Your Course</a>
     <p>If you have any questions or need assistance as you start your course, please don't hesitate to contact our support team.</p>
     <p>We wish you an enriching learning experience!</p>
-    <p>Best regards,<br>Your Learning Team</p>
+    <p>Best regards,<br>10Alytics Team</p>
+    </div>
+    <div class="footer">
+      <p>© 2026 10Alytics Inc. All rights reserved.</p>
+    </div>
   </div>
- </body>
+    </body>
     </html>
   `,
   };

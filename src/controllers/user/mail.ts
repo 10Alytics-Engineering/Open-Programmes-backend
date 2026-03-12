@@ -29,23 +29,39 @@ export const sendAccountDeletionEmail = async ({ email, name }: AccountDeletionP
             <title>Account Deletion Notice</title>
             <style>
               body {
-                font-family: Arial, sans-serif;
-                background-color: #f4f4f4;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background-color: #f9f9f9;
                 margin: 0;
                 padding: 0;
               }
               .container {
                 max-width: 600px;
                 margin: 20px auto;
-                padding: 20px;
+                padding: 0;
                 background-color: #ffffff;
-                border-radius: 8px;
-                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+              }
+              .header {
+                background-color: #6742FA;
+                padding: 30px;
+                text-align: center;
+                color: white;
+              }
+              .header h1 {
+                margin: 0;
+                font-size: 24px;
+                color: white;
+              }
+              .content {
+                padding: 40px 30px;
               }
               h1 {
-                color: #333333;
+                color: white;
                 text-align: center;
-                margin-bottom: 20px;
+                margin: 20px 0 0 0;
+                font-size: 24px;
               }
               p {
                 color: #555555;
@@ -53,10 +69,13 @@ export const sendAccountDeletionEmail = async ({ email, name }: AccountDeletionP
                 margin-bottom: 15px;
               }
               .footer {
+                background-color: #f4f4f4;
                 margin-top: 30px;
                 text-align: center;
                 color: #999999;
                 font-size: 12px;
+                padding: 20px;
+                border-top: 1px solid #eee;
               }
               .date-notice {
                 font-style: italic;
@@ -68,7 +87,20 @@ export const sendAccountDeletionEmail = async ({ email, name }: AccountDeletionP
           </head>
           <body>
             <div class="container">
-              <h1>Account Deletion Notice</h1>
+              <div class="header">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                  <tr>
+                    <td style="vertical-align: middle; padding-right: 10px;">
+                      <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                    </td>
+                    <td style="vertical-align: middle;">
+                      <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+              <div class="content">
+                <h1 style="color: #333; text-align: center; margin: 0 0 20px 0;">Account Deletion Notice</h1>
               
               <p>Dear ${name},</p>
               
@@ -78,10 +110,10 @@ export const sendAccountDeletionEmail = async ({ email, name }: AccountDeletionP
               
               <p>We apologize for any inconvenience this may have caused.</p>
               
-              <p>Best regards,<br>Nebiant Analytics Team</p>
+              <p>Best regards,<br>10Alytics Team</p>
 
               <div class="footer">
-                <p>© ${new Date().getFullYear()} Nebiant Analytics. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} 10Alytics Inc. All rights reserved.</p>
               </div>
             </div>
           </body>
