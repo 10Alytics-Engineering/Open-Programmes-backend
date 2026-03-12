@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prismadb } from "../../../src/index";
+import { prismadb } from "../../lib/prismadb";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { generatePasswordResetToken, generateVerificationToken } from "./token";
