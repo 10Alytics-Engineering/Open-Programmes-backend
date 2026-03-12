@@ -205,7 +205,7 @@ export const sendClassroomNotificationEmail = async (
               <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" class="btn">View in Classroom</a>
             </div>
             <div class="footer">
-              <p>You're receiving this because you're enrolled in ${cohortName} at ${process.env.NEXT_PUBLIC_APP_NAME || 'Nebiant'}.</p>
+              <p>You're receiving this because you're enrolled in ${cohortName} at ${process.env.NEXT_PUBLIC_APP_NAME || '10Alytics Business'}.</p>
             </div>
           </div>
         </body>
