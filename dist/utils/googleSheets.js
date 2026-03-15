@@ -249,20 +249,19 @@ class GoogleSheetsSyncService {
         });
     }
     /**
-     * Syncs all payment data to Google Sheets.
-     * Exports all fields from PaymentStatus (except IDs), followed by related names/prices,
-     * and a calculated Amount Paid field.
+     * Syncs all payment data to Google Sheets, split into separate sheets by status:
+     * - Completed Payment: COMPLETE
+     * - Partially Paid: BALANCE_HALF_PAYMENT
+     * - Failed / Other: PENDING_SEAT_CONFIRMATION, EXPIRED, etc.
      */
     static async syncPaymentData() {
         console.log('[GOOGLE_SHEETS_PAYMENTS]: Starting payment data sync...');
         try {
             const spreadsheetId = process.env.GOOGLE_SHEETS_PAYMENTS_SPREADSHEET_ID;
-            const sheetName = 'Sheet1'; // Using the full sheet name to clear everything
             if (!spreadsheetId) {
                 console.warn('[GOOGLE_SHEETS_PAYMENTS]: SPREADSHEET_ID not configured.');
                 return { success: false, error: 'Spreadsheet ID missing' };
             }
-            // Fetch all PaymentStatus records with expanded relations
             const paymentStatuses = await prismadb_1.prismadb.paymentStatus.findMany({
                 include: {
                     user: true,
@@ -277,21 +276,16 @@ class GoogleSheetsSyncService {
             }
             const auth = this.getAuth();
             const sheets = googleapis_1.google.sheets({ version: 'v4', auth });
-            // 1. Clear the ENTIRE sheet first to remove any old columns/data
-            try {
-                await sheets.spreadsheets.values.clear({
-                    spreadsheetId,
-                    range: sheetName,
-                    requestBody: {}
-                });
-            }
-            catch (clearErr) {
-                console.warn('[GOOGLE_SHEETS_PAYMENTS]: Clear failed:', clearErr.message);
-            }
-            // 2. Prepare Headers (Strict Order as requested)
+            // Split by status
+            const completed = paymentStatuses.filter(ps => ps.status === 'COMPLETE');
+            const partiallyPaid = paymentStatuses.filter(ps => ps.status === 'BALANCE_HALF_PAYMENT');
+            const failed = paymentStatuses.filter(ps => ps.status !== 'COMPLETE' && ps.status !== 'BALANCE_HALF_PAYMENT');
+            // Ensure all three sheets exist in the spreadsheet
+            await this.ensurePaymentSheetsExist(sheets, spreadsheetId);
             const header = [
                 'User Name',
                 'User Email',
+                'User Phone',
                 'Course Name',
                 'Cohort Name',
                 'Course Price',
@@ -302,48 +296,95 @@ class GoogleSheetsSyncService {
                 'Created At',
                 'Updated At'
             ];
-            // 3. Prepare Data Rows
-            const rows = paymentStatuses.map(ps => {
-                const coursePriceNum = this.parseCoursePrice(ps.course?.price);
-                let amountPaid = 0;
-                if (ps.status === 'COMPLETE') {
-                    amountPaid = coursePriceNum;
+            const writeSheet = async (sheetName, list) => {
+                const rows = list.map(ps => this.paymentStatusToRow(ps));
+                const values = [header, ...rows];
+                try {
+                    await sheets.spreadsheets.values.clear({
+                        spreadsheetId,
+                        range: sheetName,
+                        requestBody: {}
+                    });
                 }
-                else if (ps.status === 'BALANCE_HALF_PAYMENT') {
-                    amountPaid = Math.ceil(coursePriceNum / 2);
+                catch (clearErr) {
+                    console.warn(`[GOOGLE_SHEETS_PAYMENTS]: Clear ${sheetName} failed:`, clearErr.message);
                 }
-                else {
-                    amountPaid = 0;
-                }
-                return [
-                    ps.user?.name || 'N/A',
-                    ps.user?.email || 'N/A',
-                    ps.course?.title || 'N/A',
-                    ps.cohort?.name || 'N/A',
-                    ps.course?.price || 'N/A',
-                    ps.status,
-                    ps.paymentPlan || 'N/A',
-                    ps.secondPaymentDueDate ? new Date(ps.secondPaymentDueDate).toLocaleDateString('en-GB') : 'N/A',
-                    amountPaid,
-                    new Date(ps.createdAt).toLocaleString('en-GB'),
-                    new Date(ps.updatedAt).toLocaleString('en-GB')
-                ];
-            });
-            const values = [header, ...rows];
-            // 4. Write data to Sheet starting at A1
-            await sheets.spreadsheets.values.update({
-                spreadsheetId,
-                range: `${sheetName}!A1`,
-                valueInputOption: 'RAW',
-                requestBody: { values },
-            });
-            console.log(`[GOOGLE_SHEETS_PAYMENTS]: Sync successful. ${paymentStatuses.length} records exported.`);
-            return { success: true, count: paymentStatuses.length };
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId,
+                    range: `${sheetName}!A1`,
+                    valueInputOption: 'RAW',
+                    requestBody: { values },
+                });
+            };
+            await writeSheet(this.PAYMENT_SHEET_NAMES.completed, completed);
+            await writeSheet(this.PAYMENT_SHEET_NAMES.partiallyPaid, partiallyPaid);
+            await writeSheet(this.PAYMENT_SHEET_NAMES.failed, failed);
+            console.log(`[GOOGLE_SHEETS_PAYMENTS]: Sync successful. Completed: ${completed.length}, Partially Paid: ${partiallyPaid.length}, Failed/Other: ${failed.length}`);
+            return {
+                success: true,
+                count: paymentStatuses.length,
+                completed: completed.length,
+                partiallyPaid: partiallyPaid.length,
+                failed: failed.length,
+            };
         }
         catch (error) {
             console.error('[GOOGLE_SHEETS_PAYMENTS]: Sync failed:', error.message);
             return { success: false, error: error.message };
         }
+    }
+    /**
+     * Ensures "Completed Payment", "Partially Paid", and "Failed / Other" sheets exist;
+     * creates any that are missing.
+     */
+    static async ensurePaymentSheetsExist(sheets, spreadsheetId) {
+        const required = Object.values(this.PAYMENT_SHEET_NAMES);
+        const res = await sheets.spreadsheets.get({
+            spreadsheetId,
+            fields: 'sheets.properties.title',
+        });
+        const existing = (res.data.sheets || []).map(s => s.properties?.title).filter(Boolean);
+        const toAdd = required.filter(title => !existing.includes(title));
+        if (toAdd.length === 0)
+            return;
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+                requests: toAdd.map(title => ({
+                    addSheet: {
+                        properties: { title },
+                    },
+                })),
+            },
+        });
+        console.log('[GOOGLE_SHEETS_PAYMENTS]: Created sheets:', toAdd.join(', '));
+    }
+    /**
+     * Maps a single PaymentStatus record to a row array (same column order as header).
+     */
+    static paymentStatusToRow(ps) {
+        const coursePriceNum = this.parseCoursePrice(ps.course?.price);
+        let amountPaid = 0;
+        if (ps.status === 'COMPLETE') {
+            amountPaid = coursePriceNum;
+        }
+        else if (ps.status === 'BALANCE_HALF_PAYMENT') {
+            amountPaid = Math.ceil(coursePriceNum / 2);
+        }
+        return [
+            ps.user?.name || 'N/A',
+            ps.user?.email || 'N/A',
+            ps.user?.phone_number || 'N/A',
+            ps.course?.title || 'N/A',
+            ps.cohort?.name || 'N/A',
+            ps.course?.price || 'N/A',
+            ps.status,
+            ps.paymentPlan || 'N/A',
+            ps.secondPaymentDueDate ? new Date(ps.secondPaymentDueDate).toLocaleDateString('en-GB') : 'N/A',
+            amountPaid,
+            new Date(ps.createdAt).toLocaleString('en-GB'),
+            new Date(ps.updatedAt).toLocaleString('en-GB'),
+        ];
     }
     /**
      * Robust price parser to handle strings like "100k", "250,000", etc.
@@ -363,4 +404,10 @@ class GoogleSheetsSyncService {
 }
 exports.GoogleSheetsSyncService = GoogleSheetsSyncService;
 GoogleSheetsSyncService.auth = null;
+/** Sheet names in the main payments spreadsheet for each status bucket */
+GoogleSheetsSyncService.PAYMENT_SHEET_NAMES = {
+    completed: 'Completed Payment',
+    partiallyPaid: 'Partially Paid',
+    failed: 'Failed / Other',
+};
 //# sourceMappingURL=googleSheets.js.map

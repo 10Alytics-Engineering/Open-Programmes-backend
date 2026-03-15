@@ -351,6 +351,38 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
       WHERE status != 'EXPIRED'
       GROUP BY "paymentPlan"
     `;
+        // Get activity stats based on duration
+        const { duration = "7d" } = req.query;
+        let startDate = new Date();
+        if (duration === "30d") {
+            startDate.setDate(startDate.getDate() - 30);
+        }
+        else if (duration === "90d") {
+            startDate.setDate(startDate.getDate() - 90);
+        }
+        else if (duration === "all") {
+            startDate = new Date(0); // Beginning of time
+        }
+        else {
+            startDate.setDate(startDate.getDate() - 7); // Default 7d
+        }
+        startDate.setHours(0, 0, 0, 0);
+        const activityTransactions = await prismadb_1.prismadb.paystackTransaction.findMany({
+            where: {
+                createdAt: {
+                    gte: startDate
+                }
+            },
+            select: {
+                status: true
+            }
+        });
+        const activityStats = {
+            total: activityTransactions.length,
+            success: activityTransactions.filter(t => t.status === "success").length,
+            pending: activityTransactions.filter(t => t.status === "pending").length,
+            failed: activityTransactions.filter(t => t.status === "failed" || t.status === "expired").length,
+        };
         res.json({
             summary: {
                 currentRevenue,
@@ -358,6 +390,8 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
                 growthPercentage,
                 transactions: currentPayments.length,
                 averageTransaction: currentPayments.length > 0 ? currentRevenue / currentPayments.length : 0,
+                activityStats,
+                activeDuration: duration
             },
             topCourses: convertBigIntToNumber(topCourses),
             paymentPlanDistribution: convertBigIntToNumber(paymentPlanDistribution),
@@ -380,6 +414,171 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
             error: "Failed to fetch dashboard data",
             details: error instanceof Error ? error.message : "Unknown error",
         });
+    }
+});
+// 5. List all users with their payment status
+salesDashboardApp.get("/users", async (req, res) => {
+    try {
+        const users = await prismadb_1.prismadb.user.findMany({
+            where: {
+                role: "USER"
+            },
+            include: {
+                paymentStatus: {
+                    include: {
+                        course: true,
+                        cohort: true,
+                        paymentInstallments: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: "desc"
+            }
+        });
+        res.json(users);
+    }
+    catch (error) {
+        console.error("Error fetching sales users:", error);
+        res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+// 6. List all transactions
+salesDashboardApp.get("/transactions", async (req, res) => {
+    try {
+        const { duration = "all" } = req.query; // Default to all for list page unless specified
+        let dateFilter = {};
+        if (duration !== "all") {
+            let startDate = new Date();
+            if (duration === "30d") {
+                startDate.setDate(startDate.getDate() - 30);
+            }
+            else if (duration === "90d") {
+                startDate.setDate(startDate.getDate() - 90);
+            }
+            else {
+                startDate.setDate(startDate.getDate() - 7); // Default 7d
+            }
+            startDate.setHours(0, 0, 0, 0);
+            dateFilter = {
+                createdAt: {
+                    gte: startDate
+                }
+            };
+        }
+        const transactions = await prismadb_1.prismadb.paystackTransaction.findMany({
+            where: dateFilter,
+            include: {
+                paymentStatus: {
+                    include: {
+                        user: true,
+                        course: true,
+                        cohort: true
+                    }
+                }
+            },
+            orderBy: {
+                paymentDate: "desc"
+            }
+        });
+        // Check if we need to manually fill in some user/course data
+        const missingDataTransactions = transactions.filter(t => !t.paymentStatus);
+        if (missingDataTransactions.length > 0) {
+            const userIds = [...new Set(missingDataTransactions.map(t => t.userId))];
+            const courseIds = [...new Set(missingDataTransactions.map(t => t.courseId))];
+            const [users, courses] = await Promise.all([
+                prismadb_1.prismadb.user.findMany({
+                    where: { id: { in: userIds } },
+                    select: { id: true, name: true, email: true }
+                }),
+                prismadb_1.prismadb.course.findMany({
+                    where: { id: { in: courseIds } },
+                    select: { id: true, title: true }
+                })
+            ]);
+            const userMap = new Map(users.map(u => [u.id, u]));
+            const courseMap = new Map(courses.map(c => [c.id, c]));
+            const enrichedTransactions = transactions.map(t => {
+                if (!t.paymentStatus) {
+                    return {
+                        ...t,
+                        paymentStatus: {
+                            user: userMap.get(t.userId) || null,
+                            course: courseMap.get(t.courseId) || null,
+                            status: t.status,
+                            paymentPlan: t.paymentPlan,
+                            createdAt: t.createdAt,
+                            updatedAt: t.updatedAt,
+                            paymentInstallments: []
+                        }
+                    };
+                }
+                return t;
+            });
+            return res.json(enrichedTransactions);
+        }
+        res.json(transactions);
+    }
+    catch (error) {
+        console.error("Error fetching transactions:", error);
+        res.status(500).json({ error: "Failed to fetch transactions" });
+    }
+});
+// 7. Single transaction details
+salesDashboardApp.get("/transactions/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const transaction = await prismadb_1.prismadb.paystackTransaction.findUnique({
+            where: { id },
+            include: {
+                paymentStatus: {
+                    include: {
+                        user: true,
+                        course: true,
+                        cohort: true,
+                        paymentInstallments: {
+                            orderBy: {
+                                installmentNumber: "asc"
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        if (!transaction) {
+            return res.status(404).json({ error: "Transaction not found" });
+        }
+        // Manual enrichment if paymentStatus is null
+        if (!transaction.paymentStatus) {
+            const [user, course] = await Promise.all([
+                prismadb_1.prismadb.user.findUnique({
+                    where: { id: transaction.userId },
+                    select: { id: true, name: true, email: true }
+                }),
+                prismadb_1.prismadb.course.findUnique({
+                    where: { id: transaction.courseId },
+                    select: { id: true, title: true }
+                })
+            ]);
+            const enrichedTransaction = {
+                ...transaction,
+                paymentStatus: {
+                    user: user || null,
+                    course: course || null,
+                    status: transaction.status,
+                    paymentPlan: transaction.paymentPlan,
+                    createdAt: transaction.createdAt,
+                    updatedAt: transaction.updatedAt,
+                    paymentInstallments: []
+                }
+            };
+            return res.json(enrichedTransaction);
+        }
+        res.json(transaction);
+    }
+    catch (error) {
+        console.error("Error fetching transaction detail:", error);
+        res.status(500).json({ error: "Failed to fetch transaction detail" });
     }
 });
 exports.default = salesDashboardApp;

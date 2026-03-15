@@ -249,7 +249,12 @@ export const getUser = async (req: Request, res: Response) => {
             quizAnswer: true,
           },
         },
-        paymentStatus: true,
+        paymentStatus: {
+          include: {
+            course: true,
+            paymentInstallments: true,
+          }
+        },
         quiz_leaderboard: {
           select: {
             points: true,

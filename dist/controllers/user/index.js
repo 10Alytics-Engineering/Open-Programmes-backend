@@ -210,7 +210,12 @@ const getUser = async (req, res) => {
                         quizAnswer: true,
                     },
                 },
-                paymentStatus: true,
+                paymentStatus: {
+                    include: {
+                        course: true,
+                        paymentInstallments: true,
+                    }
+                },
                 quiz_leaderboard: {
                     select: {
                         points: true,
