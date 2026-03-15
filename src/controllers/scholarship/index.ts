@@ -297,36 +297,3 @@ export async function publicSyncPaymentToSheets(req: Request, res: Response) {
         res.status(500).json({ status: "error", message: "Internal Server Error" });
     }
 }
-
-/**
- * Public Sync Scholarship Applications to Google Sheets (with secret key)
- */
-export async function publicSyncScholarshipToSheets(req: Request, res: Response) {
-    try {
-        const secretKey = process.env.SYNC_SECRET_KEY || 'default-sync-key-change-in-env';
-        const providedKey = req.query.key as string;
-
-        if (providedKey !== secretKey) {
-            return res.status(401).json({
-                status: "error",
-                message: "Invalid or missing secret key"
-            });
-        }
-
-        const { GoogleSheetsSyncService } = await import("../../utils/googleSheets");
-        const resObj = await GoogleSheetsSyncService.syncAllApplications();
-
-        if (resObj.success) {
-            return res.status(200).json({
-                status: "success",
-                message: `Successfully synced ${resObj.count} scholarship applications to Google Sheets.`,
-                recordsExported: resObj.count
-            });
-        } else {
-            return res.status(500).json({ status: "error", message: "Failed to sync scholarship data to Sheets." });
-        }
-    } catch (error: any) {
-        console.error("[PUBLIC_SCHOLARSHIP_SYNC_ERR]:", error);
-        res.status(500).json({ status: "error", message: "Internal Server Error" });
-    }
-}

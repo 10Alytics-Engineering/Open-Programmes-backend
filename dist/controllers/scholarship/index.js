@@ -41,7 +41,6 @@ exports.getScholarshipApplications = getScholarshipApplications;
 exports.syncScholarshipToSheets = syncScholarshipToSheets;
 exports.syncPaymentToSheets = syncPaymentToSheets;
 exports.publicSyncPaymentToSheets = publicSyncPaymentToSheets;
-exports.publicSyncScholarshipToSheets = publicSyncScholarshipToSheets;
 const prismadb_1 = require("../../lib/prismadb");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -303,37 +302,6 @@ async function publicSyncPaymentToSheets(req, res) {
     }
     catch (error) {
         console.error("[PUBLIC_PAYMENT_SYNC_ERR]:", error);
-        res.status(500).json({ status: "error", message: "Internal Server Error" });
-    }
-}
-/**
- * Public Sync Scholarship Applications to Google Sheets (with secret key)
- */
-async function publicSyncScholarshipToSheets(req, res) {
-    try {
-        const secretKey = process.env.SYNC_SECRET_KEY || 'default-sync-key-change-in-env';
-        const providedKey = req.query.key;
-        if (providedKey !== secretKey) {
-            return res.status(401).json({
-                status: "error",
-                message: "Invalid or missing secret key"
-            });
-        }
-        const { GoogleSheetsSyncService } = await Promise.resolve().then(() => __importStar(require("../../utils/googleSheets")));
-        const resObj = await GoogleSheetsSyncService.syncAllApplications();
-        if (resObj.success) {
-            return res.status(200).json({
-                status: "success",
-                message: `Successfully synced ${resObj.count} scholarship applications to Google Sheets.`,
-                recordsExported: resObj.count
-            });
-        }
-        else {
-            return res.status(500).json({ status: "error", message: "Failed to sync scholarship data to Sheets." });
-        }
-    }
-    catch (error) {
-        console.error("[PUBLIC_SCHOLARSHIP_SYNC_ERR]:", error);
         res.status(500).json({ status: "error", message: "Internal Server Error" });
     }
 }

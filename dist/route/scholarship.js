@@ -7,7 +7,6 @@ exports.default = (router) => {
     router.get("/scholarship", middleware_1.isCourseAdmin, scholarship_1.getScholarshipApplications);
     router.post("/scholarship/sync", middleware_1.isCourseAdmin, scholarship_1.syncScholarshipToSheets);
     router.get("/scholarship/sync", middleware_1.isCourseAdmin, scholarship_1.syncScholarshipToSheets);
-    router.get("/scholarship/sync-public", scholarship_1.publicSyncScholarshipToSheets);
     router.post("/payment/sync", middleware_1.isCourseAdmin, scholarship_1.syncPaymentToSheets);
     router.get("/payment/sync", middleware_1.isCourseAdmin, scholarship_1.syncPaymentToSheets);
     router.get("/payment/sync-public", scholarship_1.publicSyncPaymentToSheets);
