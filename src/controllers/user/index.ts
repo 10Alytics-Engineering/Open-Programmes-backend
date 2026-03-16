@@ -521,13 +521,71 @@ export const deleteUser = async (req: Request, res: Response) => {
 
     await prismadb.$transaction(
       async (prisma) => {
-        await prisma.purchase.deleteMany({
-          where: {
-            userId,
-          },
+        // 1. Paystack Transactions
+        await prisma.paystackTransaction.deleteMany({
+          where: { userId },
         });
 
-        console.log("Purchased courses attached to this user has been deleted");
+        // 2. Assignment Submissions (as student)
+        await prisma.assignmentSubmission.deleteMany({
+          where: { studentId: userId },
+        });
+
+        // 3. Assignment Quiz Submissions
+        await prisma.assignmentQuizSubmission.deleteMany({
+          where: { studentId: userId },
+        });
+
+        // 4. Stream Posts
+        await prisma.streamPost.deleteMany({
+          where: { authorId: userId },
+        });
+
+        // 5. Announcements
+        await prisma.announcement.deleteMany({
+          where: { authorId: userId },
+        });
+
+        // 6. Comments
+        await prisma.comment.deleteMany({
+          where: { authorId: userId },
+        });
+
+        // 7. Scholarship Applications
+        await prisma.scholarshipApplication.deleteMany({
+          where: { userId },
+        });
+
+        // 8. Lead Data (clear potential duplicates in lead tables by email)
+        if (existingUser.email) {
+          await prisma.programLeads.deleteMany({
+            where: { email: existingUser.email },
+          });
+          await prisma.freeCourseApplication.deleteMany({
+            where: { email: existingUser.email },
+          });
+          await prisma.masterClassRegistration.deleteMany({
+            where: { email: existingUser.email },
+          });
+        }
+
+        // 9. Clear processedBy reference in ChangeRequests and gradedBy in AssignmentSubmissions
+        await prisma.changeRequest.updateMany({
+          where: { processedById: userId },
+          data: { processedById: null },
+        });
+
+        await prisma.assignmentSubmission.updateMany({
+          where: { gradedById: userId },
+          data: { gradedById: null },
+        });
+
+        // 10. Purchased courses
+        await prisma.purchase.deleteMany({
+          where: { userId },
+        });
+
+        console.log("All related data for this user has been deleted");
 
         const user = await prisma.user.delete({
           where: { id: userId },
