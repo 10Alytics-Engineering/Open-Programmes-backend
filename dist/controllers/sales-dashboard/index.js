@@ -115,7 +115,7 @@ salesDashboardApp.get("/monthly-sales", async (req, res) => {
         const [users, courses] = await Promise.all([
             prismadb_1.prismadb.user.findMany({
                 where: { id: { in: userIds } },
-                select: { id: true, name: true, email: true }
+                select: { id: true, name: true, email: true, phone_number: true }
             }),
             prismadb_1.prismadb.course.findMany({
                 where: { id: { in: courseIds } },
@@ -522,7 +522,7 @@ salesDashboardApp.get("/transactions", async (req, res) => {
             const [users, courses] = await Promise.all([
                 prismadb_1.prismadb.user.findMany({
                     where: { id: { in: userIds } },
-                    select: { id: true, name: true, email: true }
+                    select: { id: true, name: true, email: true, phone_number: true }
                 }),
                 prismadb_1.prismadb.course.findMany({
                     where: { id: { in: courseIds } },
@@ -586,7 +586,7 @@ salesDashboardApp.get("/transactions/:id", async (req, res) => {
             const [user, course] = await Promise.all([
                 prismadb_1.prismadb.user.findUnique({
                     where: { id: transaction.userId },
-                    select: { id: true, name: true, email: true }
+                    select: { id: true, name: true, email: true, phone_number: true }
                 }),
                 prismadb_1.prismadb.course.findUnique({
                     where: { id: transaction.courseId },
