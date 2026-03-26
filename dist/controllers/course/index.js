@@ -3,8 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseCohorts = exports.getCourseWithoutAuthWithSlug = exports.getCourseWithoutAuth = exports.deleteCourse = exports.updateCourse = exports.createCourse = exports.getCourse = exports.getCourses = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const handleServerError = (error, res) => {
-    console.error({ error_server: error });
-    res.status(500).json({ message: "Internal Server Error" });
+    console.error("❌ [SERVER_ERROR]:", error);
+    res.status(500).json({ status: "error", message: error.message || "Internal Server Error", details: error });
 };
 const getCourses = async (req, res) => {
     try {

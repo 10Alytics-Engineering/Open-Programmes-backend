@@ -4,8 +4,8 @@ import { NebiantUser } from "../../middleware/index";
 import { Purchase } from "@prisma/client";
 
 const handleServerError = (error: any, res: Response) => {
-  console.error({ error_server: error });
-  res.status(500).json({ message: "Internal Server Error" });
+  console.error("❌ [SERVER_ERROR]:", error);
+  res.status(500).json({ status: "error", message: error.message || "Internal Server Error", details: error });
 };
 
 export const getCourses = async (req: Request, res: Response) => {

@@ -155,11 +155,14 @@ async function applyForScholarship(req, res) {
                 program,
                 cohort,
                 discountCode: discountCode || "IWD 2026",
-                password: hashedPassword, // Audit/Backup
                 userId: user.id,
                 email: emailLower,
                 paymentStatus: "PENDING"
             };
+            // Only add password to application record if it was provided (audit/backup)
+            if (hashedPassword) {
+                scholarshipPayload.password = hashedPassword;
+            }
             console.log(`${TRACE_ID} Recording new application.`);
             application = await tx.scholarshipApplication.create({
                 data: scholarshipPayload
@@ -194,7 +197,7 @@ async function applyForScholarship(req, res) {
         // 6. RESPONSE DISPATCH
         return res.status(201).json({
             status: "success",
-            message: "Your application has been received and your account is secured.",
+            message: "Your application has been received! You can now proceed to payment.",
             refresh_token,
             data: userResponse,
             application
