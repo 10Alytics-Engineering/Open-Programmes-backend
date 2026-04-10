@@ -440,7 +440,7 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
         ...paymentData.callbackParams,
       };
 
-      if (paymentGateway === "paystack") {
+      if (paymentGateway === "PAYSTACK") {
         const paymentLink = await paystack.transaction.initialize({
           amount: `${paymentData.amount * 100}`,
           email: user.email!,
@@ -534,8 +534,15 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
     //   "NGN",
     //   { userId: "748374H43Jsadaa" },
     // );
-    const paymentData = await verifyStartButtonTransaction("RXVKFA3YJDA");
-    return res.status(200).json(paymentData);
+    // const paymentData = await verifyStartButtonTransaction("RXVKFA3YJDA");
+    // return res.status(200).json(paymentData);
+
+    const results = await prismadb.paymentTransaction.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    res.status(200).json(results);
   } catch (error) {
     console.log("Start Button Error: " + error);
     throw new Error("Failed to process payment");
@@ -632,7 +639,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
       ...paymentData.callbackParams,
     };
 
-    if (paymentGateway === "paystack") {
+    if (paymentGateway === "PAYSTACK") {
       const paystackLink = await paystack.transaction.initialize({
         amount: `${paymentData.amount * 100}`,
         email: email,
@@ -652,6 +659,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
         reference: paystackLink.data.reference,
       };
     } else {
+      console.log("Start Button Running");
       const startButtonLink = await initiateStartButtonPayment(
         email,
         paymentData.amount * 100,
