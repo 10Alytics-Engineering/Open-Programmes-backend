@@ -53,6 +53,12 @@ enum EventCategory {
   BREAK
 }
 
+enum PaymentSource {
+  STRIPE
+  START_BUTTON
+  PAYSTACK
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String  @map("user_id")
@@ -118,7 +124,8 @@ model PaymentStatus {
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
   paymentInstallments  PaymentInstallment[]
-  transactions         PaystackTransaction[]
+  transactions         PaymentTransaction[]
+  paystackTransactions PaystackTransaction[]
   secondPaymentDueDate DateTime?
   desiredStartDate     DateTime?
   
@@ -664,6 +671,31 @@ model PaystackTransaction {
   @@index([status])
   @@index([createdAt])
 }
+
+model PaymentTransaction {
+  id               String         @id @default(cuid())
+  transactionRef   String?         @unique
+  paymentGateway   PaymentSource
+  userId           String
+  courseId         String
+  paymentType      String?  
+  paymentPlan      String?
+  paymentStatusId  String?
+  paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
+  amount           String
+  status           String
+  paymentDate      DateTime?
+  authorizationUrl String?
+  metadata         String?        @db.Text
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@index([createdAt])
+}
+
 
 model CatalogHeaderTags {
   id       String  @id @default(cuid())
