@@ -670,7 +670,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
 
       if (!startButtonLink?.url) {
         console.log("Start button payment link error", startButtonLink);
-        res.status(500).json({
+        res.status(422).json({
           error: "Failed to fetch payment link",
           details:
             "An error occured while processing start button payment link",
@@ -852,6 +852,300 @@ async function createPaymentStatus(
   return tx.paymentStatus.create({ data: createData });
 }
 
+async function verifyPayment(reference: string) {
+  if (!reference) return { error: "Payment reference is required" };
+
+  const existingTx = await prismadb.paymentTransaction.findUnique({
+    where: { transactionRef: reference as string },
+    include: {
+      paymentStatus: {
+        include: {
+          paymentInstallments: {
+            orderBy: { installmentNumber: "asc" },
+          },
+          cohort: true,
+          user: {
+            select: { id: true, inactive: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (!existingTx) {
+    return { error: "Transaction not found" };
+  }
+
+  if (existingTx.status === "success") {
+    return {
+      status: "success",
+      data: existingTx,
+      message: "Payment already processed",
+    };
+  }
+
+  if (existingTx.paymentGateway === "PAYSTACK") {
+    const verification = await paystack.transaction.verify(reference as string);
+
+    if (verification.data.status !== "success") {
+      await prismadb.paymentTransaction.update({
+        where: { transactionRef: reference as string },
+        data: {
+          status: "failed",
+          updatedAt: new Date(),
+        },
+      });
+
+      return {
+        status: "error",
+        error: "Payment not successful",
+      };
+    }
+  } else {
+    const startButtonVerification = await verifyStartButtonTransaction(
+      reference as string,
+    );
+
+    if (startButtonVerification?.transaction?.status !== "successful") {
+      await prismadb.paymentTransaction.update({
+        where: { transactionRef: reference as string },
+        data: {
+          status: "failed",
+          updatedAt: new Date(),
+        },
+      });
+
+      return {
+        status: "error",
+        error: "Payment not successful",
+      };
+    }
+  }
+
+  const result = await prismadb.$transaction(
+    async (tx) => {
+      let updatedTx = await tx.paymentTransaction.update({
+        where: { transactionRef: reference as string },
+        data: {
+          status: "success",
+          paymentDate: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      const txMetadata = JSON.parse(updatedTx.metadata || "{}");
+      let userId = updatedTx.userId;
+
+      // ✅ IWD LOGIC: Create user if this is a scholarship application
+      if (txMetadata.isIWD && txMetadata.applicationId) {
+        const application = await tx.scholarshipApplication.findUnique({
+          where: { id: txMetadata.applicationId },
+        });
+
+        if (!application) {
+          throw new Error("Scholarship application not found");
+        }
+
+        // Check if user already exists
+        let user = await tx.user.findFirst({
+          where: {
+            OR: [
+              { email: application.email },
+              { phone_number: application.phone_number },
+            ],
+          },
+        });
+
+        if (!user) {
+          user = await tx.user.create({
+            data: {
+              name: application.fullName,
+              email: application.email,
+              phone_number: application.phone_number,
+              password: application.password, // This is already hashed from applyForScholarship
+              emailVerified: new Date(),
+              accountPaymentStatus: "PAID",
+            },
+          });
+          console.log(
+            `✅ Created user ${user.id} from IWD application ${application.id}`,
+          );
+        } else {
+          // Update existing user status if needed
+          user = await tx.user.update({
+            where: { id: user.id },
+            data: { accountPaymentStatus: "PAID" },
+          });
+        }
+
+        userId = user.id;
+
+        // Update transaction with the real userId
+        updatedTx = await tx.paymentTransaction.update({
+          where: { id: updatedTx.id },
+          data: { userId: user.id },
+        });
+
+        // Update application
+        await tx.scholarshipApplication.update({
+          where: { id: application.id },
+          data: {
+            userId: user.id,
+            paymentStatus: "PAID",
+          },
+        });
+      }
+
+      const paymentPlan = await getPaymentPlanFromRecord(updatedTx);
+
+      // ✅ CRITICAL: Reactivate user if they were marked inactive
+      if (
+        existingTx.paymentStatus?.user?.inactive ||
+        userId !== "IWD_PENDING"
+      ) {
+        const userToCheck =
+          userId !== "IWD_PENDING" ? userId : updatedTx.userId;
+        const u = await tx.user.findUnique({ where: { id: userToCheck } });
+        if (u?.inactive) {
+          await tx.user.update({
+            where: { id: userToCheck },
+            data: { inactive: false },
+          });
+          console.log(
+            `Reactivated user ${userToCheck} after successful payment`,
+          );
+        }
+      }
+
+      let paymentResult;
+      switch (paymentPlan) {
+        case PAYMENT_PLANS.FULL_PAYMENT:
+          paymentResult = await handleFullPayment(tx, {
+            userId: userId,
+            courseId: updatedTx.courseId,
+            reference: reference as string,
+          });
+          break;
+
+        case PAYMENT_PLANS.FIRST_HALF_COMPLETE:
+          paymentResult = await handleFirstHalfPayment(tx, {
+            userId: userId,
+            courseId: updatedTx.courseId,
+            reference: reference as string,
+          });
+          break;
+
+        case PAYMENT_PLANS.SECOND_HALF_PAYMENT:
+          paymentResult = await handleSecondHalfPayment(tx, {
+            userId: userId,
+            courseId: updatedTx.courseId,
+            reference: reference as string,
+          });
+          break;
+
+        case PAYMENT_PLANS.THREE_INSTALLMENTS:
+        case PAYMENT_PLANS.FOUR_INSTALLMENTS:
+          const metadata = JSON.parse(updatedTx.metadata || "{}");
+          paymentResult = await handleInstallmentPayment(
+            tx,
+            {
+              userId: userId,
+              courseId: updatedTx.courseId,
+              installmentNumber: metadata.installmentNumber || 1,
+              paymentPlan: paymentPlan,
+              reference: reference as string,
+            },
+            Number(updatedTx.amount),
+          );
+          break;
+      }
+
+      // ✅ CRITICAL: Verify purchase was created for all payment types
+      const existingPurchase = await tx.purchase.findFirst({
+        where: {
+          userId: userId,
+          courseId: updatedTx.courseId,
+        },
+      });
+
+      if (!existingPurchase) {
+        await tx.purchase.create({
+          data: {
+            userId: userId,
+            courseId: updatedTx.courseId,
+          },
+        });
+        console.log(
+          `✅ Created purchase record for user ${userId} and course ${updatedTx.courseId}`,
+        );
+      }
+
+      return updatedTx;
+    },
+    {
+      maxWait: 30000,
+      timeout: 25000,
+    },
+  );
+
+  try {
+    const metadata = JSON.parse(result.metadata || "{}");
+    await sendPaymentNotifications(
+      result.userId,
+      result.courseId,
+      metadata.installmentNumber,
+    );
+  } catch (emailError) {
+    console.error("Email notification failed:", emailError);
+  }
+
+  // 🔄 Auto-sync payment data to Google Sheets after successful payment
+  try {
+    const { GoogleSheetsSyncService } =
+      await import("../../utils/googleSheets");
+    GoogleSheetsSyncService.syncPaymentData().catch((e) =>
+      console.error("Google Sheets sync error:", e.message),
+    );
+  } catch (sheetError) {
+    console.error("Sheet service error:", sheetError);
+  }
+
+  const isIWD = JSON.parse(result.metadata || "{}").isIWD;
+  let tokens = {};
+
+  if (isIWD) {
+    const user = await prismadb.user.findUnique({
+      where: { id: result.userId },
+    });
+    if (user) {
+      const access_token = jwt.sign(
+        { email: user.email, id: user.id, role: user.role },
+        process.env.JWT_SECRET as string,
+        { expiresIn: "30d" },
+      );
+      const userResponse = {
+        ...user,
+        hasPassword: !!user.password,
+        access_token,
+      };
+      // @ts-ignore
+      delete userResponse.password;
+
+      tokens = {
+        access_token,
+        user: userResponse,
+      };
+    }
+  }
+
+  return {
+    status: "success",
+    data: result,
+    ...tokens,
+    userReactivated: existingTx.paymentStatus?.user?.inactive,
+  };
+}
+
 //#endregion
 
 //#region Payment Callback
@@ -914,303 +1208,54 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
   }
 
   try {
-    const existingTx = await prismadb.paymentTransaction.findUnique({
-      where: { transactionRef: reference as string },
-      include: {
-        paymentStatus: {
-          include: {
-            paymentInstallments: {
-              orderBy: { installmentNumber: "asc" },
-            },
-            cohort: true,
-            user: {
-              select: { id: true, inactive: true },
-            },
-          },
-        },
-      },
-    });
+    const verificationResponse = await verifyPayment(reference as string);
 
-    if (!existingTx) {
-      return res.status(404).json({ error: "Transaction not found" });
+    if (verificationResponse.status === "success") {
+      return res.json(verificationResponse);
+    } else if (verificationResponse) {
+      return res.status(422).json(verificationResponse);
     }
-
-    if (existingTx.status === "success") {
-      return res.json({
-        status: "success",
-        data: existingTx,
-        message: "Payment already processed",
-      });
-    }
-
-    if (existingTx.paymentGateway === "PAYSTACK") {
-      const verification = await paystack.transaction.verify(
-        reference as string,
-      );
-
-      if (verification.data.status !== "success") {
-        await prismadb.paymentTransaction.update({
-          where: { transactionRef: reference as string },
-          data: {
-            status: "failed",
-            updatedAt: new Date(),
-          },
-        });
-
-        return res.status(400).json({
-          status: "error",
-          error: "Payment not successful",
-        });
-      }
-    } else {
-      const startButtonVerification = await verifyStartButtonTransaction(
-        reference as string,
-      );
-
-      if (startButtonVerification?.transaction?.status !== "successful") {
-        await prismadb.paymentTransaction.update({
-          where: { transactionRef: reference as string },
-          data: {
-            status: "failed",
-            updatedAt: new Date(),
-          },
-        });
-
-        return res.status(400).json({
-          status: "error",
-          error: "Payment not successful",
-        });
-      }
-    }
-
-    const result = await prismadb.$transaction(
-      async (tx) => {
-        let updatedTx = await tx.paymentTransaction.update({
-          where: { transactionRef: reference as string },
-          data: {
-            status: "success",
-            paymentDate: new Date(),
-            updatedAt: new Date(),
-          },
-        });
-
-        const txMetadata = JSON.parse(updatedTx.metadata || "{}");
-        let userId = updatedTx.userId;
-
-        // ✅ IWD LOGIC: Create user if this is a scholarship application
-        if (txMetadata.isIWD && txMetadata.applicationId) {
-          const application = await tx.scholarshipApplication.findUnique({
-            where: { id: txMetadata.applicationId },
-          });
-
-          if (!application) {
-            throw new Error("Scholarship application not found");
-          }
-
-          // Check if user already exists
-          let user = await tx.user.findFirst({
-            where: {
-              OR: [
-                { email: application.email },
-                { phone_number: application.phone_number },
-              ],
-            },
-          });
-
-          if (!user) {
-            user = await tx.user.create({
-              data: {
-                name: application.fullName,
-                email: application.email,
-                phone_number: application.phone_number,
-                password: application.password, // This is already hashed from applyForScholarship
-                emailVerified: new Date(),
-                accountPaymentStatus: "PAID",
-              },
-            });
-            console.log(
-              `✅ Created user ${user.id} from IWD application ${application.id}`,
-            );
-          } else {
-            // Update existing user status if needed
-            user = await tx.user.update({
-              where: { id: user.id },
-              data: { accountPaymentStatus: "PAID" },
-            });
-          }
-
-          userId = user.id;
-
-          // Update transaction with the real userId
-          updatedTx = await tx.paymentTransaction.update({
-            where: { id: updatedTx.id },
-            data: { userId: user.id },
-          });
-
-          // Update application
-          await tx.scholarshipApplication.update({
-            where: { id: application.id },
-            data: {
-              userId: user.id,
-              paymentStatus: "PAID",
-            },
-          });
-        }
-
-        const paymentPlan = await getPaymentPlanFromRecord(updatedTx);
-
-        // ✅ CRITICAL: Reactivate user if they were marked inactive
-        if (
-          existingTx.paymentStatus?.user?.inactive ||
-          userId !== "IWD_PENDING"
-        ) {
-          const userToCheck =
-            userId !== "IWD_PENDING" ? userId : updatedTx.userId;
-          const u = await tx.user.findUnique({ where: { id: userToCheck } });
-          if (u?.inactive) {
-            await tx.user.update({
-              where: { id: userToCheck },
-              data: { inactive: false },
-            });
-            console.log(
-              `Reactivated user ${userToCheck} after successful payment`,
-            );
-          }
-        }
-
-        let paymentResult;
-        switch (paymentPlan) {
-          case PAYMENT_PLANS.FULL_PAYMENT:
-            paymentResult = await handleFullPayment(tx, {
-              userId: userId,
-              courseId: updatedTx.courseId,
-              reference: reference as string,
-            });
-            break;
-
-          case PAYMENT_PLANS.FIRST_HALF_COMPLETE:
-            paymentResult = await handleFirstHalfPayment(tx, {
-              userId: userId,
-              courseId: updatedTx.courseId,
-              reference: reference as string,
-            });
-            break;
-
-          case PAYMENT_PLANS.SECOND_HALF_PAYMENT:
-            paymentResult = await handleSecondHalfPayment(tx, {
-              userId: userId,
-              courseId: updatedTx.courseId,
-              reference: reference as string,
-            });
-            break;
-
-          case PAYMENT_PLANS.THREE_INSTALLMENTS:
-          case PAYMENT_PLANS.FOUR_INSTALLMENTS:
-            const metadata = JSON.parse(updatedTx.metadata || "{}");
-            paymentResult = await handleInstallmentPayment(
-              tx,
-              {
-                userId: userId,
-                courseId: updatedTx.courseId,
-                installmentNumber: metadata.installmentNumber || 1,
-                paymentPlan: paymentPlan,
-                reference: reference as string,
-              },
-              Number(updatedTx.amount),
-            );
-            break;
-        }
-
-        // ✅ CRITICAL: Verify purchase was created for all payment types
-        const existingPurchase = await tx.purchase.findFirst({
-          where: {
-            userId: userId,
-            courseId: updatedTx.courseId,
-          },
-        });
-
-        if (!existingPurchase) {
-          await tx.purchase.create({
-            data: {
-              userId: userId,
-              courseId: updatedTx.courseId,
-            },
-          });
-          console.log(
-            `✅ Created purchase record for user ${userId} and course ${updatedTx.courseId}`,
-          );
-        }
-
-        return updatedTx;
-      },
-      {
-        maxWait: 30000,
-        timeout: 25000,
-      },
-    );
-
-    try {
-      const metadata = JSON.parse(result.metadata || "{}");
-      await sendPaymentNotifications(
-        result.userId,
-        result.courseId,
-        metadata.installmentNumber,
-      );
-    } catch (emailError) {
-      console.error("Email notification failed:", emailError);
-    }
-
-    // 🔄 Auto-sync payment data to Google Sheets after successful payment
-    try {
-      const { GoogleSheetsSyncService } =
-        await import("../../utils/googleSheets");
-      GoogleSheetsSyncService.syncPaymentData().catch((e) =>
-        console.error("Google Sheets sync error:", e.message),
-      );
-    } catch (sheetError) {
-      console.error("Sheet service error:", sheetError);
-    }
-
-    const isIWD = JSON.parse(result.metadata || "{}").isIWD;
-    let tokens = {};
-
-    if (isIWD) {
-      const user = await prismadb.user.findUnique({
-        where: { id: result.userId },
-      });
-      if (user) {
-        const access_token = jwt.sign(
-          { email: user.email, id: user.id, role: user.role },
-          process.env.JWT_SECRET as string,
-          { expiresIn: "30d" },
-        );
-        const userResponse = {
-          ...user,
-          hasPassword: !!user.password,
-          access_token,
-        };
-        // @ts-ignore
-        delete userResponse.password;
-
-        tokens = {
-          access_token,
-          user: userResponse,
-        };
-      }
-    }
-
-    res.json({
-      status: "success",
-      data: result,
-      ...tokens,
-      userReactivated: existingTx.paymentStatus?.user?.inactive,
-    });
   } catch (error) {
     console.error("Verification error:", error);
     res.status(500).json({
       status: "error",
       error: "Payment verification failed",
       details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+paymentApp.get("/start-button/webhook", async (req: Request, res: Response) => {
+  const { event, data } = req.body;
+
+  try {
+    if (!data.transaction?.id) {
+      return res
+        .status(400)
+        .json({ error: "Invalid expected start button data" });
+    }
+
+    console.log(
+      `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
+    );
+    if (event === "collection.completed") {
+      const verifiedTransaction = await verifyPayment(
+        data.transaction?.transactionReference,
+      );
+
+      if (verifiedTransaction.status === "success") {
+        console.log(
+          `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
+        );
+        res.json(verifiedTransaction);
+      }
+    }
+  } catch (err) {
+    console.error("Start button webhook error: ", err);
+    return res.status(500).json({
+      status: "error",
+      error: "Start button webhook failed",
+      details: err instanceof Error ? err.message : "Unknown error",
     });
   }
 });
