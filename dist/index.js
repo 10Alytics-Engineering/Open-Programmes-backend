@@ -94,12 +94,19 @@ node_cron_1.default.schedule("*/30 * * * *", async () => {
     try {
         const { GoogleSheetsSyncService } = await Promise.resolve().then(() => __importStar(require("./utils/googleSheets")));
         const result = await GoogleSheetsSyncService.syncAllApplications();
+        const paymentResult = await GoogleSheetsSyncService.syncPaymentData();
         const endTime = new Date();
         if (result && result.success) {
-            console.log(`✅ [CRON_SYNC_SUCCESS]: Synced ${result.count} applications. Took ${endTime.getTime() - startTime.getTime()}ms`);
+            console.log(`✅ [CRON_IWD_SYNC]: Synced ${result.count} apps. Took ${endTime.getTime() - startTime.getTime()}ms`);
         }
         else {
-            console.error(`❌ [CRON_SYNC_FAILED]: ${result?.error || 'Unknown error'}`);
+            console.error(`❌ [CRON_IWD_SYNC]: ${result?.error || 'Unknown error'}`);
+        }
+        if (paymentResult && paymentResult.success) {
+            console.log(`✅ [CRON_PAYMENTS_SYNC]: Synced ${paymentResult.count} records.`);
+        }
+        else {
+            console.error(`❌ [CRON_PAYMENTS_SYNC]: ${paymentResult?.error || 'Unknown error'}`);
         }
     }
     catch (err) {

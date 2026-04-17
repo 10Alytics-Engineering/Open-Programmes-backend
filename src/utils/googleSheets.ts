@@ -264,8 +264,8 @@ export class GoogleSheetsSyncService {
                     course: true,
                     cohort: true,
                     transactions: {
-                        orderBy: { paymentDate: 'desc' },
-                        take: 1
+                        where: { status: 'success' },
+                        orderBy: { paymentDate: 'desc' }
                     },
                     paymentInstallments: {
                         orderBy: { installmentNumber: 'asc' }
@@ -334,13 +334,13 @@ export class GoogleSheetsSyncService {
                 const paidInstallments = ps.paymentInstallments.filter(pi => pi.paid).length;
                 const totalInstallments = ps.paymentInstallments.length;
                 
-                // Calculate total amount paid from transactions
-                let totalPaid = 0;
-                if(lastTransaction?.amount) {
-                    totalPaid = typeof lastTransaction.amount === 'string' 
-                        ? parseFloat(lastTransaction.amount) 
-                        : lastTransaction.amount;
-                }
+                // Calculate total amount paid from successful transactions
+                const totalPaid = ps.transactions.reduce((sum, tx) => {
+                    const amount = typeof tx.amount === 'string' 
+                        ? parseFloat(tx.amount) 
+                        : (tx.amount as number);
+                    return sum + amount;
+                }, 0);
 
                 // Calculate remaining amount
                 const coursePrice = (ps.course?.price || 0) as number;
