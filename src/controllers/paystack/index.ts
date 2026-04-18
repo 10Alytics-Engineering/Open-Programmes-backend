@@ -54,9 +54,9 @@ const INSTALLMENT_CONFIG = {
   month2: 80000,
 };
 const THREE_INSTALLMENT_CONFIG = {
-  initialPayment: 85000,
-  month1: 85000,
-  month2: 80000,
+  initialPayment: 50000,
+  month1: 50000,
+  month2: 50000,
 };
 
 //#region Utility Functions
@@ -134,7 +134,7 @@ async function assignToSelectedCohort(
   userId: string,
   courseId: string,
   cohortName: string,
-  paymentPlan?: PaymentPlan
+  paymentPlan?: PaymentPlan,
 ) {
   // Fetch all cohorts for the course to perform robust matching
   const course = await tx.course.findUniqueOrThrow({
@@ -146,7 +146,7 @@ async function assignToSelectedCohort(
 
   // Find cohort with case-insensitive and whitespace-insensitive matching
   const targetCohort = course.cohorts.find(
-    (c) => c.name.trim().toLowerCase() === cohortName.trim().toLowerCase()
+    (c) => c.name.trim().toLowerCase() === cohortName.trim().toLowerCase(),
   );
 
   if (!targetCohort) {
@@ -203,7 +203,7 @@ async function assignToSelectedCohort(
 async function sendPaymentNotifications(
   userId: string,
   courseId: string,
-  installmentNumber?: number
+  installmentNumber?: number,
 ) {
   const [user, course, paymentStatus] = await Promise.all([
     getUserDetails(userId),
@@ -226,7 +226,7 @@ async function sendPaymentNotifications(
       user.email!,
       course.title,
       user.name || "Student",
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`
+      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
     );
   } else if (paymentPlan === PAYMENT_PLANS.FIRST_HALF_COMPLETE) {
     if (paymentStatus.status === PaymentStatusType.COMPLETE) {
@@ -234,14 +234,14 @@ async function sendPaymentNotifications(
         user.email!,
         course.title,
         user.name || "Student",
-        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`
+        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
       );
     } else {
       await sendPaymentConfirmation(
         user.email!,
         user.name || "Student",
         course.title,
-        1
+        1,
       );
     }
   } else if (
@@ -253,14 +253,14 @@ async function sendPaymentNotifications(
         user.email!,
         course.title,
         user.name || "Student",
-        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`
+        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
       );
     } else {
       await sendPaymentConfirmation(
         user.email!,
         user.name || "Student",
         course.title,
-        installmentNumber
+        installmentNumber,
       );
     }
   }
@@ -323,7 +323,7 @@ paymentApp.get("/payment-status", async (req: Request, res: Response) => {
       remainingAmount = halfFee;
     } else if (paymentPlan === PAYMENT_PLANS.FOUR_INSTALLMENTS) {
       const paidInstallments = paymentStatus.paymentInstallments.filter(
-        (i) => i.paid
+        (i) => i.paid,
       );
       const totalPaid = paidInstallments.reduce((sum, i) => sum + i.amount, 0);
       remainingAmount = courseFee - totalPaid;
@@ -341,7 +341,6 @@ paymentApp.get("/payment-status", async (req: Request, res: Response) => {
     });
   }
 });
-
 
 //#region Link Generation
 paymentApp.get("/payment-link", async (req: Request, res: Response) => {
@@ -397,15 +396,20 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
       const cohortName = paymentStatus.cohort.name;
       const courseFee = parseCoursePrice(course.price);
 
-      const paymentData = getPaymentData(planType as string, cohortName, courseFee);
+      const paymentData = getPaymentData(
+        planType as string,
+        cohortName,
+        courseFee,
+      );
       if (!paymentData) {
         return res.status(400).json({ error: "Invalid plan type" });
       }
 
       // Check for existing pending transaction that MATCHES this plan and amount
-      const pendingTx = paymentStatus.transactions.find(tx =>
-        tx.paymentPlan === paymentData.callbackParams.paymentPlan &&
-        tx.amount === paymentData.amount.toString()
+      const pendingTx = paymentStatus.transactions.find(
+        (tx) =>
+          tx.paymentPlan === paymentData.callbackParams.paymentPlan &&
+          tx.amount === paymentData.amount.toString(),
       );
 
       if (pendingTx?.authorizationUrl) {
@@ -418,7 +422,13 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
       const paymentLink = await paystack.transaction.initialize({
         amount: `${paymentData.amount * 100}`,
         email: user.email!,
-        channels: (channels as string[]) || ["card", "bank_transfer", "mobile_money", "ussd", "qr"],
+        channels: (channels as string[]) || [
+          "card",
+          "bank_transfer",
+          "mobile_money",
+          "ussd",
+          "qr",
+        ],
         metadata: {
           ...paymentData.metadata,
           userId,
@@ -461,7 +471,16 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
 
 //#region Payment Initialization Endpoints
 paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
-  const { courseId, userId, planType, cohortName, isIWD, applicationId, amount, channels } = req.body;
+  const {
+    courseId,
+    userId,
+    planType,
+    cohortName,
+    isIWD,
+    applicationId,
+    amount,
+    channels,
+  } = req.body;
 
   try {
     let email = "";
@@ -470,9 +489,10 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
 
     if (isIWD && applicationId) {
       const application = await prismadb.scholarshipApplication.findUnique({
-        where: { id: applicationId }
+        where: { id: applicationId },
       });
-      if (!application) return res.status(404).json({ error: "Application not found" });
+      if (!application)
+        return res.status(404).json({ error: "Application not found" });
       email = application.email;
       name = application.fullName;
       phone = application.phone_number;
@@ -485,12 +505,15 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     }
 
     const course = await getCourseDetails(courseId);
-    const courseFee = isIWD ? (amount || 100000) : parseCoursePrice(course.price);
+    const courseFee = amount;
+    // const courseFee = isIWD ? amount || 100000 : parseCoursePrice(course.price);
 
-    const existingPayment = userId ? await prismadb.paymentStatus.findUnique({
-      where: { userId_courseId: { userId, courseId } },
-      include: { paymentInstallments: true },
-    }) : null;
+    const existingPayment = userId
+      ? await prismadb.paymentStatus.findUnique({
+          where: { userId_courseId: { userId, courseId } },
+          include: { paymentInstallments: true },
+        })
+      : null;
 
     const paymentData = getPaymentData(planType, cohortName, courseFee);
     if (!paymentData) {
@@ -529,7 +552,13 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     const paymentLink = await paystack.transaction.initialize({
       amount: `${paymentData.amount * 100}`,
       email: email,
-      channels: channels || ["card", "bank_transfer", "mobile_money", "ussd", "qr"],
+      channels: channels || [
+        "card",
+        "bank_transfer",
+        "mobile_money",
+        "ussd",
+        "qr",
+      ],
       metadata: {
         ...paymentData.metadata,
         userId,
@@ -566,7 +595,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
             metadata: JSON.stringify({
               ...paymentData.metadata,
               isIWD,
-              applicationId
+              applicationId,
             }),
             paymentDate: new Date(),
           },
@@ -575,7 +604,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
       {
         maxWait: 20000,
         timeout: 15000,
-      }
+      },
     );
 
     res.json({
@@ -597,7 +626,11 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
  * @param cohortName - cohort the user selected
  * @param courseFee  - the actual course fee fetched from the DB (admin-set price)
  */
-function getPaymentData(planType: string, cohortName: string, courseFee: number = TOTAL_COURSE_FEE) {
+function getPaymentData(
+  planType: string,
+  cohortName: string,
+  courseFee: number = TOTAL_COURSE_FEE,
+) {
   // Use current date as baseline since actual schedule is calculated from DB cohort record
   const startDate = new Date();
   const halfFee = Math.ceil(courseFee / 2);
@@ -650,14 +683,14 @@ async function createPaymentStatus(
     planType: string;
     cohortName: string;
     courseFee?: number;
-  }
+  },
 ) {
   const cohort = await assignToSelectedCohort(
     tx,
     params.userId,
     params.courseId,
     params.cohortName,
-    params.paymentData.callbackParams.paymentPlan
+    params.paymentData.callbackParams.paymentPlan,
   );
 
   const createData: any = {
@@ -710,16 +743,16 @@ paymentApp.get("/payment/callback", async (req: Request, res: Response) => {
 
     if (verification.data.status === "success") {
       res.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?reference=${reference}`
+        `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?reference=${reference}`,
       );
     } else {
       res.redirect(
-        `${process.env.NEXT_PUBLIC_APP_URL}/payment/failed?reference=${reference}`
+        `${process.env.NEXT_PUBLIC_APP_URL}/payment/failed?reference=${reference}`,
       );
     }
   } catch (error) {
     res.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/payment/failed?reason=verification`
+      `${process.env.NEXT_PUBLIC_APP_URL}/payment/failed?reason=verification`,
     );
   }
 });
@@ -809,9 +842,9 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
             where: {
               OR: [
                 { email: application.email },
-                { phone_number: application.phone_number }
-              ]
-            }
+                { phone_number: application.phone_number },
+              ],
+            },
           });
 
           if (!user) {
@@ -822,15 +855,17 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
                 phone_number: application.phone_number,
                 password: application.password, // This is already hashed from applyForScholarship
                 emailVerified: new Date(),
-                accountPaymentStatus: "PAID"
+                accountPaymentStatus: "PAID",
               },
             });
-            console.log(`✅ Created user ${user.id} from IWD application ${application.id}`);
+            console.log(
+              `✅ Created user ${user.id} from IWD application ${application.id}`,
+            );
           } else {
             // Update existing user status if needed
             user = await tx.user.update({
               where: { id: user.id },
-              data: { accountPaymentStatus: "PAID" }
+              data: { accountPaymentStatus: "PAID" },
             });
           }
 
@@ -839,7 +874,7 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
           // Update transaction with the real userId
           updatedTx = await tx.paystackTransaction.update({
             where: { id: updatedTx.id },
-            data: { userId: user.id }
+            data: { userId: user.id },
           });
 
           // Update application
@@ -847,23 +882,29 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
             where: { id: application.id },
             data: {
               userId: user.id,
-              paymentStatus: "PAID"
-            }
+              paymentStatus: "PAID",
+            },
           });
         }
 
         const paymentPlan = await getPaymentPlanFromRecord(updatedTx);
 
         // ✅ CRITICAL: Reactivate user if they were marked inactive
-        if (existingTx.paymentStatus?.user?.inactive || (userId !== "IWD_PENDING")) {
-          const userToCheck = userId !== "IWD_PENDING" ? userId : updatedTx.userId;
+        if (
+          existingTx.paymentStatus?.user?.inactive ||
+          userId !== "IWD_PENDING"
+        ) {
+          const userToCheck =
+            userId !== "IWD_PENDING" ? userId : updatedTx.userId;
           const u = await tx.user.findUnique({ where: { id: userToCheck } });
           if (u?.inactive) {
             await tx.user.update({
               where: { id: userToCheck },
               data: { inactive: false },
             });
-            console.log(`Reactivated user ${userToCheck} after successful payment`);
+            console.log(
+              `Reactivated user ${userToCheck} after successful payment`,
+            );
           }
         }
 
@@ -905,7 +946,7 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
                 paymentPlan: paymentPlan,
                 reference: reference as string,
               },
-              Number(updatedTx.amount)
+              Number(updatedTx.amount),
             );
             break;
         }
@@ -926,7 +967,7 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
             },
           });
           console.log(
-            `✅ Created purchase record for user ${userId} and course ${updatedTx.courseId}`
+            `✅ Created purchase record for user ${userId} and course ${updatedTx.courseId}`,
           );
         }
 
@@ -935,7 +976,7 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
       {
         maxWait: 30000,
         timeout: 25000,
-      }
+      },
     );
 
     try {
@@ -943,7 +984,7 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
       await sendPaymentNotifications(
         result.userId,
         result.courseId,
-        metadata.installmentNumber
+        metadata.installmentNumber,
       );
     } catch (emailError) {
       console.error("Email notification failed:", emailError);
@@ -951,9 +992,10 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
 
     // 🔄 Auto-sync payment data to Google Sheets after successful payment
     try {
-      const { GoogleSheetsSyncService } = await import("../../utils/googleSheets");
-      GoogleSheetsSyncService.syncPaymentData().catch(e =>
-        console.error("Google Sheets sync error:", e.message)
+      const { GoogleSheetsSyncService } =
+        await import("../../utils/googleSheets");
+      GoogleSheetsSyncService.syncPaymentData().catch((e) =>
+        console.error("Google Sheets sync error:", e.message),
       );
     } catch (sheetError) {
       console.error("Sheet service error:", sheetError);
@@ -964,25 +1006,25 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
 
     if (isIWD) {
       const user = await prismadb.user.findUnique({
-        where: { id: result.userId }
+        where: { id: result.userId },
       });
       if (user) {
         const access_token = jwt.sign(
           { email: user.email, id: user.id, role: user.role },
           process.env.JWT_SECRET as string,
-          { expiresIn: "30d" }
+          { expiresIn: "30d" },
         );
         const userResponse = {
           ...user,
           hasPassword: !!user.password,
-          access_token
+          access_token,
         };
         // @ts-ignore
         delete userResponse.password;
 
         tokens = {
           access_token,
-          user: userResponse
+          user: userResponse,
         };
       }
     }
@@ -1003,7 +1045,11 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
   }
 });
 
-async function verifyPurchaseCreation(tx: Prisma.TransactionClient, userId: string, courseId: string) {
+async function verifyPurchaseCreation(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  courseId: string,
+) {
   const purchase = await tx.purchase.findFirst({
     where: {
       userId,
@@ -1021,12 +1067,13 @@ async function verifyPurchaseCreation(tx: Prisma.TransactionClient, userId: stri
       userEmail: user?.email,
       courseId,
       courseTitle: course?.title,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
-    throw new Error(`Purchase record not created for user ${userId} and course ${courseId}`);
+    throw new Error(
+      `Purchase record not created for user ${userId} and course ${courseId}`,
+    );
   }
-
 
   return purchase;
 }
@@ -1054,7 +1101,7 @@ async function handleFullPayment(tx: Prisma.TransactionClient, metadata: any) {
       metadata.userId,
       metadata.courseId,
       cohortName,
-      PAYMENT_PLANS.FULL_PAYMENT
+      PAYMENT_PLANS.FULL_PAYMENT,
     );
 
     const existingPayment = await tx.paymentStatus.findUnique({
@@ -1115,7 +1162,7 @@ async function handleFullPayment(tx: Prisma.TransactionClient, metadata: any) {
 
 async function handleFirstHalfPayment(
   tx: Prisma.TransactionClient,
-  metadata: any
+  metadata: any,
 ) {
   try {
     const existingTx = await tx.paystackTransaction.findUnique({
@@ -1123,7 +1170,9 @@ async function handleFirstHalfPayment(
       include: { paymentStatus: true },
     });
 
-    const txMetadata = existingTx ? JSON.parse(existingTx.metadata || "{}") : {};
+    const txMetadata = existingTx
+      ? JSON.parse(existingTx.metadata || "{}")
+      : {};
     const cohortName = txMetadata.cohortName;
 
     if (!cohortName) {
@@ -1135,7 +1184,7 @@ async function handleFirstHalfPayment(
       metadata.userId,
       metadata.courseId,
       cohortName,
-      PAYMENT_PLANS.FIRST_HALF_COMPLETE
+      PAYMENT_PLANS.FIRST_HALF_COMPLETE,
     );
 
     const existingPayment = await tx.paymentStatus.findUnique({
@@ -1190,7 +1239,7 @@ async function handleFirstHalfPayment(
     logPaymentError("First half payment processing failed", {
       userId: metadata.userId,
       courseId: metadata.courseId,
-      error: error instanceof Error ? error.message : "Unknown error"
+      error: error instanceof Error ? error.message : "Unknown error",
     });
     throw error;
   }
@@ -1198,7 +1247,7 @@ async function handleFirstHalfPayment(
 
 async function handleSecondHalfPayment(
   tx: Prisma.TransactionClient,
-  metadata: any
+  metadata: any,
 ) {
   try {
     const paymentStatus = await tx.paymentStatus.findUniqueOrThrow({
@@ -1233,7 +1282,7 @@ async function handleSecondHalfPayment(
 async function handleInstallmentPayment(
   tx: Prisma.TransactionClient,
   metadata: any,
-  amountPaid: number
+  amountPaid: number,
 ) {
   try {
     const installmentNumber = parseInt(metadata.installmentNumber, 10);
@@ -1253,12 +1302,12 @@ async function handleInstallmentPayment(
 
     // FIX: Find the installment by number, not by paid status
     const installmentToUpdate = paymentStatus.paymentInstallments.find(
-      (i) => i.installmentNumber === installmentNumber
+      (i) => i.installmentNumber === installmentNumber,
     );
 
     if (!installmentToUpdate) {
       throw new Error(
-        `Installment ${installmentNumber} not found for this payment plan`
+        `Installment ${installmentNumber} not found for this payment plan`,
       );
     }
 
@@ -1314,7 +1363,7 @@ async function handleInstallmentPayment(
         const newDueDate = addMonths(
           cohort.startDate,
           remainingInstallment.installmentNumber -
-          (paymentPlan === PAYMENT_PLANS.THREE_INSTALLMENTS ? 1 : 2)
+            (paymentPlan === PAYMENT_PLANS.THREE_INSTALLMENTS ? 1 : 2),
         );
 
         await tx.paymentInstallment.update({
@@ -1443,7 +1492,7 @@ cron.schedule("0 9 * * *", async () => {
 
       // Calculate days until due
       const daysUntilDue = Math.ceil(
-        (installment.dueDate.getTime() - today.getTime()) / 86400000
+        (installment.dueDate.getTime() - today.getTime()) / 86400000,
       );
 
       const paymentLink = await paystack.transaction
@@ -1469,7 +1518,7 @@ cron.schedule("0 9 * * *", async () => {
         installment.dueDate,
         installment.amount,
         paymentLink,
-        daysUntilDue
+        daysUntilDue,
       );
 
       await prismadb.paymentInstallment.update({
@@ -1479,7 +1528,7 @@ cron.schedule("0 9 * * *", async () => {
     } catch (error) {
       console.error(
         `Reminder failed for installment ${installment.id}:`,
-        error
+        error,
       );
     }
   }
@@ -1515,7 +1564,7 @@ cron.schedule("0 0 * * *", async () => {
     });
 
     console.log(
-      `Found ${overduePayments.length} potentially overdue installments`
+      `Found ${overduePayments.length} potentially overdue installments`,
     );
 
     for (const installment of overduePayments) {
@@ -1534,16 +1583,16 @@ cron.schedule("0 0 * * *", async () => {
           const cohortHasStarted = now >= cohortStartDate;
           const daysSinceCohortStart = cohortHasStarted
             ? Math.floor(
-              (now.getTime() - cohortStartDate.getTime()) /
-              (24 * 60 * 60 * 1000)
-            )
+                (now.getTime() - cohortStartDate.getTime()) /
+                  (24 * 60 * 60 * 1000),
+              )
             : -1;
           const monthsSinceCohortStart = Math.floor(
-            daysSinceCohortStart / 30.44
+            daysSinceCohortStart / 30.44,
           );
 
           console.log(
-            `Checking user ${paymentStatus.user.email} - Plan: ${paymentPlan}, Installment: ${installment.installmentNumber}, Cohort Started: ${cohortHasStarted}, Days Since Start: ${daysSinceCohortStart}`
+            `Checking user ${paymentStatus.user.email} - Plan: ${paymentPlan}, Installment: ${installment.installmentNumber}, Cohort Started: ${cohortHasStarted}, Days Since Start: ${daysSinceCohortStart}`,
           );
 
           if (paymentPlan === PAYMENT_PLANS.FULL_PAYMENT) {
@@ -1571,7 +1620,7 @@ cron.schedule("0 0 * * *", async () => {
                 const gracePeriodDays = 14; // More lenient for second half
                 const gracePeriodEnd = new Date(
                   paymentStatus.secondPaymentDueDate.getTime() +
-                  gracePeriodDays * 24 * 60 * 60 * 1000
+                    gracePeriodDays * 24 * 60 * 60 * 1000,
                 );
 
                 if (now > gracePeriodEnd && paidCount < 2) {
@@ -1601,7 +1650,7 @@ cron.schedule("0 0 * * *", async () => {
                 const expectedDueDate = addMonths(cohortStartDate, 1);
                 const gracePeriodEnd = new Date(
                   expectedDueDate.getTime() +
-                  gracePeriodDays * 24 * 60 * 60 * 1000
+                    gracePeriodDays * 24 * 60 * 60 * 1000,
                 );
 
                 if (now > gracePeriodEnd && paidCount < 2) {
@@ -1617,7 +1666,7 @@ cron.schedule("0 0 * * *", async () => {
                 const expectedDueDate = addMonths(cohortStartDate, 2);
                 const gracePeriodEnd = new Date(
                   expectedDueDate.getTime() +
-                  gracePeriodDays * 24 * 60 * 60 * 1000
+                    gracePeriodDays * 24 * 60 * 60 * 1000,
                 );
 
                 if (now > gracePeriodEnd && paidCount < 3) {
@@ -1657,7 +1706,7 @@ cron.schedule("0 0 * * *", async () => {
                 const expectedDueDate = addMonths(cohortStartDate, 1);
                 const gracePeriodEnd = new Date(
                   expectedDueDate.getTime() +
-                  gracePeriodDays * 24 * 60 * 60 * 1000
+                    gracePeriodDays * 24 * 60 * 60 * 1000,
                 );
 
                 if (now > gracePeriodEnd && paidCount < 3) {
@@ -1673,7 +1722,7 @@ cron.schedule("0 0 * * *", async () => {
                 const expectedDueDate = addMonths(cohortStartDate, 2);
                 const gracePeriodEnd = new Date(
                   expectedDueDate.getTime() +
-                  gracePeriodDays * 24 * 60 * 60 * 1000
+                    gracePeriodDays * 24 * 60 * 60 * 1000,
                 );
 
                 if (now > gracePeriodEnd && paidCount < 4) {
@@ -1687,13 +1736,13 @@ cron.schedule("0 0 * * *", async () => {
         } else {
           // Fallback for payments without cohort assignment (edge case)
           console.log(
-            `Warning: Payment status ${paymentStatus.id} has no cohort assigned`
+            `Warning: Payment status ${paymentStatus.id} has no cohort assigned`,
           );
 
           // Very lenient fallback - only deactivate if REALLY overdue
           const daysPastDue = Math.floor(
             (now.getTime() - installment.dueDate.getTime()) /
-            (24 * 60 * 60 * 1000)
+              (24 * 60 * 60 * 1000),
           );
           if (daysPastDue > 30) {
             // 30-day grace for edge cases
@@ -1704,7 +1753,7 @@ cron.schedule("0 0 * * *", async () => {
 
         if (shouldDeactivate) {
           console.log(
-            `🚫 DEACTIVATING user ${paymentStatus.user.email} - Reason: ${reason}`
+            `🚫 DEACTIVATING user ${paymentStatus.user.email} - Reason: ${reason}`,
           );
 
           let nextCohort = null;
@@ -1742,7 +1791,7 @@ cron.schedule("0 0 * * *", async () => {
           try {
             const overdueDays = Math.floor(
               (now.getTime() - installment.dueDate.getTime()) /
-              (24 * 60 * 60 * 1000)
+                (24 * 60 * 60 * 1000),
             );
             await sendAccountDeactivationNotification(
               paymentStatus.user.email!,
@@ -1751,23 +1800,23 @@ cron.schedule("0 0 * * *", async () => {
               paymentPlan || "Unknown Plan",
               overdueDays,
               installment.installmentNumber,
-              nextCohort?.startDate
+              nextCohort?.startDate,
             );
           } catch (emailError) {
             console.error(
               `Failed to send deactivation email to ${paymentStatus.user.email}:`,
-              emailError
+              emailError,
             );
           }
         } else {
           console.log(
-            `✅ User ${paymentStatus.user.email} installment ${installment.installmentNumber} - No deactivation needed`
+            `✅ User ${paymentStatus.user.email} installment ${installment.installmentNumber} - No deactivation needed`,
           );
         }
       } catch (error) {
         console.error(
           `❌ Overdue handling failed for installment ${installment.id}:`,
-          error
+          error,
         );
       }
     }
@@ -1810,7 +1859,7 @@ cron.schedule("0 3 * * 1", async () => {
     for (const user of recentlyDeactivated) {
       for (const paymentStatus of user.paymentStatus) {
         const paidCount = paymentStatus.paymentInstallments.filter(
-          (i) => i.paid
+          (i) => i.paid,
         ).length;
         const totalInstallments = paymentStatus.paymentInstallments.length;
         const paymentPlan = getPaymentPlan(paymentStatus);
@@ -1836,7 +1885,7 @@ cron.schedule("0 3 * * 1", async () => {
 
         if (suspicious) {
           console.log(
-            `🚨 SUSPICIOUS DEACTIVATION: User ${user.email} - ${suspiciousReason} - Needs manual review`
+            `🚨 SUSPICIOUS DEACTIVATION: User ${user.email} - ${suspiciousReason} - Needs manual review`,
           );
 
           // Send alert email for wrongful deactivation
@@ -1847,12 +1896,12 @@ cron.schedule("0 3 * * 1", async () => {
               paymentStatus.cohort?.name || "Unknown Course",
               paymentPlan || "Unknown Plan",
               suspiciousReason,
-              user.email!
+              user.email!,
             );
           } catch (emailError) {
             console.error(
               `Failed to send wrongful deactivation alert for ${user.email}:`,
-              emailError
+              emailError,
             );
           }
         }
