@@ -20,10 +20,11 @@ import {
   isWithinInterval,
 } from "date-fns";
 import {
+  convertNairaToOtherCurrency,
+  CurrrencyType,
   initiateStartButtonPayment,
   verifyStartButtonTransaction,
 } from "../../utils/paymentService";
-import { generatePaymentRef } from "../../helpers/generate-ref";
 
 if (!process.env.PAYSTACK_SECRET_KEY) {
   console.warn("⚠️ PAYSTACK_SECRET_KEY is missing from environment variables!");
@@ -357,6 +358,7 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
     planType,
     channels,
     paymentGateway,
+    currency,
     paymentMethods,
   } = req.query;
 
@@ -433,11 +435,22 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
         });
       }
 
+      const conversionData = await convertNairaToOtherCurrency(
+        currency as CurrrencyType,
+        paymentData.amount,
+      );
+
+      if (conversionData?.status !== "success") {
+        return res.status(400).json({ error: conversionData.status });
+      }
+
       const metadata = {
         ...paymentData.metadata,
         userId,
         courseId,
         ...paymentData.callbackParams,
+        selectedCurrency: currency,
+        currencyAmount: conversionData.amount,
       };
 
       if (paymentGateway === "PAYSTACK") {
@@ -478,10 +491,9 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
       } else {
         const paymentLink = await initiateStartButtonPayment(
           user.email,
-          paymentData.amount * 100,
-          "NGN",
+          conversionData.amount * 100,
+          (currency as CurrrencyType) || "NGN",
           metadata,
-
           paymentMethods as string[],
         );
 
@@ -530,22 +542,27 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
   try {
     // const paymentData = await initiateStartButtonPayment(
     //   "ebirenidavid@gmail.com",
-    //   30000,
-    //   "NGN",
+    //   110000,
+    //   "GHS",
     //   { userId: "748374H43Jsadaa" },
+    //   ["card", "mobile_money"],
     // );
+    const converted = await convertNairaToOtherCurrency("GHS", 40000);
     // const paymentData = await verifyStartButtonTransaction("RXVKFA3YJDA");
-    // return res.status(200).json(paymentData);
+    return res.status(200).json({ converted });
 
-    const results = await prismadb.paymentTransaction.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
+    // const results = await prismadb.paymentTransaction.findMany({
+    //   orderBy: { createdAt: "desc" },
+    //   take: 50,
+    // });
 
-    res.status(200).json(results);
+    // res.status(200).json(dueInstallments);
   } catch (error) {
     console.log("Start Button Error: " + error);
-    throw new Error("Failed to process payment");
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 });
 
@@ -561,6 +578,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     amount,
     channels,
     paymentGateway,
+    currency,
   } = req.body;
 
   try {
@@ -630,6 +648,15 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     }
 
     let paymentLink = null;
+    const conversionData = await convertNairaToOtherCurrency(
+      currency,
+      paymentData.amount,
+    );
+
+    if (conversionData?.status !== "success") {
+      return res.status(400).json({ error: conversionData.status });
+    }
+
     const metadata = {
       ...paymentData.metadata,
       userId,
@@ -637,6 +664,8 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
       isIWD,
       applicationId,
       ...paymentData.callbackParams,
+      selectedCurrency: currency,
+      currencyAmount: conversionData.amount,
     };
 
     if (paymentGateway === "PAYSTACK") {
@@ -659,11 +688,10 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
         reference: paystackLink.data.reference,
       };
     } else {
-      console.log("Start Button Running");
       const startButtonLink = await initiateStartButtonPayment(
         email,
-        paymentData.amount * 100,
-        "NGN",
+        conversionData.amount * 100,
+        (currency as CurrrencyType) || "NGN",
         metadata,
         channels as string[],
       );
@@ -1706,6 +1734,7 @@ cron.schedule("0 9 * * *", async () => {
           user: true,
           course: true,
           cohort: true,
+          transactions: true,
         },
       },
     },

@@ -1,11 +1,14 @@
 import axios from "axios";
 import { prismadb } from "../index";
 import { generatePaymentRef } from "../helpers/generate-ref";
+import { ngnToUSD, usdToTarget } from "./currency";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const START_BUTTON_URL = process.env.START_BUTTON_API_URL;
 const START_BUTTON_SECRET_KEY = process.env.START_BUTTON_SECRET_KEY;
 const START_BUTTON_PUBLIC_KEY = process.env.START_BUTTON_PUBLIC_KEY;
+
+export type CurrrencyType = "GHS" | "NGN" | "ZAR" | "KES" | "UGX";
 
 export const generatePaymentLink = async (
   userId: string,
@@ -69,7 +72,7 @@ export const verifyPaystackPayment = async (reference: string) => {
 export const initiateStartButtonPayment = async (
   email: string,
   amount: number,
-  currency: "GHS" | "NGN" | "ZAR" | "KES" | "UGX",
+  currency: CurrrencyType,
   metaData: { [key: string]: any },
   paymentMethods?: string[],
 ) => {
@@ -79,7 +82,7 @@ export const initiateStartButtonPayment = async (
     const response = await axios.post(
       `${START_BUTTON_URL}/transaction/initialize`,
       {
-        amount,
+        amount: Number(Number(amount).toFixed(2)),
         currency: currency || "NGN",
         email,
         redirectUrl: `${process.env.START_BUTTON_CALLBACK_URL}?reference=${ref}`,
@@ -126,6 +129,54 @@ export const verifyStartButtonTransaction = async (reference: string) => {
   } catch (error) {
     console.error("Error verifying start button payment:", error);
     throw new Error("Payment verification failed");
+  }
+};
+
+export const convertNairaToOtherCurrency = async (
+  toCurrency: CurrrencyType,
+  amountInNGN: number,
+) => {
+  if (!amountInNGN || typeof amountInNGN !== "number")
+    return { error: "Amount is required and should be a valid number" };
+  if (!toCurrency)
+    return { error: "Currency is required and should be a valid number" };
+
+  const acceptedCurrencies = ["GHS", "NGN", "ZAR", "KES", "UGX"];
+
+  if (!acceptedCurrencies.includes(toCurrency)) {
+    throw new Error("Currency not supported");
+  }
+
+  try {
+    const response = await axios.get(
+      `${START_BUTTON_URL}/transaction/exchange`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${START_BUTTON_PUBLIC_KEY}`,
+        },
+      },
+    );
+
+    if (response?.data?.success) {
+      const rates = response.data.data;
+
+      if (toCurrency === "NGN")
+        return { status: "success", amount: amountInNGN }; // no conversion needed
+
+      const inUSD = ngnToUSD(amountInNGN, rates);
+      const amountInTargetCurreny = usdToTarget(inUSD, toCurrency, rates);
+
+      return { status: "success", amount: amountInTargetCurreny };
+    }
+
+    throw new Error("An error occured while getting rates");
+  } catch (error) {
+    console.log(
+      "Currency Conversion Failed: ",
+      error instanceof Error ? error.message : "Unknown",
+    );
+    return { status: "failed", error: `Currency conversion failed` };
   }
 };
 
