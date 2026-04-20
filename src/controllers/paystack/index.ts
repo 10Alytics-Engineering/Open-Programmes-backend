@@ -549,6 +549,8 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
       }
     }
 
+    console.log("Payment Data from paystack", paymentData);
+
     const paymentLink = await paystack.transaction.initialize({
       amount: `${paymentData.amount * 100}`,
       email: email,
