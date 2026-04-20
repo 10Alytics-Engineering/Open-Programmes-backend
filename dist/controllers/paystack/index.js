@@ -72,9 +72,9 @@ const INSTALLMENT_CONFIG = {
     month2: 80000,
 };
 const THREE_INSTALLMENT_CONFIG = {
-    initialPayment: 85000,
-    month1: 85000,
-    month2: 80000,
+    initialPayment: 50000,
+    month1: 50000,
+    month2: 50000,
 };
 //#region Utility Functions
 const getCohortSchedule = (startDate) => ({
@@ -350,7 +350,7 @@ paymentApp.get("/payment-link", async (req, res) => {
                 return res.status(400).json({ error: "Invalid plan type" });
             }
             // Check for existing pending transaction that MATCHES this plan and amount
-            const pendingTx = paymentStatus.transactions.find(tx => tx.paymentPlan === paymentData.callbackParams.paymentPlan &&
+            const pendingTx = paymentStatus.transactions.find((tx) => tx.paymentPlan === paymentData.callbackParams.paymentPlan &&
                 tx.amount === paymentData.amount.toString());
             if (pendingTx?.authorizationUrl) {
                 return res.json({
@@ -361,7 +361,13 @@ paymentApp.get("/payment-link", async (req, res) => {
             const paymentLink = await paystack.transaction.initialize({
                 amount: `${paymentData.amount * 100}`,
                 email: user.email,
-                channels: channels || ["card", "bank_transfer", "mobile_money", "ussd", "qr"],
+                channels: channels || [
+                    "card",
+                    "bank_transfer",
+                    "mobile_money",
+                    "ussd",
+                    "qr",
+                ],
                 metadata: {
                     ...paymentData.metadata,
                     userId,
@@ -402,14 +408,14 @@ paymentApp.get("/payment-link", async (req, res) => {
 });
 //#region Payment Initialization Endpoints
 paymentApp.post("/initiate-payment", async (req, res) => {
-    const { courseId, userId, planType, cohortName, isIWD, applicationId, amount, channels } = req.body;
+    const { courseId, userId, planType, cohortName, isIWD, applicationId, amount, channels, } = req.body;
     try {
         let email = "";
         let name = "";
         let phone = "";
         if (isIWD && applicationId) {
             const application = await prismadb_1.prismadb.scholarshipApplication.findUnique({
-                where: { id: applicationId }
+                where: { id: applicationId },
             });
             if (!application)
                 return res.status(404).json({ error: "Application not found" });
@@ -426,11 +432,14 @@ paymentApp.post("/initiate-payment", async (req, res) => {
             phone = user.phone_number || "";
         }
         const course = await getCourseDetails(courseId);
-        const courseFee = isIWD ? (amount || 100000) : parseCoursePrice(course.price);
-        const existingPayment = userId ? await prismadb_1.prismadb.paymentStatus.findUnique({
-            where: { userId_courseId: { userId, courseId } },
-            include: { paymentInstallments: true },
-        }) : null;
+        const courseFee = amount;
+        // const courseFee = isIWD ? amount || 100000 : parseCoursePrice(course.price);
+        const existingPayment = userId
+            ? await prismadb_1.prismadb.paymentStatus.findUnique({
+                where: { userId_courseId: { userId, courseId } },
+                include: { paymentInstallments: true },
+            })
+            : null;
         const paymentData = getPaymentData(planType, cohortName, courseFee);
         if (!paymentData) {
             return res.status(400).json({ error: "Invalid plan type" });
@@ -461,10 +470,17 @@ paymentApp.post("/initiate-payment", async (req, res) => {
                 });
             }
         }
+        console.log("Payment Data from paystack", paymentData);
         const paymentLink = await paystack.transaction.initialize({
             amount: `${paymentData.amount * 100}`,
             email: email,
-            channels: channels || ["card", "bank_transfer", "mobile_money", "ussd", "qr"],
+            channels: channels || [
+                "card",
+                "bank_transfer",
+                "mobile_money",
+                "ussd",
+                "qr",
+            ],
             metadata: {
                 ...paymentData.metadata,
                 userId,
@@ -498,7 +514,7 @@ paymentApp.post("/initiate-payment", async (req, res) => {
                     metadata: JSON.stringify({
                         ...paymentData.metadata,
                         isIWD,
-                        applicationId
+                        applicationId,
                     }),
                     paymentDate: new Date(),
                 },
@@ -693,9 +709,9 @@ paymentApp.get("/verify", async (req, res) => {
                     where: {
                         OR: [
                             { email: application.email },
-                            { phone_number: application.phone_number }
-                        ]
-                    }
+                            { phone_number: application.phone_number },
+                        ],
+                    },
                 });
                 if (!user) {
                     user = await tx.user.create({
@@ -705,7 +721,7 @@ paymentApp.get("/verify", async (req, res) => {
                             phone_number: application.phone_number,
                             password: application.password, // This is already hashed from applyForScholarship
                             emailVerified: new Date(),
-                            accountPaymentStatus: "PAID"
+                            accountPaymentStatus: "PAID",
                         },
                     });
                     console.log(`✅ Created user ${user.id} from IWD application ${application.id}`);
@@ -714,27 +730,28 @@ paymentApp.get("/verify", async (req, res) => {
                     // Update existing user status if needed
                     user = await tx.user.update({
                         where: { id: user.id },
-                        data: { accountPaymentStatus: "PAID" }
+                        data: { accountPaymentStatus: "PAID" },
                     });
                 }
                 userId = user.id;
                 // Update transaction with the real userId
                 updatedTx = await tx.paystackTransaction.update({
                     where: { id: updatedTx.id },
-                    data: { userId: user.id }
+                    data: { userId: user.id },
                 });
                 // Update application
                 await tx.scholarshipApplication.update({
                     where: { id: application.id },
                     data: {
                         userId: user.id,
-                        paymentStatus: "PAID"
-                    }
+                        paymentStatus: "PAID",
+                    },
                 });
             }
             const paymentPlan = await getPaymentPlanFromRecord(updatedTx);
             // ✅ CRITICAL: Reactivate user if they were marked inactive
-            if (existingTx.paymentStatus?.user?.inactive || (userId !== "IWD_PENDING")) {
+            if (existingTx.paymentStatus?.user?.inactive ||
+                userId !== "IWD_PENDING") {
                 const userToCheck = userId !== "IWD_PENDING" ? userId : updatedTx.userId;
                 const u = await tx.user.findUnique({ where: { id: userToCheck } });
                 if (u?.inactive) {
@@ -811,7 +828,7 @@ paymentApp.get("/verify", async (req, res) => {
         // 🔄 Auto-sync payment data to Google Sheets after successful payment
         try {
             const { GoogleSheetsSyncService } = await Promise.resolve().then(() => __importStar(require("../../utils/googleSheets")));
-            GoogleSheetsSyncService.syncPaymentData().catch(e => console.error("Google Sheets sync error:", e.message));
+            GoogleSheetsSyncService.syncPaymentData().catch((e) => console.error("Google Sheets sync error:", e.message));
         }
         catch (sheetError) {
             console.error("Sheet service error:", sheetError);
@@ -820,20 +837,20 @@ paymentApp.get("/verify", async (req, res) => {
         let tokens = {};
         if (isIWD) {
             const user = await prismadb_1.prismadb.user.findUnique({
-                where: { id: result.userId }
+                where: { id: result.userId },
             });
             if (user) {
                 const access_token = jsonwebtoken_1.default.sign({ email: user.email, id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "30d" });
                 const userResponse = {
                     ...user,
                     hasPassword: !!user.password,
-                    access_token
+                    access_token,
                 };
                 // @ts-ignore
                 delete userResponse.password;
                 tokens = {
                     access_token,
-                    user: userResponse
+                    user: userResponse,
                 };
             }
         }
@@ -869,7 +886,7 @@ async function verifyPurchaseCreation(tx, userId, courseId) {
             userEmail: user?.email,
             courseId,
             courseTitle: course?.title,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
         });
         throw new Error(`Purchase record not created for user ${userId} and course ${courseId}`);
     }
@@ -949,7 +966,9 @@ async function handleFirstHalfPayment(tx, metadata) {
             where: { transactionRef: metadata.reference },
             include: { paymentStatus: true },
         });
-        const txMetadata = existingTx ? JSON.parse(existingTx.metadata || "{}") : {};
+        const txMetadata = existingTx
+            ? JSON.parse(existingTx.metadata || "{}")
+            : {};
         const cohortName = txMetadata.cohortName;
         if (!cohortName) {
             throw new Error("Cohort name not found in transaction metadata");
@@ -1004,7 +1023,7 @@ async function handleFirstHalfPayment(tx, metadata) {
         logPaymentError("First half payment processing failed", {
             userId: metadata.userId,
             courseId: metadata.courseId,
-            error: error instanceof Error ? error.message : "Unknown error"
+            error: error instanceof Error ? error.message : "Unknown error",
         });
         throw error;
     }
