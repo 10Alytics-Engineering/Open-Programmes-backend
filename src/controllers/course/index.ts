@@ -56,6 +56,7 @@ export const getCourses = async (req: Request, res: Response) => {
         },
         cohorts: true, // Modified from select: { id: true } to true
         timetable: true,
+        pricingPlans: true,
       },
       orderBy: {
         createdAt: "desc",
@@ -164,6 +165,7 @@ export const getCourse = async (req: Request, res: Response) => {
         },
         timetable: true,
         cohorts: true,
+        pricingPlans: true,
       },
     });
 
@@ -209,10 +211,9 @@ export const createCourse = async (req: Request, res: Response) => {
     handleServerError(error, res);
   }
 };
-
 export const updateCourse = async (req: Request, res: Response) => {
   try {
-    const body = req.body;
+    const { pricingPlans, ...body } = req.body;
 
     const { courseId } = req.params;
 
@@ -230,13 +231,38 @@ export const updateCourse = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Course does not exist" });
     }
 
-    const course = await prismadb.course.update({
-      where: {
-        id: courseId,
-      },
-      data: {
-        ...body,
-      },
+    const course = await prismadb.$transaction(async (tx) => {
+      // Update core course data
+      const updatedCourse = await tx.course.update({
+        where: { id: courseId },
+        data: { ...body },
+      });
+
+      // Update pricing plans if provided
+      if (pricingPlans && Array.isArray(pricingPlans)) {
+        // Delete existing plans first to sync
+        await tx.coursePricingPlan.deleteMany({
+          where: { courseId },
+        });
+
+        // Create new plans
+        if (pricingPlans.length > 0) {
+          await tx.coursePricingPlan.createMany({
+            data: pricingPlans.map((plan: any) => ({
+              courseId,
+              planType: plan.planType,
+              amountPerInstallment: plan.amountPerInstallment,
+              installmentsCount: plan.installmentsCount,
+              discountPrice: plan.discountPrice || null,
+            })),
+          });
+        }
+      }
+
+      return tx.course.findUnique({
+        where: { id: courseId },
+        include: { pricingPlans: true },
+      });
     });
 
     return res
@@ -337,6 +363,7 @@ export const deleteCourse = async (req: Request, res: Response) => {
     await prismadb.cohort.deleteMany({ where: { courseId } });
     await prismadb.timeTable.deleteMany({ where: { courseId } });
     await prismadb.courseWeek.deleteMany({ where: { courseId } });
+    await prismadb.coursePricingPlan.deleteMany({ where: { courseId } });
 
     // Cleanup ChangeRequests
     await prismadb.changeRequest.deleteMany({
@@ -429,6 +456,7 @@ export const getCourseWithoutAuth = async (req: Request, res: Response) => {
         },
         timetable: true,
         cohorts: true,
+        pricingPlans: true,
       },
     });
 
@@ -506,6 +534,7 @@ export const getCourseWithoutAuthWithSlug = async (
         },
         timetable: true,
         cohorts: true,
+        pricingPlans: true,
       },
     });
 
