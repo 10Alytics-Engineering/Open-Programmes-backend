@@ -573,15 +573,15 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
     //   ["card", "mobile_money"],
     // // );
     // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-    const paymentData = await verifyStartButtonTransaction("Z6HGR31M8FA");
-    return res.status(200).json({ paymentData });
+    // const paymentData = await verifyStartButtonTransaction("VZ96ZKBF33");
+    // return res.status(200).json({ paymentData });
 
-    // const results = await prismadb.paymentInstallment.findMany({
-    //   orderBy: { createdAt: "asc" },
-    //   take: 50,
-    // });
+    const results = await prismadb.paymentTransaction.findMany({
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    });
 
-    // res.status(200).json({ results });
+    res.status(200).json({ results });
   } catch (error) {
     console.log("Start Button Error: " + error);
     return res.status(500).json({
@@ -984,7 +984,7 @@ async function verifyPayment(reference: string) {
     );
 
     const paymentStatus = startButtonVerification?.transaction?.status;
-    if (paymentStatus !== "successful" || paymentStatus !== "verified") {
+    if (paymentStatus !== "successful" && paymentStatus !== "verified") {
       await prismadb.paymentTransaction.update({
         where: { transactionRef: reference as string },
         data: {

@@ -479,8 +479,8 @@ paymentApp.get("/start-button-test", async (req, res) => {
         //   ["card", "mobile_money"],
         // // );
         // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-        // const paymentData = await verifyStartButtonTransaction("RXVKFA3YJDA");
-        // return res.status(200).json({ converted });
+        // const paymentData = await verifyStartButtonTransaction("VZ96ZKBF33");
+        // return res.status(200).json({ paymentData });
         const results = await prismadb_1.prismadb.paymentTransaction.findMany({
             orderBy: { createdAt: "asc" },
             take: 50,
@@ -806,7 +806,8 @@ async function verifyPayment(reference) {
     }
     else {
         const startButtonVerification = await (0, paymentService_1.verifyStartButtonTransaction)(reference);
-        if (startButtonVerification?.transaction?.status !== "successful") {
+        const paymentStatus = startButtonVerification?.transaction?.status;
+        if (paymentStatus !== "successful" && paymentStatus !== "verified") {
             await prismadb_1.prismadb.paymentTransaction.update({
                 where: { transactionRef: reference },
                 data: {
@@ -1019,7 +1020,8 @@ paymentApp.get("/startbutton-payment/callback", async (req, res) => {
     const { reference } = req.query;
     try {
         const verification = await (0, paymentService_1.verifyStartButtonTransaction)(reference);
-        if (verification.transaction?.status === "successful") {
+        if (verification.transaction?.status === "successful" ||
+            verification.transaction?.status === "verified") {
             res.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/payment/success?reference=${reference}`);
         }
         else {
@@ -1066,7 +1068,9 @@ paymentApp.get("/start-button/webhook", async (req, res) => {
         console.log(`Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`);
         if (event === "collection.completed") {
             const verifiedTransaction = await verifyPayment(data.transaction?.transactionReference);
-            if (verifiedTransaction.status === "success") {
+            if (verifiedTransaction.status === "success" ||
+                verifiedTransaction.status === "successful" ||
+                verifiedTransaction.status === "verified") {
                 console.log(`Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`);
                 res.json(verifiedTransaction);
             }
