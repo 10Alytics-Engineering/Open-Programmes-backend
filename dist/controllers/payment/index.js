@@ -477,15 +477,15 @@ paymentApp.get("/start-button-test", async (req, res) => {
         //   "GHS",
         //   { userId: "748374H43Jsadaa" },
         //   ["card", "mobile_money"],
-        // );
-        const converted = await (0, paymentService_1.convertNairaToOtherCurrency)("GHS", 40000);
+        // // );
+        // const converted = await convertNairaToOtherCurrency("GHS", 40000);
         // const paymentData = await verifyStartButtonTransaction("RXVKFA3YJDA");
-        return res.status(200).json({ converted });
-        // const results = await prismadb.paymentTransaction.findMany({
-        //   orderBy: { createdAt: "desc" },
-        //   take: 50,
-        // });
-        // res.status(200).json(dueInstallments);
+        // return res.status(200).json({ converted });
+        const results = await prismadb_1.prismadb.paymentTransaction.findMany({
+            orderBy: { createdAt: "asc" },
+            take: 50,
+        });
+        res.status(200).json({ results });
     }
     catch (error) {
         console.log("Start Button Error: " + error);
@@ -567,7 +567,6 @@ paymentApp.post("/initiate-payment", async (req, res) => {
         }
         let paymentLink = null;
         const conversionData = await (0, paymentService_1.convertNairaToOtherCurrency)(currency, paymentData.amount);
-        console.log(conversionData);
         if (conversionData?.status !== "success") {
             return res.status(400).json({ error: conversionData.status });
         }
