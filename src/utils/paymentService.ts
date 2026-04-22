@@ -8,7 +8,7 @@ const START_BUTTON_URL = process.env.START_BUTTON_API_URL;
 const START_BUTTON_SECRET_KEY = process.env.START_BUTTON_SECRET_KEY;
 const START_BUTTON_PUBLIC_KEY = process.env.START_BUTTON_PUBLIC_KEY;
 
-export type CurrrencyType = "GHS" | "NGN" | "ZAR" | "KES" | "UGX";
+export type CurrrencyType = "GHS" | "NGN" | "ZAR" | "KES" | "UGX" | "RWF";
 
 export const generatePaymentLink = async (
   userId: string,
@@ -79,10 +79,12 @@ export const initiateStartButtonPayment = async (
   try {
     const ref = generatePaymentRef();
 
+    console.log({ amount, currency });
+
     const response = await axios.post(
       `${START_BUTTON_URL}/transaction/initialize`,
       {
-        amount: Number(Number(amount).toFixed(2)),
+        amount: Math.round(Number(amount)),
         currency: currency || "NGN",
         email,
         redirectUrl: `${process.env.START_BUTTON_CALLBACK_URL}?reference=${ref}`,
@@ -141,10 +143,10 @@ export const convertNairaToOtherCurrency = async (
   if (!toCurrency)
     return { error: "Currency is required and should be a valid number" };
 
-  const acceptedCurrencies = ["GHS", "NGN", "ZAR", "KES", "UGX"];
+  const acceptedCurrencies = ["GHS", "NGN", "ZAR", "KES", "UGX", "RWF"];
 
   if (!acceptedCurrencies.includes(toCurrency)) {
-    throw new Error("Currency not supported");
+    return { status: "failed", error: "Currency not supported" };
   }
 
   try {
@@ -170,7 +172,7 @@ export const convertNairaToOtherCurrency = async (
       return { status: "success", amount: amountInTargetCurreny };
     }
 
-    throw new Error("An error occured while getting rates");
+    return { status: "failed", error: "An error occured while getting rates" };
   } catch (error) {
     console.log(
       "Currency Conversion Failed: ",

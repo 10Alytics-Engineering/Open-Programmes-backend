@@ -280,6 +280,20 @@ const logPaymentError = (message: string, data: any = {}) => {
 };
 //#endregion
 
+paymentApp.post("/convert-ngn-to-other-currencies", async (req, res) => {
+  const { currency, amountInNGN } = req.body;
+
+  const result = await convertNairaToOtherCurrency(currency, amountInNGN);
+
+  if (!result.status)
+    return res.status(500).json({
+      status: "failed",
+      error: "Failed to process currency conversion",
+    });
+
+  return res.json(result);
+});
+
 //#region Payment Status Check
 paymentApp.get("/payment-status", async (req: Request, res: Response) => {
   const { userId, courseId } = req.query;
