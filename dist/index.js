@@ -100,17 +100,13 @@ node_cron_1.default.schedule("*/30 * * * *", async () => {
             console.log(`✅ [CRON_IWD_SYNC]: Synced ${result.count} apps. Took ${endTime.getTime() - startTime.getTime()}ms`);
         }
         else {
-<<<<<<< HEAD
-            console.error(`❌ [CRON_SYNC_FAILED]: ${result?.error || "Unknown error"}`);
-=======
-            console.error(`❌ [CRON_IWD_SYNC]: ${result?.error || 'Unknown error'}`);
+            console.error(`❌ [CRON_IWD_SYNC]: ${result?.error || "Unknown error"}`);
         }
         if (paymentResult && paymentResult.success) {
             console.log(`✅ [CRON_PAYMENTS_SYNC]: Synced ${paymentResult.count} records.`);
         }
         else {
-            console.error(`❌ [CRON_PAYMENTS_SYNC]: ${paymentResult?.error || 'Unknown error'}`);
->>>>>>> 12c8cac19e4062bd829a0c60e38f79f99d05cb0d
+            console.error(`❌ [CRON_PAYMENTS_SYNC]: ${paymentResult?.error || "Unknown error"}`);
         }
     }
     catch (err) {

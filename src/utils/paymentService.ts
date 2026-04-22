@@ -79,8 +79,6 @@ export const initiateStartButtonPayment = async (
   try {
     const ref = generatePaymentRef();
 
-    console.log({ amount, currency });
-
     const response = await axios.post(
       `${START_BUTTON_URL}/transaction/initialize`,
       {

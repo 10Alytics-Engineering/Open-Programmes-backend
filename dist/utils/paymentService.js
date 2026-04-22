@@ -62,9 +62,8 @@ exports.verifyPaystackPayment = verifyPaystackPayment;
 const initiateStartButtonPayment = async (email, amount, currency, metaData, paymentMethods) => {
     try {
         const ref = (0, generate_ref_1.generatePaymentRef)();
-        console.log({ amount, currency });
         const response = await axios_1.default.post(`${START_BUTTON_URL}/transaction/initialize`, {
-            amount: Number(Number(amount).toFixed(2)),
+            amount: Math.round(Number(amount)),
             currency: currency || "NGN",
             email,
             redirectUrl: `${process.env.START_BUTTON_CALLBACK_URL}?reference=${ref}`,
@@ -113,9 +112,9 @@ const convertNairaToOtherCurrency = async (toCurrency, amountInNGN) => {
         return { error: "Amount is required and should be a valid number" };
     if (!toCurrency)
         return { error: "Currency is required and should be a valid number" };
-    const acceptedCurrencies = ["GHS", "NGN", "ZAR", "KES", "UGX"];
+    const acceptedCurrencies = ["GHS", "NGN", "ZAR", "KES", "UGX", "RWF"];
     if (!acceptedCurrencies.includes(toCurrency)) {
-        throw new Error("Currency not supported");
+        return { status: "failed", error: "Currency not supported" };
     }
     try {
         const response = await axios_1.default.get(`${START_BUTTON_URL}/transaction/exchange`, {
@@ -132,7 +131,7 @@ const convertNairaToOtherCurrency = async (toCurrency, amountInNGN) => {
             const amountInTargetCurreny = (0, currency_1.usdToTarget)(inUSD, toCurrency, rates);
             return { status: "success", amount: amountInTargetCurreny };
         }
-        throw new Error("An error occured while getting rates");
+        return { status: "failed", error: "An error occured while getting rates" };
     }
     catch (error) {
         console.log("Currency Conversion Failed: ", error instanceof Error ? error.message : "Unknown");
