@@ -571,17 +571,17 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
     //   "GHS",
     //   { userId: "748374H43Jsadaa" },
     //   ["card", "mobile_money"],
-    // );
-    const converted = await convertNairaToOtherCurrency("GHS", 40000);
+    // // );
+    // const converted = await convertNairaToOtherCurrency("GHS", 40000);
     // const paymentData = await verifyStartButtonTransaction("RXVKFA3YJDA");
-    return res.status(200).json({ converted });
+    // return res.status(200).json({ converted });
 
-    // const results = await prismadb.paymentTransaction.findMany({
-    //   orderBy: { createdAt: "desc" },
-    //   take: 50,
-    // });
+    const results = await prismadb.paymentTransaction.findMany({
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    });
 
-    // res.status(200).json(dueInstallments);
+    res.status(200).json({ results });
   } catch (error) {
     console.log("Start Button Error: " + error);
     return res.status(500).json({
@@ -688,7 +688,6 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
       currency,
       paymentData.amount,
     );
-    console.log(conversionData);
 
     if (conversionData?.status !== "success") {
       return res.status(400).json({ error: conversionData.status });
@@ -1024,7 +1023,7 @@ async function verifyPayment(reference: string) {
           throw new Error("Scholarship application not found");
         }
 
-        // Check if user already exists
+        // Checking if user already exists
         let user = await tx.user.findFirst({
           where: {
             OR: [

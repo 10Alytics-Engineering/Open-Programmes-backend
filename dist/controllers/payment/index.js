@@ -840,7 +840,7 @@ async function verifyPayment(reference) {
             if (!application) {
                 throw new Error("Scholarship application not found");
             }
-            // Check if user already exists
+            // Checking if user already exists
             let user = await tx.user.findFirst({
                 where: {
                     OR: [
