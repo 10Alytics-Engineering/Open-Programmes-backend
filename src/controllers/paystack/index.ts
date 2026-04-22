@@ -618,24 +618,24 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
 function getPaymentData(planType: string, cohortName: string, course: any) {
   // Find the specific plan for this course
   const plan = course.pricingPlans.find((p: any) => p.planType === planType);
-  
+
   if (!plan) {
     // Fallback for legacy "FULL" or "HALF" if they don't have pricingPlans yet
     if (planType === "FULL") {
-       const fee = parseCoursePrice(course.price);
-       return {
-         amount: fee,
-         metadata: { planType: "FULL_PAYMENT", cohortName },
-         callbackParams: { paymentPlan: PAYMENT_PLANS.FULL_PAYMENT, cohortName },
-       };
+      const fee = parseCoursePrice(course.price);
+      return {
+        amount: fee,
+        metadata: { planType: "FULL_PAYMENT", cohortName },
+        callbackParams: { paymentPlan: PAYMENT_PLANS.FULL_PAYMENT, cohortName },
+      };
     }
     return null;
   }
 
   return {
     amount: plan.amountPerInstallment,
-    metadata: { 
-      planType: plan.planType, 
+    metadata: {
+      planType: plan.planType,
       cohortName,
       installmentsCount: plan.installmentsCount,
       amountPerInstallment: plan.amountPerInstallment
@@ -683,7 +683,7 @@ async function createPaymentStatus(
     const actualStartDate = cohort.actualStartDate;
 
     const installments = [];
-    
+
     // Logic for 2 installments: 1 now, 1 1 month into program
     if (plan.installmentsCount === 2) {
       installments.push({
@@ -833,7 +833,7 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
             throw new Error("Scholarship application not found");
           }
 
-          // Check if user already exists
+          // Checking if user already exists
           let user = await tx.user.findFirst({
             where: {
               OR: [
