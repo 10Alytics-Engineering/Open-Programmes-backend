@@ -14,7 +14,7 @@ import { prismadb } from "./lib/prismadb";
 export { prismadb };
 
 import router from "./route";
-import paymentApp from "./controllers/paystack";
+import paymentApp from "./controllers/payment";
 import salesDashboardApp from "./controllers/sales-dashboard";
 import path from "path";
 
@@ -45,38 +45,50 @@ app.use(bodyParser.json());
 // Lowest Mb sent at a time
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
-app.use('/api', router());
-app.use('/api', paymentApp);
-app.use('/api/admin', salesDashboardApp); // Add this line
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-app.use(express.static(path.join(process.cwd(), 'public')));
+app.use("/api", router());
+app.use("/api", paymentApp);
+app.use("/api/admin", salesDashboardApp); // Add this line
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use(express.static(path.join(process.cwd(), "public")));
 
 const server = http.createServer(app);
 
 cron.schedule("0 * * * *", async () => {
-  console.log("🔄 Running hourly transaction cleanup...", new Date().toISOString());
+  console.log(
+    "🔄 Running hourly transaction cleanup...",
+    new Date().toISOString(),
+  );
 });
 
 // Run Google Sheets Full Sync every 30 minutes
 cron.schedule("*/30 * * * *", async () => {
   const startTime = new Date();
-  console.log("📊 Starting scheduled Google Sheets Full Sync...", startTime.toISOString());
+  console.log(
+    "📊 Starting scheduled Google Sheets Full Sync...",
+    startTime.toISOString(),
+  );
   try {
     const { GoogleSheetsSyncService } = await import("./utils/googleSheets");
     const result = await GoogleSheetsSyncService.syncAllApplications();
     const paymentResult = await GoogleSheetsSyncService.syncPaymentData();
     const endTime = new Date();
-    
+
     if (result && result.success) {
-      console.log(`✅ [CRON_IWD_SYNC]: Synced ${result.count} apps. Took ${endTime.getTime() - startTime.getTime()}ms`);
+      console.log(
+        `✅ [CRON_IWD_SYNC]: Synced ${result.count} apps. Took ${endTime.getTime() - startTime.getTime()}ms`,
+      );
     } else {
-      console.error(`❌ [CRON_IWD_SYNC]: ${result?.error || 'Unknown error'}`);
+      console.error(`❌ [CRON_IWD_SYNC]: ${result?.error || "Unknown error"}`);
     }
 
     if (paymentResult && paymentResult.success) {
-      console.log(`✅ [CRON_PAYMENTS_SYNC]: Synced ${paymentResult.count} records.`);
+      console.log(
+        `✅ [CRON_PAYMENTS_SYNC]: Synced ${paymentResult.count} records.`,
+      );
     } else {
-      console.error(`❌ [CRON_PAYMENTS_SYNC]: ${paymentResult?.error || 'Unknown error'}`);
+      console.error(
+        `❌ [CRON_PAYMENTS_SYNC]: ${paymentResult?.error || "Unknown error"}`,
+      );
     }
   } catch (err: any) {
     console.error("🔥 [CRON_CRITICAL_ERROR]: Sync job crashed!", err.message);
