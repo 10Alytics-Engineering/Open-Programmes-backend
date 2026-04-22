@@ -43,10 +43,13 @@ paymentApp.use((req, res, next) => {
 // Define payment plans as constants
 const PAYMENT_PLANS = {
   FULL_PAYMENT: "FULL_PAYMENT",
+  TWO_INSTALLMENTS: "TWO_INSTALLMENTS",
+  THREE_INSTALLMENTS: "THREE_INSTALLMENTS",
+  FOUR_INSTALLMENTS: "FOUR_INSTALLMENTS",
+  FIVE_INSTALLMENTS: "FIVE_INSTALLMENTS",
+  // Legacy
   FIRST_HALF_COMPLETE: "FIRST_HALF_COMPLETE",
   SECOND_HALF_PAYMENT: "SECOND_HALF_PAYMENT",
-  FOUR_INSTALLMENTS: "FOUR_INSTALLMENTS",
-  THREE_INSTALLMENTS: "THREE_INSTALLMENTS",
 } as const;
 
 type PAYMENT_GATEWAY = "STRIPE" | "PAYSTACK" | "START_BUTTON";
@@ -89,6 +92,7 @@ async function getCourseDetails(courseId: string) {
       title: true,
       price: true,
       discount: true,
+      pricingPlans: true,
       cohorts: {
         orderBy: { startDate: "asc" },
         select: {
@@ -319,6 +323,9 @@ paymentApp.get("/payment-status", async (req: Request, res: Response) => {
               installmentNumber: "asc",
             },
           },
+          cohort: {
+            select: { id: true, name: true },
+          },
         },
       }),
       prismadb.course.findUnique({
@@ -337,18 +344,23 @@ paymentApp.get("/payment-status", async (req: Request, res: Response) => {
 
     let remainingAmount = 0;
     const paymentPlan = await getPaymentPlanFromRecord(paymentStatus);
+    const isMultiInstallment = [
+      PAYMENT_PLANS.TWO_INSTALLMENTS,
+      PAYMENT_PLANS.THREE_INSTALLMENTS,
+      PAYMENT_PLANS.FOUR_INSTALLMENTS,
+      PAYMENT_PLANS.FIVE_INSTALLMENTS,
+    ].includes(paymentPlan as any);
 
     if (
       paymentPlan === PAYMENT_PLANS.FIRST_HALF_COMPLETE &&
       paymentStatus.status === PaymentStatusType.BALANCE_HALF_PAYMENT
     ) {
       remainingAmount = halfFee;
-    } else if (paymentPlan === PAYMENT_PLANS.FOUR_INSTALLMENTS) {
-      const paidInstallments = paymentStatus.paymentInstallments.filter(
-        (i) => i.paid,
-      );
-      const totalPaid = paidInstallments.reduce((sum, i) => sum + i.amount, 0);
-      remainingAmount = courseFee - totalPaid;
+    } else if (isMultiInstallment) {
+      // Sum of all unpaid installment amounts — the true remaining balance
+      remainingAmount = paymentStatus.paymentInstallments
+        .filter((i) => !i.paid)
+        .reduce((sum, i) => sum + i.amount, 0);
     }
 
     res.json({
@@ -424,13 +436,8 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
 
       // Use the cohort name from existing payment status
       const cohortName = paymentStatus.cohort.name;
-      const courseFee = parseCoursePrice(course.price);
 
-      const paymentData = getPaymentData(
-        planType as string,
-        cohortName,
-        courseFee,
-      );
+      const paymentData = getPaymentData(planType as string, cohortName, course);
       if (!paymentData) {
         return res.status(400).json({ error: "Invalid plan type" });
       }
@@ -590,7 +597,8 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     isIWD,
     applicationId,
     amount,
-    channels,
+    channels, 
+    installmentNumber,
     paymentGateway,
     currency,
   } = req.body;
@@ -618,16 +626,21 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
     }
 
     const course = await getCourseDetails(courseId);
-    const courseFee = isIWD ? amount || 100000 : parseCoursePrice(course.price);
 
-    const existingPayment = userId
-      ? await prismadb.paymentStatus.findUnique({
-          where: { userId_courseId: { userId, courseId } },
-          include: { paymentInstallments: true },
-        })
-      : null;
+    let existingPayment = userId ? await prismadb.paymentStatus.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      include: { paymentInstallments: true },
+    }) : null;
 
-    const paymentData = getPaymentData(planType, cohortName, courseFee);
+    // Reset layout if they previously started a different plan but haven't actually paid yet
+    if (existingPayment && existingPayment.status === "PENDING_SEAT_CONFIRMATION") {
+      await prismadb.paymentStatus.delete({
+        where: { id: existingPayment.id }
+      });
+      existingPayment = null;
+    }
+
+    const paymentData = getPaymentData(planType, cohortName, course);
     if (!paymentData) {
       return res.status(400).json({ error: "Invalid plan type" });
     }
@@ -740,7 +753,7 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
             paymentData,
             planType,
             cohortName,
-            courseFee,
+            course,
           });
         }
 
@@ -757,7 +770,10 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
             metadata: JSON.stringify({
               ...paymentData.metadata,
               isIWD,
-              applicationId,
+              applicationId,,
+              // ✅ Persist installmentNumber so verification uses the correct installment
+              installmentNumber: installmentNumber ?? paymentData.callbackParams.installmentNumber ?? 1,
+              cohortName,
             }),
             paymentDate: new Date(),
           },
@@ -783,57 +799,39 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
 });
 
 /**
- * Build payment data for a given plan type.
- * @param planType  - "FULL" | "HALF" | "THREE_INSTALLMENT"
- * @param cohortName - cohort the user selected
- * @param courseFee  - the actual course fee fetched from the DB (admin-set price)
+ * Build payment data for a given plan type using dynamic pricing plans.
  */
-function getPaymentData(
-  planType: string,
-  cohortName: string,
-  courseFee: number = TOTAL_COURSE_FEE,
-) {
-  // Use current date as baseline since actual schedule is calculated from DB cohort record
-  const startDate = new Date();
-  const halfFee = Math.ceil(courseFee / 2);
-
-  switch (planType) {
-    case "FULL":
-      return {
-        amount: courseFee,
-        metadata: { planType: "FULL", cohortName },
-        callbackParams: {
-          paymentPlan: PAYMENT_PLANS.FULL_PAYMENT,
-          cohortName,
-        },
-      };
-    case "HALF":
-      return {
-        amount: halfFee,
-        metadata: { planType: "HALF", cohortName },
-        callbackParams: {
-          paymentPlan: PAYMENT_PLANS.FIRST_HALF_COMPLETE,
-          remainingAmount: halfFee,
-          cohortName,
-        },
-      };
-    case "THREE_INSTALLMENT":
-      return {
-        amount: THREE_INSTALLMENT_CONFIG.initialPayment,
-        metadata: {
-          planType: "THREE_INSTALLMENT",
-          schedule: getThreeInstallmentSchedule(startDate),
-          cohortName,
-        },
-        callbackParams: {
-          paymentPlan: PAYMENT_PLANS.THREE_INSTALLMENTS,
-          installmentNumber: 1,
-          cohortName,
-        },
-      };
-    default:
-      return null;
+function getPaymentData(planType: string, cohortName: string, course: any) {
+  // Find the specific plan for this course
+  const plan = course.pricingPlans.find((p: any) => p.planType === planType);
+  
+  if (!plan) {
+    // Fallback for legacy "FULL" or "HALF" if they don't have pricingPlans yet
+    if (planType === "FULL") {
+       const fee = parseCoursePrice(course.price);
+       return {
+         amount: fee,
+         metadata: { planType: "FULL_PAYMENT", cohortName },
+         callbackParams: { paymentPlan: PAYMENT_PLANS.FULL_PAYMENT, cohortName },
+       };
+    }
+    return null;
   }
+
+  return {
+    amount: plan.amountPerInstallment,
+    metadata: { 
+      planType: plan.planType, 
+      cohortName,
+      installmentsCount: plan.installmentsCount,
+      amountPerInstallment: plan.amountPerInstallment
+    },
+    callbackParams: {
+      paymentPlan: plan.planType,
+      installmentNumber: 1,
+      cohortName,
+    },
+  };
 }
 
 async function createPaymentStatus(
@@ -844,8 +842,8 @@ async function createPaymentStatus(
     paymentData: any;
     planType: string;
     cohortName: string;
-    courseFee?: number;
-  },
+    course: any;
+  }
 ) {
   const cohort = await assignToSelectedCohort(
     tx,
@@ -864,30 +862,53 @@ async function createPaymentStatus(
     cohortId: cohort.cohortId,
   };
 
-  if (params.planType === "THREE_INSTALLMENT") {
-    createData.desiredStartDate = cohort.actualStartDate;
+  const plan = params.course.pricingPlans.find((p: any) => p.planType === params.planType);
 
-    // Use the actual cohort start date for installment scheduling
+  if (plan && plan.installmentsCount > 1) {
+    createData.desiredStartDate = cohort.actualStartDate;
     const actualStartDate = cohort.actualStartDate;
 
+    const installments = [];
+    
+    // Logic for 2 installments: 1 now, 1 1 month into program
+    if (plan.installmentsCount === 2) {
+      installments.push({
+        amount: plan.amountPerInstallment,
+        dueDate: new Date(),
+        installmentNumber: 1,
+      });
+      installments.push({
+        amount: plan.amountPerInstallment,
+        dueDate: addMonths(actualStartDate, 1),
+        installmentNumber: 2,
+      });
+    } else {
+      // Logic for 3+ installments: 
+      // 1: Now (secures spot)
+      // 2: Before cohort start (actualStartDate)
+      // 3+: Monthly from 1 month into program
+
+      installments.push({
+        amount: plan.amountPerInstallment,
+        dueDate: new Date(),
+        installmentNumber: 1,
+      });
+      installments.push({
+        amount: plan.amountPerInstallment,
+        dueDate: actualStartDate,
+        installmentNumber: 2,
+      });
+      for (let i = 3; i <= plan.installmentsCount; i++) {
+        installments.push({
+          amount: plan.amountPerInstallment,
+          dueDate: addMonths(actualStartDate, i - 2),
+          installmentNumber: i,
+        });
+      }
+    }
+
     createData.paymentInstallments = {
-      create: [
-        {
-          amount: THREE_INSTALLMENT_CONFIG.initialPayment,
-          dueDate: actualStartDate,
-          installmentNumber: 1,
-        },
-        {
-          amount: THREE_INSTALLMENT_CONFIG.month1,
-          dueDate: addMonths(actualStartDate, 1),
-          installmentNumber: 2,
-        },
-        {
-          amount: THREE_INSTALLMENT_CONFIG.month2,
-          dueDate: addMonths(actualStartDate, 2),
-          installmentNumber: 3,
-        },
-      ],
+      create: installments,
     };
   }
 
@@ -1085,22 +1106,24 @@ async function verifyPayment(reference: string) {
           });
           break;
 
-        case PAYMENT_PLANS.THREE_INSTALLMENTS:
-        case PAYMENT_PLANS.FOUR_INSTALLMENTS:
-          const metadata = JSON.parse(updatedTx.metadata || "{}");
-          paymentResult = await handleInstallmentPayment(
-            tx,
-            {
-              userId: userId,
-              courseId: updatedTx.courseId,
-              installmentNumber: metadata.installmentNumber || 1,
-              paymentPlan: paymentPlan,
-              reference: reference as string,
-            },
-            Number(updatedTx.amount),
-          );
-          break;
-      }
+          case PAYMENT_PLANS.TWO_INSTALLMENTS:
+          case PAYMENT_PLANS.THREE_INSTALLMENTS:
+          case PAYMENT_PLANS.FOUR_INSTALLMENTS:
+          case PAYMENT_PLANS.FIVE_INSTALLMENTS:
+            const metadata = JSON.parse(updatedTx.metadata || "{}");
+            paymentResult = await handleInstallmentPayment(
+              tx,
+              {
+                userId: userId,
+                courseId: updatedTx.courseId,
+                installmentNumber: metadata.installmentNumber || 1,
+                paymentPlan: paymentPlan as string,
+                reference: reference as string,
+              },
+              Number(updatedTx.amount)
+            );
+            break;
+        }
 
       // ✅ CRITICAL: Verify purchase was created for all payment types
       const existingPurchase = await tx.purchase.findFirst({
@@ -1543,7 +1566,9 @@ async function handleInstallmentPayment(
 ) {
   try {
     const installmentNumber = parseInt(metadata.installmentNumber, 10);
-    const paymentStatus = await tx.paymentStatus.findUniqueOrThrow({
+
+    // Try to find existing paymentStatus (don't throw yet — may need to self-heal)
+    let paymentStatus = await tx.paymentStatus.findUnique({
       where: {
         userId_courseId: {
           userId: metadata.userId,
@@ -1551,20 +1576,86 @@ async function handleInstallmentPayment(
         },
       },
       include: {
-        paymentInstallments: {
-          orderBy: { installmentNumber: "asc" },
-        },
+        paymentInstallments: { orderBy: { installmentNumber: "asc" } },
+        cohort: true,
       },
     });
 
-    // FIX: Find the installment by number, not by paid status
+    if (!paymentStatus) {
+      throw new Error(
+        `PaymentStatus record not found for user ${metadata.userId} on course ${metadata.courseId}. ` +
+        `The payment initialization record may be missing. Please contact support with reference: ${metadata.reference}`
+      );
+    }
+
+    // ✅ SELF-HEAL: If paymentStatus exists but has NO installments, auto-create them
+    if (paymentStatus.paymentInstallments.length === 0) {
+      console.warn(
+        `⚠️  PaymentStatus ${paymentStatus.id} has no installments. Auto-creating for plan: ${paymentStatus.paymentPlan}`
+      );
+
+      const courseForPlan = await tx.course.findUnique({
+        where: { id: metadata.courseId },
+        select: { pricingPlans: true },
+      });
+
+      const planType = paymentStatus.paymentPlan;
+      const plan = (courseForPlan?.pricingPlans as any[])?.find(
+        (p: any) => p.planType === planType
+      );
+
+      if (!plan || plan.installmentsCount <= 1) {
+        throw new Error(
+          `Cannot auto-create installments: pricing plan "${planType}" not found or has ≤1 installment for course ${metadata.courseId}`
+        );
+      }
+
+      const cohortStartDate = paymentStatus.cohort?.startDate || new Date();
+      const installments: { amount: number; dueDate: Date; installmentNumber: number }[] = [];
+
+      if (plan.installmentsCount === 2) {
+        installments.push({ amount: plan.amountPerInstallment, dueDate: new Date(), installmentNumber: 1 });
+        installments.push({ amount: plan.amountPerInstallment, dueDate: addMonths(cohortStartDate, 1), installmentNumber: 2 });
+      } else {
+        // 3+ installments: 1 now, 2 at cohort start, 3+ monthly thereafter
+        installments.push({ amount: plan.amountPerInstallment, dueDate: new Date(), installmentNumber: 1 });
+        installments.push({ amount: plan.amountPerInstallment, dueDate: cohortStartDate, installmentNumber: 2 });
+        for (let i = 3; i <= plan.installmentsCount; i++) {
+          installments.push({
+            amount: plan.amountPerInstallment,
+            dueDate: addMonths(cohortStartDate, i - 2),
+            installmentNumber: i,
+          });
+        }
+      }
+
+      await tx.paymentInstallment.createMany({
+        data: installments.map((inst) => ({
+          ...inst,
+          paymentStatusId: paymentStatus!.id,
+        })),
+      });
+
+      console.log(`✅ Auto-created ${installments.length} installments for paymentStatus ${paymentStatus.id}`);
+
+      // Re-fetch with the newly created installments
+      paymentStatus = await tx.paymentStatus.findUniqueOrThrow({
+        where: { id: paymentStatus.id },
+        include: {
+          paymentInstallments: { orderBy: { installmentNumber: "asc" } },
+          cohort: true,
+        },
+      });
+    }
+
+    // Find the installment to update
     const installmentToUpdate = paymentStatus.paymentInstallments.find(
       (i) => i.installmentNumber === installmentNumber,
     );
 
     if (!installmentToUpdate) {
       throw new Error(
-        `Installment ${installmentNumber} not found for this payment plan`,
+        `Installment ${installmentNumber} not found for this payment plan (plan has ${paymentStatus.paymentInstallments.length} installments)`
       );
     }
 
@@ -1909,106 +2000,50 @@ cron.schedule("0 0 * * *", async () => {
                 }
               }
             }
-          } else if (paymentPlan === PAYMENT_PLANS.THREE_INSTALLMENTS) {
-            // Three installment plan
+          } else if (
+            Object.values(PAYMENT_PLANS).includes(paymentPlan as any) &&
+            allInstallments.length > 1
+          ) {
+            // Generic logic for ANY multi-installment plan (2 to 5 installments)
             const paidCount = allInstallments.filter((i) => i.paid).length;
 
             if (installment.installmentNumber === 1) {
-              // First installment - should be paid before/at cohort start
+              // First installment - should be paid to secure spot
               if (cohortHasStarted && paidCount === 0) {
                 const gracePeriodDays = 7;
                 if (daysSinceCohortStart > gracePeriodDays) {
                   shouldDeactivate = true;
-                  reason =
-                    "First installment not paid after cohort started + grace period";
+                  reason = "Initial installment not paid after cohort started";
                 }
               }
             } else if (installment.installmentNumber === 2) {
-              // Second installment - due 1 month AFTER cohort starts
-              if (cohortHasStarted && monthsSinceCohortStart >= 1) {
-                const gracePeriodDays = 14; // 2-week grace for second installment
-                const expectedDueDate = addMonths(cohortStartDate, 1);
-                const gracePeriodEnd = new Date(
-                  expectedDueDate.getTime() +
-                    gracePeriodDays * 24 * 60 * 60 * 1000,
-                );
-
-                if (now > gracePeriodEnd && paidCount < 2) {
+              // Second installment logic
+              if (allInstallments.length >= 3) {
+                // For 3+ installments: MUST be paid before cohort starts
+                if (cohortHasStarted && paidCount < 2) {
                   shouldDeactivate = true;
-                  reason =
-                    "Second installment overdue (1 month into cohort + grace period)";
+                  reason = "Second installment must be paid before cohort starts for 3+ installment plans";
+                }
+              } else {
+                // For 2 installments: due 1 month into program
+                if (cohortHasStarted && monthsSinceCohortStart >= 1) {
+                  const gracePeriodDays = 14;
+                  const expectedDueDate = addMonths(cohortStartDate, 1);
+                  if (now > new Date(expectedDueDate.getTime() + gracePeriodDays * 86400000) && paidCount < 2) {
+                    shouldDeactivate = true;
+                    reason = "Second installment for 2-plan overdue (1 month into cohort)";
+                  }
                 }
               }
-            } else if (installment.installmentNumber === 3) {
-              // Third installment - due 2 months AFTER cohort starts
-              if (cohortHasStarted && monthsSinceCohortStart >= 2) {
-                const gracePeriodDays = 21; // 3-week grace for final installment
-                const expectedDueDate = addMonths(cohortStartDate, 2);
-                const gracePeriodEnd = new Date(
-                  expectedDueDate.getTime() +
-                    gracePeriodDays * 24 * 60 * 60 * 1000,
-                );
-
-                if (now > gracePeriodEnd && paidCount < 3) {
-                  shouldDeactivate = true;
-                  reason =
-                    "Final installment overdue (2 months into cohort + grace period)";
-                }
-              }
-            }
-          } else if (paymentPlan === PAYMENT_PLANS.FOUR_INSTALLMENTS) {
-            // Four installment plan
-            const paidCount = allInstallments.filter((i) => i.paid).length;
-
-            if (installment.installmentNumber === 1) {
-              // Seat reservation - should be paid before cohort starts
-              if (cohortHasStarted && paidCount === 0) {
-                const gracePeriodDays = 7;
-                if (daysSinceCohortStart > gracePeriodDays) {
-                  shouldDeactivate = true;
-                  reason =
-                    "Seat reservation not paid after cohort started + grace period";
-                }
-              }
-            } else if (installment.installmentNumber === 2) {
-              // Cohort access - due AT cohort start
-              if (cohortHasStarted) {
-                const gracePeriodDays = 7; // Short grace for cohort access
-                if (daysSinceCohortStart > gracePeriodDays && paidCount < 2) {
-                  shouldDeactivate = true;
-                  reason = "Cohort access payment not made after grace period";
-                }
-              }
-            } else if (installment.installmentNumber === 3) {
-              // Month 1 payment - due 1 month AFTER cohort starts
-              if (cohortHasStarted && monthsSinceCohortStart >= 1) {
+            } else if (installment.installmentNumber >= 3) {
+              // 3rd, 4th, 5th installments: monthly from start date
+              const monthsNeeded = installment.installmentNumber - 2; // Installment 3 is 1 month after start
+              if (cohortHasStarted && monthsSinceCohortStart >= monthsNeeded) {
                 const gracePeriodDays = 14;
-                const expectedDueDate = addMonths(cohortStartDate, 1);
-                const gracePeriodEnd = new Date(
-                  expectedDueDate.getTime() +
-                    gracePeriodDays * 24 * 60 * 60 * 1000,
-                );
-
-                if (now > gracePeriodEnd && paidCount < 3) {
+                const expectedDueDate = addMonths(cohortStartDate, monthsNeeded);
+                if (now > new Date(expectedDueDate.getTime() + gracePeriodDays * 86400000) && paidCount < installment.installmentNumber) {
                   shouldDeactivate = true;
-                  reason =
-                    "Month 1 payment overdue (1 month into cohort + grace period)";
-                }
-              }
-            } else if (installment.installmentNumber === 4) {
-              // Month 2 payment - due 2 months AFTER cohort starts
-              if (cohortHasStarted && monthsSinceCohortStart >= 2) {
-                const gracePeriodDays = 21; // More grace for final payment
-                const expectedDueDate = addMonths(cohortStartDate, 2);
-                const gracePeriodEnd = new Date(
-                  expectedDueDate.getTime() +
-                    gracePeriodDays * 24 * 60 * 60 * 1000,
-                );
-
-                if (now > gracePeriodEnd && paidCount < 4) {
-                  shouldDeactivate = true;
-                  reason =
-                    "Final payment overdue (2 months into cohort + grace period)";
+                  reason = `Installment ${installment.installmentNumber} overdue (${monthsNeeded} month(s) into cohort)`;
                 }
               }
             }
@@ -2435,6 +2470,200 @@ paymentApp.get("/admin/payments/stats", async (req: Request, res: Response) => {
     console.error("Error fetching payment stats:", error);
     res.status(500).json({
       error: "Failed to fetch payment stats",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+/**
+ * Admin endpoint: Manually verify and record a Paystack payment by reference.
+ * Useful when automatic verification fails (e.g. missing installment records).
+ * POST /admin/payments/manual-verify
+ * Body: { reference: string, userId: string, courseId: string, installmentNumber?: number }
+ */
+paymentApp.post("/admin/payments/manual-verify", async (req: Request, res: Response) => {
+  const { reference, userId, courseId, installmentNumber = 1 } = req.body;
+
+  if (!reference || !userId || !courseId) {
+    return res.status(400).json({ error: "reference, userId, and courseId are required" });
+  }
+
+  try {
+    // Verify with Paystack first
+    const verification = await paystack.transaction.verify(reference as string);
+
+    if (verification.data.status !== "success") {
+      return res.status(400).json({
+        status: "error",
+        error: "Paystack reports this transaction is not successful",
+        paystackStatus: verification.data.status,
+      });
+    }
+
+    const amountPaid = (verification.data.amount || 0) / 100; // kobo → naira
+
+    const result = await prismadb.$transaction(
+      async (tx) => {
+        // Upsert the paystackTransaction record
+        let paystackTx = await tx.paystackTransaction.findUnique({
+          where: { transactionRef: reference },
+        });
+
+        if (!paystackTx) {
+          paystackTx = await tx.paystackTransaction.create({
+            data: {
+              transactionRef: reference,
+              userId,
+              courseId,
+              amount: amountPaid.toString(),
+              status: "success",
+              paymentDate: new Date(),
+              paymentPlan: ((verification.data.metadata as any)?.paymentPlan as string) || "MANUAL",
+              metadata: JSON.stringify((verification.data.metadata as any) || {}),
+            },
+          });
+        } else if (paystackTx.status !== "success") {
+          paystackTx = await tx.paystackTransaction.update({
+            where: { id: paystackTx.id },
+            data: { status: "success", paymentDate: new Date() },
+          });
+        }
+
+        // Ensure paymentStatus exists
+        let paymentStatus = await tx.paymentStatus.findUnique({
+          where: { userId_courseId: { userId, courseId } },
+          include: {
+            paymentInstallments: { orderBy: { installmentNumber: "asc" } },
+            cohort: true,
+          },
+        });
+
+        const paymentPlan: string =
+          paystackTx.paymentPlan ||
+          ((verification.data.metadata as any)?.paymentPlan as string) ||
+          "FULL_PAYMENT";
+
+        if (!paymentStatus) {
+          // Create a basic paymentStatus — admin must assign cohort separately if needed
+          paymentStatus = (await tx.paymentStatus.create({
+            data: {
+              userId,
+              courseId,
+              paymentPlan,
+              status: PaymentStatusType.PENDING_SEAT_CONFIRMATION,
+            },
+            include: {
+              paymentInstallments: true,
+              cohort: true,
+            },
+          })) as any;
+          console.log(`[ADMIN] Created paymentStatus for user ${userId} / course ${courseId}`);
+        }
+
+        // Determine if this is an installment plan
+        const isInstallmentPlan = [
+          PAYMENT_PLANS.TWO_INSTALLMENTS,
+          PAYMENT_PLANS.THREE_INSTALLMENTS,
+          PAYMENT_PLANS.FOUR_INSTALLMENTS,
+          PAYMENT_PLANS.FIVE_INSTALLMENTS,
+        ].includes(paymentPlan as any);
+
+        if (isInstallmentPlan) {
+          // Self-heal missing installments
+          if (paymentStatus.paymentInstallments.length === 0) {
+            const courseForPlan = await tx.course.findUnique({
+              where: { id: courseId },
+              select: { pricingPlans: true },
+            });
+            const plan = (courseForPlan?.pricingPlans as any[])?.find(
+              (p: any) => p.planType === paymentPlan
+            );
+            if (plan && plan.installmentsCount > 1) {
+              const cohortStartDate = paymentStatus.cohort?.startDate || new Date();
+              const installments: any[] = [];
+              if (plan.installmentsCount === 2) {
+                installments.push({ amount: plan.amountPerInstallment, dueDate: new Date(), installmentNumber: 1, paymentStatusId: paymentStatus.id });
+                installments.push({ amount: plan.amountPerInstallment, dueDate: addMonths(cohortStartDate, 1), installmentNumber: 2, paymentStatusId: paymentStatus.id });
+              } else {
+                installments.push({ amount: plan.amountPerInstallment, dueDate: new Date(), installmentNumber: 1, paymentStatusId: paymentStatus.id });
+                installments.push({ amount: plan.amountPerInstallment, dueDate: cohortStartDate, installmentNumber: 2, paymentStatusId: paymentStatus.id });
+                for (let i = 3; i <= plan.installmentsCount; i++) {
+                  installments.push({ amount: plan.amountPerInstallment, dueDate: addMonths(cohortStartDate, i - 2), installmentNumber: i, paymentStatusId: paymentStatus.id });
+                }
+              }
+              await tx.paymentInstallment.createMany({ data: installments });
+              console.log(`[ADMIN] Auto-created ${installments.length} installments`);
+            }
+            // Re-fetch
+            paymentStatus = await tx.paymentStatus.findUniqueOrThrow({
+              where: { id: paymentStatus.id },
+              include: { paymentInstallments: { orderBy: { installmentNumber: "asc" } }, cohort: true },
+            });
+          }
+
+          // Mark the specified installment as paid
+          const targetInstallment = paymentStatus.paymentInstallments.find(
+            (i) => i.installmentNumber === Number(installmentNumber)
+          );
+          if (targetInstallment && !targetInstallment.paid) {
+            await tx.paymentInstallment.update({
+              where: { id: targetInstallment.id },
+              data: { paid: true },
+            });
+            console.log(`[ADMIN] Marked installment ${installmentNumber} as paid`);
+          }
+
+          // Check if all installments are now paid
+          const allInstallments = await tx.paymentInstallment.findMany({
+            where: { paymentStatusId: paymentStatus.id },
+          });
+          const allPaid = allInstallments.every((i) => i.paid || i.installmentNumber === Number(installmentNumber));
+          await tx.paymentStatus.update({
+            where: { id: paymentStatus.id },
+            data: {
+              status: allPaid ? PaymentStatusType.COMPLETE : PaymentStatusType.BALANCE_HALF_PAYMENT,
+            },
+          });
+        } else {
+          // Full payment or legacy plan
+          await tx.paymentStatus.update({
+            where: { id: paymentStatus.id },
+            data: {
+              paymentPlan,
+              status: PaymentStatusType.COMPLETE,
+            },
+          });
+        }
+
+        // Ensure purchase record exists
+        const existingPurchase = await tx.purchase.findFirst({ where: { userId, courseId } });
+        if (!existingPurchase) {
+          await tx.purchase.create({ data: { userId, courseId } });
+          console.log(`[ADMIN] Created purchase record for user ${userId}`);
+        }
+
+        // Reactivate user if inactive
+        const user = await tx.user.findUnique({ where: { id: userId } });
+        if (user?.inactive) {
+          await tx.user.update({ where: { id: userId }, data: { inactive: false } });
+          console.log(`[ADMIN] Reactivated user ${userId}`);
+        }
+
+        return { paystackTxId: paystackTx.id, paymentStatusId: paymentStatus.id };
+      },
+      { maxWait: 30000, timeout: 25000 }
+    );
+
+    res.json({
+      status: "success",
+      message: `Payment reference ${reference} successfully verified and recorded for user ${userId}`,
+      data: result,
+    });
+  } catch (error) {
+    console.error("[ADMIN] Manual verify error:", error);
+    res.status(500).json({
+      status: "error",
+      error: "Manual verification failed",
       details: error instanceof Error ? error.message : "Unknown error",
     });
   }

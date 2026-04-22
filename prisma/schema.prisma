@@ -488,9 +488,27 @@ model Course {
 
   syllabus        String? @db.Text
 
+  pricingPlans    CoursePricingPlan[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model CoursePricingPlan {
+  id                   String   @id @default(cuid())
+  courseId             String
+  course               Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  planType             String   // e.g., "FULL_PAYMENT", "TWO_INSTALLMENTS", "THREE_INSTALLMENTS", etc.
+  amountPerInstallment Float    // The price per installment
+  installmentsCount    Int      // 1, 2, 3, 4, 5
+  discountPrice        Float?   // The "fake" original price to show as discount
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([courseId, planType])
+}
+
 
 model CourseWeek {
   id String @id @default(cuid())
