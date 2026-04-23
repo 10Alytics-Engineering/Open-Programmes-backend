@@ -1912,18 +1912,8 @@ cron.schedule("0 9 * * *", async () => {
       //     callback_url: process.env.PAYSTACK_CALLBACK_URL,
       //   })
       //   .then((res) => res.data.authorization_url);
-      const paymentLink = await initiateStartButtonPayment(
-        installment.paymentStatus.user.email,
-        installment.amount * 100,
-        "NGN",
-        {
-          installmentId: installment.id,
-          paymentPlan: paymentPlan,
-          userId: installment.paymentStatus.userId,
-          courseId: installment.paymentStatus.courseId,
-          installmentNumber: installment.installmentNumber,
-        },
-      ).then((data) => data.url);
+
+      const paymentLink = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/billing`;
 
       await sendPaymentReminder(
         installment.paymentStatus.user.email!,
