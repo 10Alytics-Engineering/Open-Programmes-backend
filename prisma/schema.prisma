@@ -1137,3 +1137,27 @@ model ScholarshipApplication {
   userId String?
   user   User?   @relation(fields: [userId], references: [id])
 }
+
+model WebinarAiAutomation {
+  id                  String   @id @default(cuid())
+  full_name           String
+  email               String
+  phone               String
+  skill_interested_in String?
+  terms_accepted      Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WebinarGenerativeAiData {
+  id                  String   @id @default(cuid())
+  full_name           String
+  email               String
+  phone               String
+  skill_interested_in String?
+  terms_accepted      Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
