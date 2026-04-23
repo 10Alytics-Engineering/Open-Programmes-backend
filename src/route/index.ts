@@ -32,8 +32,7 @@ import classroom from "./classroom";
 import assignment from "./assignment";
 import scholarship from "./scholarship";
 import salesDashboard from "./sales-dashboard";
-
-
+import webinar from "./webinar";
 
 const router = express.Router();
 
@@ -71,6 +70,7 @@ export default (): express.Router => {
   assignment(router);
   scholarship(router);
   salesDashboard(router);
+  webinar(router);
 
 
   return router;
