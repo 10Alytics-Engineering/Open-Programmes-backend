@@ -770,6 +770,7 @@ async function verifyPayment(reference) {
                     paymentInstallments: {
                         orderBy: { installmentNumber: "asc" },
                     },
+                    course: true,
                     cohort: true,
                     user: {
                         select: { id: true, inactive: true },
@@ -788,6 +789,21 @@ async function verifyPayment(reference) {
             message: "Payment already processed",
         };
     }
+    const course = await prismadb_1.prismadb.course.findUnique({
+        where: { id: existingTx.courseId },
+        select: {
+            title: true,
+            id: true,
+        },
+    });
+    const user = await prismadb_1.prismadb.user.findUnique({
+        where: { id: existingTx.userId },
+        select: {
+            name: true,
+            email: true,
+            id: true,
+        },
+    });
     if (existingTx.paymentGateway === "PAYSTACK") {
         const verification = await paystack.transaction.verify(reference);
         if (verification.data.status !== "success") {
@@ -958,7 +974,19 @@ async function verifyPayment(reference) {
     });
     try {
         const metadata = JSON.parse(result.metadata || "{}");
-        await sendPaymentNotifications(result.userId, result.courseId, metadata.installmentNumber);
+        // await sendPaymentNotifications(
+        //   result.userId,
+        //   result.courseId,
+        //   metadata.installmentNumber,
+        // );
+        await (0, mail_1.sendPaymentConfirmationEmail)({
+            amountPaid: Number(existingTx.amount).toLocaleString(),
+            courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+            courseTitle: course.title,
+            paymentDate: (0, date_fns_1.format)(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
+            userEmail: user.email,
+            userName: user.name,
+        });
     }
     catch (emailError) {
         console.error("Email notification failed:", emailError);
