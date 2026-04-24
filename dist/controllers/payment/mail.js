@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWrongfulDeactivationAlert = exports.sendAccountDeactivationNotification = exports.sendPurchaseConfirmationMail = exports.sendPaymentConfirmation = exports.sendSecondHalfReminder = exports.sendPaymentReminder = void 0;
+exports.sendPaymentConfirmationEmail = exports.sendWrongfulDeactivationAlert = exports.sendAccountDeactivationNotification = exports.sendPurchaseConfirmationMail = exports.sendPaymentConfirmation = exports.sendSecondHalfReminder = exports.sendPaymentReminder = void 0;
 const resend_1 = require("resend");
 const dotenv = __importStar(require("dotenv"));
 // Load environment variables
@@ -50,26 +50,32 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
     else {
         switch (installmentNumber) {
             case 1:
-                milestoneMessage = "<p>🚀 <strong>This payment unlocks:</strong> Seat reservation and course access</p>";
+                milestoneMessage =
+                    "<p>🚀 <strong>This payment unlocks:</strong> Seat reservation and course access</p>";
                 break;
             case 2:
-                milestoneMessage = "<p>🚀 <strong>This payment unlocks:</strong> Full course materials and community access</p>";
+                milestoneMessage =
+                    "<p>🚀 <strong>This payment unlocks:</strong> Full course materials and community access</p>";
                 break;
             case 3:
-                milestoneMessage = "<p>🚀 <strong>This payment unlocks:</strong> Advanced modules and project work</p>";
+                milestoneMessage =
+                    "<p>🚀 <strong>This payment unlocks:</strong> Advanced modules and project work</p>";
                 break;
             case 4:
-                milestoneMessage = "<p>🎓 <strong>This payment completes:</strong> Your program investment and certification</p>";
+                milestoneMessage =
+                    "<p>🎓 <strong>This payment completes:</strong> Your program investment and certification</p>";
                 break;
         }
     }
     // Calculate days until due if not provided
-    const daysLeft = daysUntilDue !== undefined ? daysUntilDue : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const daysLeft = daysUntilDue !== undefined
+        ? daysUntilDue
+        : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     const urgencyLevel = daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
     const mailOptions = {
         from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
         to: email,
-        subject: `⏰ Payment Reminder: ${courseTitle} - Installment ${installmentNumber} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`,
+        subject: `⏰ Payment Reminder: ${courseTitle} - Installment ${installmentNumber} (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`,
         html: `
       <!DOCTYPE html>
       <html>
@@ -195,15 +201,15 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
             <div class="payment-details">
               <h3>Payment Details</h3>
               <p><span class="badge badge-primary">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-${urgencyLevel === 'high' ? 'warning' : urgencyLevel === 'medium' ? 'warning' : 'success'}">Due In</span> 
-                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? 's' : ''}</span></p>
+              <p><span class="badge badge-${urgencyLevel === "high" ? "warning" : urgencyLevel === "medium" ? "warning" : "success"}">Due In</span> 
+                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? "s" : ""}</span></p>
               <p><span class="badge badge-primary">Installment</span> #${installmentNumber}</p>
               <p><span class="badge badge-primary">Amount</span> <strong>₦${amount.toLocaleString()}</strong></p>
-              <p><span class="badge badge-primary">Due Date</span> ${dueDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
+              <p><span class="badge badge-primary">Due Date</span> ${dueDate.toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
         })}</p>
             </div>
 
@@ -256,7 +262,9 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
 };
 exports.sendPaymentReminder = sendPaymentReminder;
 const sendSecondHalfReminder = async (email, userName, courseTitle, dueDate, amount, paymentLink, daysUntilDue) => {
-    const daysLeft = daysUntilDue !== undefined ? daysUntilDue : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const daysLeft = daysUntilDue !== undefined
+        ? daysUntilDue
+        : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     const urgencyLevel = daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
     const formattedDate = dueDate.toLocaleDateString("en-NG", {
         weekday: "long",
@@ -267,7 +275,7 @@ const sendSecondHalfReminder = async (email, userName, courseTitle, dueDate, amo
     const mailOptions = {
         from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
         to: email,
-        subject: `🎓 Final Payment Due: Complete Your ${courseTitle} Program (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`,
+        subject: `🎓 Final Payment Due: Complete Your ${courseTitle} Program (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`,
         html: `
       <!DOCTYPE html>
       <html>
@@ -400,8 +408,8 @@ const sendSecondHalfReminder = async (email, userName, courseTitle, dueDate, amo
             <div class="payment-details">
               <h3>Final Payment Details</h3>
               <p><span class="badge badge-success">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-${urgencyLevel === 'high' ? 'danger' : urgencyLevel === 'medium' ? 'warning' : 'success'}">Due In</span> 
-                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? 's' : ''}</span></p>
+              <p><span class="badge badge-${urgencyLevel === "high" ? "danger" : urgencyLevel === "medium" ? "warning" : "success"}">Due In</span> 
+                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? "s" : ""}</span></p>
               <p><span class="badge badge-info">Amount</span> <strong>₦${amount.toLocaleString()}</strong></p>
               <p><span class="badge badge-info">Due Date</span> ${formattedDate}</p>
             </div>
@@ -826,8 +834,8 @@ const sendAccountDeactivationNotification = async (email, userName, courseTitle,
             <div class="deactivation-details">
               <h3>📋 Deactivation Details</h3>
               <p><span class="badge badge-danger">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, ' ')}</p>
-              ${installmentNumber ? `<p><span class="badge badge-info">Overdue Installment</span> #${installmentNumber}</p>` : ''}
+              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, " ")}</p>
+              ${installmentNumber ? `<p><span class="badge badge-info">Overdue Installment</span> #${installmentNumber}</p>` : ""}
               <p><span class="badge badge-danger">Days Overdue</span> ${overdueDays} days</p>
               <p><span class="badge badge-danger">Status</span> Account temporarily suspended</p>
             </div>
@@ -839,18 +847,20 @@ const sendAccountDeactivationNotification = async (email, userName, courseTitle,
               </p>
             </div>
 
-            ${nextCohortDate ? `
+            ${nextCohortDate
+            ? `
             <div class="action-section">
               <h4>🔄 Good News - We've Moved You Forward</h4>
-              <p>To help you continue your learning journey, we've automatically enrolled you in the next available cohort starting on <strong>${nextCohortDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        })}</strong>.</p>
+              <p>To help you continue your learning journey, we've automatically enrolled you in the next available cohort starting on <strong>${nextCohortDate.toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+            })}</strong>.</p>
               <p>Once you make your payment, your access will be restored and you can join the new cohort.</p>
             </div>
-            ` : ''}
+            `
+            : ""}
 
             <div class="next-steps">
               <h4>📞 What Should You Do Next?</h4>
@@ -994,14 +1004,14 @@ const sendWrongfulDeactivationAlert = async (email, userName, courseTitle, payme
               <p><span class="badge badge-primary">Name</span> ${userName}</p>
               <p><span class="badge badge-primary">Email</span> ${userEmail}</p>
               <p><span class="badge badge-info">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, ' ')}</p>
-              <p><span class="badge badge-danger">Deactivated</span> ${new Date().toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, " ")}</p>
+              <p><span class="badge badge-danger">Deactivated</span> ${new Date().toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
         })}</p>
             </div>
 
@@ -1065,4 +1075,180 @@ const sendWrongfulDeactivationAlert = async (email, userName, courseTitle, payme
     }
 };
 exports.sendWrongfulDeactivationAlert = sendWrongfulDeactivationAlert;
+/** Escape a string for safe inclusion in HTML. */
+const escapeHtml = (s) => s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+const sendPaymentConfirmationEmail = async (params) => {
+    const { userName, userEmail, courseTitle, amountPaid, paymentDate, courseAccessLink, } = params;
+    const safeName = escapeHtml(userName);
+    const safeTitle = escapeHtml(courseTitle);
+    const safeAmount = escapeHtml(amountPaid);
+    const safeDate = escapeHtml(paymentDate);
+    const safeLink = escapeHtml(courseAccessLink);
+    const safeLogo = escapeHtml(`${process.env.BACKEND_URL}/logo.png`);
+    const subject = `Payment confirmed: ${courseTitle}`;
+    const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${safeTitle} — Payment Confirmation</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #fff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+          }
+          .header {
+            background-color: #6742FA;
+            padding: 30px;
+            text-align: center;
+            color: white;
+          }
+          .header h2 {
+            margin: 0;
+            font-size: 24px;
+            color: white;
+          }
+          .content {
+            padding: 40px 30px;
+          }
+          h1 {
+            color: #333;
+            text-align: center;
+            margin: 0 0 20px 0;
+            font-size: 22px;
+          }
+          p {
+            color: #555;
+            line-height: 1.6;
+          }
+          .course-name {
+            font-weight: bold;
+            color: #6742FA;
+          }
+          .course-access-link {
+            display: inline-block;
+            text-align: center;
+            margin-top: 20px;
+            padding: 12px 24px;
+            background-color: #6742FA;
+            color: #fff !important;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+          }
+          .footer {
+            background-color: #f4f4f4;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #777;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+              <tr>
+                <td style="vertical-align: middle; padding-right: 10px;">
+                  <img src="${safeLogo}" alt="10Alytics" width="40" style="display: block; border: 0;">
+                </td>
+                <td style="vertical-align: middle;">
+                  <h2 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h2>
+                </td>
+              </tr>
+            </table>
+          </div>
+ 
+          <div class="content">
+            <h1>Payment Confirmed</h1>
+ 
+            <p>Dear ${safeName},</p>
+            <p>We've received your payment for <span class="course-name">${safeTitle}</span>. Your course access is now active — you can start learning right away.</p>
+ 
+            <!-- Receipt summary -->
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                   style="background-color:#F5F2FF;border-radius:10px;margin:24px 0;">
+              <tr>
+                <td style="padding:20px 24px;">
+                  <p style="margin:0 0 12px 0;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#6742FA;font-weight:600;">
+                    Payment Receipt
+                  </p>
+                  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;">Name</td>
+                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;">
+                        ${safeName}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Course</td>
+                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+                        ${safeTitle}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Amount paid</td>
+                      <td style="padding:10px 0;font-size:18px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+                        ${safeAmount}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Date</td>
+                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+                        ${safeDate}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+ 
+            <p style="text-align:center;">
+              <a class="course-access-link" href="${safeLink}">Access Your Course</a>
+            </p>
+ 
+            <p>If you have any questions or need help getting started, our support team is here for you.</p>
+            <p>Welcome aboard!<br>The 10Alytics Team</p>
+          </div>
+ 
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} 10Alytics Inc. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+    const mailOptions = {
+        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+        to: userEmail,
+        subject,
+        html,
+    };
+    try {
+        await (0, nodemailer_1.sendMail)(mailOptions);
+        console.log(`Wrongful deactivation alert sent for user: ${userEmail}`);
+    }
+    catch (error) {
+        console.error("Error sending wrongful deactivation alert:", error);
+        throw error;
+    }
+};
+exports.sendPaymentConfirmationEmail = sendPaymentConfirmationEmail;
 //# sourceMappingURL=mail.js.map

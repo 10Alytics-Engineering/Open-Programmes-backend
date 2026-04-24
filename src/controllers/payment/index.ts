@@ -11,6 +11,7 @@ import {
   sendSecondHalfReminder,
   sendAccountDeactivationNotification,
   sendWrongfulDeactivationAlert,
+  sendPaymentConfirmationEmail,
 } from "./mail";
 import cron from "node-cron";
 import {
@@ -18,6 +19,7 @@ import {
   endOfMonth,
   addMonths,
   isWithinInterval,
+  format,
 } from "date-fns";
 import {
   convertNairaToOtherCurrency,
@@ -940,6 +942,7 @@ async function verifyPayment(reference: string) {
           paymentInstallments: {
             orderBy: { installmentNumber: "asc" },
           },
+          course: true,
           cohort: true,
           user: {
             select: { id: true, inactive: true },
@@ -960,6 +963,23 @@ async function verifyPayment(reference: string) {
       message: "Payment already processed",
     };
   }
+
+  const course = await prismadb.course.findUnique({
+    where: { id: existingTx.courseId },
+    select: {
+      title: true,
+      id: true,
+    },
+  });
+
+  const user = await prismadb.user.findUnique({
+    where: { id: existingTx.userId },
+    select: {
+      name: true,
+      email: true,
+      id: true,
+    },
+  });
 
   if (existingTx.paymentGateway === "PAYSTACK") {
     const verification = await paystack.transaction.verify(reference as string);
@@ -1170,11 +1190,19 @@ async function verifyPayment(reference: string) {
 
   try {
     const metadata = JSON.parse(result.metadata || "{}");
-    await sendPaymentNotifications(
-      result.userId,
-      result.courseId,
-      metadata.installmentNumber,
-    );
+    // await sendPaymentNotifications(
+    //   result.userId,
+    //   result.courseId,
+    //   metadata.installmentNumber,
+    // );
+    await sendPaymentConfirmationEmail({
+      amountPaid: Number(existingTx.amount).toLocaleString(),
+      courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+      courseTitle: course.title,
+      paymentDate: format(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
+      userEmail: user.email,
+      userName: user.name,
+    });
   } catch (emailError) {
     console.error("Email notification failed:", emailError);
   }
