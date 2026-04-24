@@ -1,76 +1,64 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendWrongfulDeactivationAlert = exports.sendAccountDeactivationNotification = exports.sendPurchaseConfirmationMail = exports.sendPaymentConfirmation = exports.sendSecondHalfReminder = exports.sendPaymentReminder = void 0;
-const resend_1 = require("resend");
-const dotenv = __importStar(require("dotenv"));
+import { Resend } from "resend";
+import * as dotenv from "dotenv";
+
 // Load environment variables
 dotenv.config();
-const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const domain = process.env.NEXT_PUBLIC_APP_URL;
-const nodemailer_1 = require("../../utils/nodemailer");
-const sendPaymentReminder = async (email, userName, courseTitle, installmentNumber, dueDate, amount, paymentLink, daysUntilDue, milestone) => {
-    // Determine the milestone message based on installment number
-    let milestoneMessage = "";
-    if (milestone) {
-        milestoneMessage = `<p>🚀 <strong>This payment unlocks:</strong> ${milestone}</p>`;
+import { sendMail } from "../../utils/nodemailer";
+
+export const sendPaymentReminder = async (
+  email: string,
+  userName: string,
+  courseTitle: string,
+  installmentNumber: number,
+  dueDate: Date,
+  amount: number,
+  paymentLink: string,
+  daysUntilDue?: number,
+  milestone?: string,
+) => {
+  // Determine the milestone message based on installment number
+  let milestoneMessage = "";
+  if (milestone) {
+    milestoneMessage = `<p>🚀 <strong>This payment unlocks:</strong> ${milestone}</p>`;
+  } else {
+    switch (installmentNumber) {
+      case 1:
+        milestoneMessage =
+          "<p>🚀 <strong>This payment unlocks:</strong> Seat reservation and course access</p>";
+        break;
+      case 2:
+        milestoneMessage =
+          "<p>🚀 <strong>This payment unlocks:</strong> Full course materials and community access</p>";
+        break;
+      case 3:
+        milestoneMessage =
+          "<p>🚀 <strong>This payment unlocks:</strong> Advanced modules and project work</p>";
+        break;
+      case 4:
+        milestoneMessage =
+          "<p>🎓 <strong>This payment completes:</strong> Your program investment and certification</p>";
+        break;
     }
-    else {
-        switch (installmentNumber) {
-            case 1:
-                milestoneMessage = "<p>🚀 <strong>This payment unlocks:</strong> Seat reservation and course access</p>";
-                break;
-            case 2:
-                milestoneMessage = "<p>🚀 <strong>This payment unlocks:</strong> Full course materials and community access</p>";
-                break;
-            case 3:
-                milestoneMessage = "<p>🚀 <strong>This payment unlocks:</strong> Advanced modules and project work</p>";
-                break;
-            case 4:
-                milestoneMessage = "<p>🎓 <strong>This payment completes:</strong> Your program investment and certification</p>";
-                break;
-        }
-    }
-    // Calculate days until due if not provided
-    const daysLeft = daysUntilDue !== undefined ? daysUntilDue : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    const urgencyLevel = daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
-        to: email,
-        subject: `⏰ Payment Reminder: ${courseTitle} - Installment ${installmentNumber} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`,
-        html: `
+  }
+
+  // Calculate days until due if not provided
+  const daysLeft =
+    daysUntilDue !== undefined
+      ? daysUntilDue
+      : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+  const urgencyLevel =
+    daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: email,
+    subject: `⏰ Payment Reminder: ${courseTitle} - Installment ${installmentNumber} (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`,
+    html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -195,16 +183,19 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
             <div class="payment-details">
               <h3>Payment Details</h3>
               <p><span class="badge badge-primary">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-${urgencyLevel === 'high' ? 'warning' : urgencyLevel === 'medium' ? 'warning' : 'success'}">Due In</span> 
-                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? 's' : ''}</span></p>
+              <p><span class="badge badge-${urgencyLevel === "high" ? "warning" : urgencyLevel === "medium" ? "warning" : "success"}">Due In</span> 
+                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? "s" : ""}</span></p>
               <p><span class="badge badge-primary">Installment</span> #${installmentNumber}</p>
               <p><span class="badge badge-primary">Amount</span> <strong>₦${amount.toLocaleString()}</strong></p>
-              <p><span class="badge badge-primary">Due Date</span> ${dueDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        })}</p>
+              <p><span class="badge badge-primary">Due Date</span> ${dueDate.toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                },
+              )}</p>
             </div>
 
             ${milestoneMessage}
@@ -230,7 +221,9 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
 
             <div class="footer">
               <p><strong>Need assistance?</strong><br>
-              Contact our support team at <a href="mailto:${process.env.EMAIL_FROM || "programrelations@nebiant.com"}">${process.env.EMAIL_FROM || "programrelations@nebiant.com"}</a></p>
+              Contact our support team at <a href="mailto:${process.env.EMAIL_FROM || "programrelations@nebiant.com"}">${
+                process.env.EMAIL_FROM || "programrelations@nebiant.com"
+              }</a></p>
               
               <p style="margin-top: 15px; color: #999; font-size: 0.8em;">
                 This is an automated reminder. Please do not reply to this email.
@@ -244,31 +237,47 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
       </body>
       </html>
     `,
-    };
-    try {
-        await (0, nodemailer_1.sendMail)(mailOptions);
-        console.log(`Payment reminder sent to ${email} for installment ${installmentNumber}`);
-    }
-    catch (error) {
-        console.error("Error sending payment reminder:", error);
-        throw error;
-    }
+  };
+
+  try {
+    await sendMail(mailOptions);
+    console.log(
+      `Payment reminder sent to ${email} for installment ${installmentNumber}`,
+    );
+  } catch (error) {
+    console.error("Error sending payment reminder:", error);
+    throw error;
+  }
 };
-exports.sendPaymentReminder = sendPaymentReminder;
-const sendSecondHalfReminder = async (email, userName, courseTitle, dueDate, amount, paymentLink, daysUntilDue) => {
-    const daysLeft = daysUntilDue !== undefined ? daysUntilDue : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    const urgencyLevel = daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
-    const formattedDate = dueDate.toLocaleDateString("en-NG", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-    });
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
-        to: email,
-        subject: `🎓 Final Payment Due: Complete Your ${courseTitle} Program (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`,
-        html: `
+
+export const sendSecondHalfReminder = async (
+  email: string,
+  userName: string,
+  courseTitle: string,
+  dueDate: Date,
+  amount: number,
+  paymentLink: string,
+  daysUntilDue?: number,
+) => {
+  const daysLeft =
+    daysUntilDue !== undefined
+      ? daysUntilDue
+      : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const urgencyLevel =
+    daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
+
+  const formattedDate = dueDate.toLocaleDateString("en-NG", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: email,
+    subject: `🎓 Final Payment Due: Complete Your ${courseTitle} Program (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`,
+    html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -400,8 +409,8 @@ const sendSecondHalfReminder = async (email, userName, courseTitle, dueDate, amo
             <div class="payment-details">
               <h3>Final Payment Details</h3>
               <p><span class="badge badge-success">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-${urgencyLevel === 'high' ? 'danger' : urgencyLevel === 'medium' ? 'warning' : 'success'}">Due In</span> 
-                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? 's' : ''}</span></p>
+              <p><span class="badge badge-${urgencyLevel === "high" ? "danger" : urgencyLevel === "medium" ? "warning" : "success"}">Due In</span> 
+                 <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? "s" : ""}</span></p>
               <p><span class="badge badge-info">Amount</span> <strong>₦${amount.toLocaleString()}</strong></p>
               <p><span class="badge badge-info">Due Date</span> ${formattedDate}</p>
             </div>
@@ -461,23 +470,28 @@ const sendSecondHalfReminder = async (email, userName, courseTitle, dueDate, amo
       </body>
       </html>
     `,
-    };
-    try {
-        await (0, nodemailer_1.sendMail)(mailOptions);
-        console.log(`Second half reminder sent to ${email}`);
-    }
-    catch (error) {
-        console.error("Error sending second half reminder:", error);
-        throw new Error("Failed to send second half reminder");
-    }
+  };
+
+  try {
+    await sendMail(mailOptions);
+    console.log(`Second half reminder sent to ${email}`);
+  } catch (error) {
+    console.error("Error sending second half reminder:", error);
+    throw new Error("Failed to send second half reminder");
+  }
 };
-exports.sendSecondHalfReminder = sendSecondHalfReminder;
-const sendPaymentConfirmation = async (email, userName, courseTitle, installmentNumber) => {
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
-        to: email,
-        subject: `Payment Confirmation for ${courseTitle} - Installment ${installmentNumber}`,
-        html: `
+
+export const sendPaymentConfirmation = async (
+  email: string,
+  userName: string,
+  courseTitle: string,
+  installmentNumber: number,
+) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: email,
+    subject: `Payment Confirmation for ${courseTitle} - Installment ${installmentNumber}`,
+    html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -570,23 +584,28 @@ const sendPaymentConfirmation = async (email, userName, courseTitle, installment
       </body>
       </html>
     `,
-    };
-    try {
-        await (0, nodemailer_1.sendMail)(mailOptions);
-    }
-    catch (error) {
-        console.error("Error sending payment confirmation:", error);
-        throw error;
-    }
+  };
+
+  try {
+    await sendMail(mailOptions);
+  } catch (error) {
+    console.error("Error sending payment confirmation:", error);
+    throw error;
+  }
 };
-exports.sendPaymentConfirmation = sendPaymentConfirmation;
-const sendPurchaseConfirmationMail = async (email, courseTitle, user_name, courseAccessLink) => {
-    console.log("Send email initiated +1");
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
-        to: email,
-        subject: "Payment Status",
-        html: `
+
+export const sendPurchaseConfirmationMail = async (
+  email: string,
+  courseTitle: string,
+  user_name: string,
+  courseAccessLink: string,
+) => {
+  console.log("Send email initiated +1");
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: email,
+    subject: "Payment Status",
+    html: `
     <!DOCTYPE html>
     <html>
       <head>
@@ -693,23 +712,31 @@ const sendPurchaseConfirmationMail = async (email, courseTitle, user_name, cours
     </body>
     </html>
   `,
-    };
-    try {
-        await (0, nodemailer_1.sendMail)(mailOptions);
-    }
-    catch (error) {
-        console.error("Error sending verification email:", error);
-        throw error;
-    }
-    console.log("Send email done +1");
+  };
+
+  try {
+    await sendMail(mailOptions);
+  } catch (error) {
+    console.error("Error sending verification email:", error);
+    throw error;
+  }
+  console.log("Send email done +1");
 };
-exports.sendPurchaseConfirmationMail = sendPurchaseConfirmationMail;
-const sendAccountDeactivationNotification = async (email, userName, courseTitle, paymentPlan, overdueDays, installmentNumber, nextCohortDate) => {
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
-        to: email,
-        subject: `⚠️ Account Deactivated - ${courseTitle} Payment Required`,
-        html: `
+
+export const sendAccountDeactivationNotification = async (
+  email: string,
+  userName: string,
+  courseTitle: string,
+  paymentPlan: string,
+  overdueDays: number,
+  installmentNumber?: number,
+  nextCohortDate?: Date,
+) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: email,
+    subject: `⚠️ Account Deactivated - ${courseTitle} Payment Required`,
+    html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -826,8 +853,8 @@ const sendAccountDeactivationNotification = async (email, userName, courseTitle,
             <div class="deactivation-details">
               <h3>📋 Deactivation Details</h3>
               <p><span class="badge badge-danger">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, ' ')}</p>
-              ${installmentNumber ? `<p><span class="badge badge-info">Overdue Installment</span> #${installmentNumber}</p>` : ''}
+              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, " ")}</p>
+              ${installmentNumber ? `<p><span class="badge badge-info">Overdue Installment</span> #${installmentNumber}</p>` : ""}
               <p><span class="badge badge-danger">Days Overdue</span> ${overdueDays} days</p>
               <p><span class="badge badge-danger">Status</span> Account temporarily suspended</p>
             </div>
@@ -839,18 +866,25 @@ const sendAccountDeactivationNotification = async (email, userName, courseTitle,
               </p>
             </div>
 
-            ${nextCohortDate ? `
+            ${
+              nextCohortDate
+                ? `
             <div class="action-section">
               <h4>🔄 Good News - We've Moved You Forward</h4>
-              <p>To help you continue your learning journey, we've automatically enrolled you in the next available cohort starting on <strong>${nextCohortDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        })}</strong>.</p>
+              <p>To help you continue your learning journey, we've automatically enrolled you in the next available cohort starting on <strong>${nextCohortDate.toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                },
+              )}</strong>.</p>
               <p>Once you make your payment, your access will be restored and you can join the new cohort.</p>
             </div>
-            ` : ''}
+            `
+                : ""
+            }
 
             <div class="next-steps">
               <h4>📞 What Should You Do Next?</h4>
@@ -891,24 +925,31 @@ const sendAccountDeactivationNotification = async (email, userName, courseTitle,
       </body>
       </html>
     `,
-    };
-    try {
-        await (0, nodemailer_1.sendMail)(mailOptions);
-        console.log(`Account deactivation notification sent to ${email}`);
-    }
-    catch (error) {
-        console.error("Error sending account deactivation notification:", error);
-        throw error;
-    }
+  };
+
+  try {
+    await sendMail(mailOptions);
+    console.log(`Account deactivation notification sent to ${email}`);
+  } catch (error) {
+    console.error("Error sending account deactivation notification:", error);
+    throw error;
+  }
 };
-exports.sendAccountDeactivationNotification = sendAccountDeactivationNotification;
-const sendWrongfulDeactivationAlert = async (email, userName, courseTitle, paymentPlan, deactivationReason, userEmail) => {
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
-        to: "hello@nebiant.com", // Internal alert email
-        cc: [email, "programrelations@nebiant.com"], // Copy to user and support
-        subject: `🚨 URGENT: Potential Wrongful Account Deactivation - ${userName}`,
-        html: `
+
+export const sendWrongfulDeactivationAlert = async (
+  email: string,
+  userName: string,
+  courseTitle: string,
+  paymentPlan: string,
+  deactivationReason: string,
+  userEmail: string,
+) => {
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: "hello@nebiant.com", // Internal alert email
+    cc: [email, "programrelations@nebiant.com"], // Copy to user and support
+    subject: `🚨 URGENT: Potential Wrongful Account Deactivation - ${userName}`,
+    html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -994,15 +1035,18 @@ const sendWrongfulDeactivationAlert = async (email, userName, courseTitle, payme
               <p><span class="badge badge-primary">Name</span> ${userName}</p>
               <p><span class="badge badge-primary">Email</span> ${userEmail}</p>
               <p><span class="badge badge-info">Course</span> ${courseTitle}</p>
-              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, ' ')}</p>
-              <p><span class="badge badge-danger">Deactivated</span> ${new Date().toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        })}</p>
+              <p><span class="badge badge-warning">Payment Plan</span> ${paymentPlan.replace(/_/g, " ")}</p>
+              <p><span class="badge badge-danger">Deactivated</span> ${new Date().toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                },
+              )}</p>
             </div>
 
             <div class="reason-box">
@@ -1054,15 +1098,215 @@ const sendWrongfulDeactivationAlert = async (email, userName, courseTitle, payme
       </body>
       </html>
     `,
-    };
-    try {
-        await (0, nodemailer_1.sendMail)(mailOptions);
-        console.log(`Wrongful deactivation alert sent for user: ${userEmail}`);
-    }
-    catch (error) {
-        console.error("Error sending wrongful deactivation alert:", error);
-        throw error;
-    }
+  };
+
+  try {
+    await sendMail(mailOptions);
+    console.log(`Wrongful deactivation alert sent for user: ${userEmail}`);
+  } catch (error) {
+    console.error("Error sending wrongful deactivation alert:", error);
+    throw error;
+  }
 };
-exports.sendWrongfulDeactivationAlert = sendWrongfulDeactivationAlert;
-//# sourceMappingURL=mail.js.map
+
+export interface PaymentConfirmationParams {
+  userName: string;
+  userEmail: string;
+  courseTitle: string;
+  /** Pre-formatted amount, e.g. "₦50,000" or "$1,500.00" */
+  amountPaid: string;
+  /** Human-readable date, e.g. "24 Apr 2026" */
+  paymentDate: string;
+  courseAccessLink: string;
+}
+
+/** Escape a string for safe inclusion in HTML. */
+const escapeHtml = (s: string): string =>
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+export const sendPaymentConfirmationEmail = async (
+  params: PaymentConfirmationParams,
+) => {
+  const {
+    userName,
+    userEmail,
+    courseTitle,
+    amountPaid,
+    paymentDate,
+    courseAccessLink,
+  } = params;
+
+  const safeName = escapeHtml(userName);
+  const safeTitle = escapeHtml(courseTitle);
+  const safeAmount = escapeHtml(amountPaid);
+  const safeDate = escapeHtml(paymentDate);
+  const safeLink = escapeHtml(courseAccessLink);
+  const safeLogo = escapeHtml(`${process.env.BACKEND_URL}/logo.png`);
+
+  const subject = `Payment confirmed: ${courseTitle}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${safeTitle} — Payment Confirmation</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 0;
+          }
+          .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #fff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+          }
+          .header {
+            background-color: #6742FA;
+            padding: 30px;
+            text-align: center;
+            color: white;
+          }
+          .header h2 {
+            margin: 0;
+            font-size: 24px;
+            color: white;
+          }
+          .content {
+            padding: 40px 30px;
+          }
+          h1 {
+            color: #333;
+            text-align: center;
+            margin: 0 0 20px 0;
+            font-size: 22px;
+          }
+          p {
+            color: #555;
+            line-height: 1.6;
+          }
+          .course-name {
+            font-weight: bold;
+            color: #6742FA;
+          }
+          .course-access-link {
+            display: inline-block;
+            text-align: center;
+            margin-top: 20px;
+            padding: 12px 24px;
+            background-color: #6742FA;
+            color: #fff !important;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+          }
+          .footer {
+            background-color: #f4f4f4;
+            padding: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #777;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+              <tr>
+                <td style="vertical-align: middle; padding-right: 10px;">
+                  <img src="${safeLogo}" alt="10Alytics" width="40" style="display: block; border: 0;">
+                </td>
+                <td style="vertical-align: middle;">
+                  <h2 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h2>
+                </td>
+              </tr>
+            </table>
+          </div>
+ 
+          <div class="content">
+            <h1>Payment Confirmed</h1>
+ 
+            <p>Dear ${safeName},</p>
+            <p>We've received your payment for <span class="course-name">${safeTitle}</span>. Your course access is now active — you can start learning right away.</p>
+ 
+            <!-- Receipt summary -->
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                   style="background-color:#F5F2FF;border-radius:10px;margin:24px 0;">
+              <tr>
+                <td style="padding:20px 24px;">
+                  <p style="margin:0 0 12px 0;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#6742FA;font-weight:600;">
+                    Payment Receipt
+                  </p>
+                  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;">Name</td>
+                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;">
+                        ${safeName}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Course</td>
+                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+                        ${safeTitle}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Amount paid</td>
+                      <td style="padding:10px 0;font-size:18px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+                        ${safeAmount}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Date</td>
+                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+                        ${safeDate}
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+ 
+            <p style="text-align:center;">
+              <a class="course-access-link" href="${safeLink}">Access Your Course</a>
+            </p>
+ 
+            <p>If you have any questions or need help getting started, our support team is here for you.</p>
+            <p>Welcome aboard!<br>The 10Alytics Team</p>
+          </div>
+ 
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} 10Alytics Inc. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
+    to: userEmail,
+    subject,
+    html,
+  };
+
+  try {
+    await sendMail(mailOptions);
+    console.log(`Wrongful deactivation alert sent for user: ${userEmail}`);
+  } catch (error) {
+    console.error("Error sending wrongful deactivation alert:", error);
+    throw error;
+  }
+};
