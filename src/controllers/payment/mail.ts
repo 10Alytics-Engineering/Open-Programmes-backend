@@ -1109,16 +1109,45 @@ export const sendWrongfulDeactivationAlert = async (
   }
 };
 
-export interface PaymentConfirmationParams {
+interface BasePaymentParams {
   userName: string;
   userEmail: string;
   courseTitle: string;
-  /** Pre-formatted amount, e.g. "₦50,000" or "$1,500.00" */
+  /** Pre-formatted amount paid in THIS transaction, e.g. "₦50,000" or "$1,500.00" */
   amountPaid: string;
   /** Human-readable date, e.g. "24 Apr 2026" */
   paymentDate: string;
   courseAccessLink: string;
 }
+
+/**
+ * One-time / full payment — nothing left to pay.
+ */
+interface OneTimePaymentParams extends BasePaymentParams {
+  paymentType: "one_time";
+}
+
+/**
+ * Installment payment — track totals and what's left.
+ *
+ * Use pre-formatted currency strings (same convention as `amountPaid`)
+ * so the email layer doesn't need to know about currency or locale.
+ */
+interface InstallmentPaymentParams extends BasePaymentParams {
+  paymentType: "installment";
+  /** Pre-formatted cumulative amount paid so far, e.g. "₦150,000" */
+  totalAmountPaid: string;
+  /** Pre-formatted remaining balance, e.g. "₦50,000". Pass "₦0" / "$0.00" if final installment. */
+  remainingBalance: string;
+  /** Which installment this payment represents, 1-indexed (e.g. 3 of 4). */
+  currentInstallment: number;
+  /** Total number of installments in the plan. */
+  totalInstallments: number;
+}
+
+export type PaymentConfirmationParams =
+  | OneTimePaymentParams
+  | InstallmentPaymentParams;
 
 /** Escape a string for safe inclusion in HTML. */
 const escapeHtml = (s: string): string =>
@@ -1128,6 +1157,28 @@ const escapeHtml = (s: string): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+const receiptRow = (label: string, value: string, isFirst = false): string => {
+  const borderTop = isFirst ? "" : "border-top:1px solid #E5E3DB;";
+  return `
+    <tr>
+      <td style="padding:10px 0;font-size:14px;color:#555;${borderTop}">${label}</td>
+      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;${borderTop}">
+        ${value}
+      </td>
+    </tr>
+  `;
+};
+
+/** Highlighted row used for the most important number (amount paid this time). */
+const receiptRowEmphasis = (label: string, value: string): string => `
+  <tr>
+    <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">${label}</td>
+    <td style="padding:10px 0;font-size:18px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+      ${value}
+    </td>
+  </tr>
+`;
 
 export const sendPaymentConfirmationEmail = async (
   params: PaymentConfirmationParams,
@@ -1148,7 +1199,54 @@ export const sendPaymentConfirmationEmail = async (
   const safeLink = escapeHtml(courseAccessLink);
   const safeLogo = escapeHtml(`${process.env.BACKEND_URL}/logo.png`);
 
-  const subject = `Payment confirmed: ${courseTitle}`;
+  // Build the receipt rows + intro/outro copy based on payment type.
+  let receiptRowsHtml: string;
+  let introParagraph: string;
+  let subject: string;
+
+  if (params.paymentType === "installment") {
+    const installmentsLeft = Math.max(
+      0,
+      params.totalInstallments - params.currentInstallment,
+    );
+    const safeTotalPaid = escapeHtml(params.totalAmountPaid);
+    const safeRemaining = escapeHtml(params.remainingBalance);
+    const installmentLabel = `${params.currentInstallment} of ${params.totalInstallments}`;
+    const isFinal = installmentsLeft === 0;
+
+    subject = isFinal
+      ? `Final payment received: ${courseTitle}`
+      : `Installment ${installmentLabel} received: ${courseTitle}`;
+
+    introParagraph = isFinal
+      ? `We've received your <strong>final installment</strong> for <span class="course-name">${safeTitle}</span>. Your plan is now fully paid — thank you!`
+      : `We've received installment <strong>${installmentLabel}</strong> for <span class="course-name">${safeTitle}</span>. Your course access remains active — keep going!`;
+
+    receiptRowsHtml = [
+      receiptRow("Name", safeName, true),
+      receiptRow("Course", safeTitle),
+      receiptRow("Installment", installmentLabel),
+      receiptRowEmphasis("Amount paid (this installment)", safeAmount),
+      receiptRow("Total paid so far", safeTotalPaid),
+      receiptRow("Remaining balance", safeRemaining),
+      receiptRow(
+        "Installments left",
+        isFinal ? "0 — fully paid 🎉" : String(installmentsLeft),
+      ),
+      receiptRow("Date", safeDate),
+    ].join("");
+  } else {
+    // one_time
+    subject = `Payment confirmed: ${courseTitle}`;
+    introParagraph = `We've received your payment for <span class="course-name">${safeTitle}</span>. Your course access is now active — you can start learning right away.`;
+
+    receiptRowsHtml = [
+      receiptRow("Name", safeName, true),
+      receiptRow("Course", safeTitle),
+      receiptRowEmphasis("Amount paid", safeAmount),
+      receiptRow("Date", safeDate),
+    ].join("");
+  }
 
   const html = `
     <!DOCTYPE html>
@@ -1239,7 +1337,7 @@ export const sendPaymentConfirmationEmail = async (
             <h1>Payment Confirmed</h1>
  
             <p>Dear ${safeName},</p>
-            <p>We've received your payment for <span class="course-name">${safeTitle}</span>. Your course access is now active — you can start learning right away.</p>
+            <p>${introParagraph}</p>
  
             <!-- Receipt summary -->
             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
@@ -1250,30 +1348,7 @@ export const sendPaymentConfirmationEmail = async (
                     Payment Receipt
                   </p>
                   <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;">Name</td>
-                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;">
-                        ${safeName}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Course</td>
-                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
-                        ${safeTitle}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Amount paid</td>
-                      <td style="padding:10px 0;font-size:18px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
-                        ${safeAmount}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Date</td>
-                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
-                        ${safeDate}
-                      </td>
-                    </tr>
+                    ${receiptRowsHtml}
                   </table>
                 </td>
               </tr>
@@ -1284,7 +1359,7 @@ export const sendPaymentConfirmationEmail = async (
             </p>
  
             <p>If you have any questions or need help getting started, our support team is here for you.</p>
-            <p>Welcome aboard!<br>The 10Alytics Team</p>
+            <p>Welcome aboard!<br>The 10Alytics Business Team</p>
           </div>
  
           <div class="footer">

@@ -10,6 +10,49 @@ const START_BUTTON_PUBLIC_KEY = process.env.START_BUTTON_PUBLIC_KEY;
 
 export type CurrrencyType = "GHS" | "NGN" | "ZAR" | "KES" | "UGX" | "RWF";
 
+export const currenciesInfo = {
+  NGN: {
+    name: "NGN",
+    symbol: "₦",
+    channels: ["bank", "card", "bank_transfer", "ussd"],
+  },
+  GHS: {
+    name: "GHS",
+    symbol: "₵",
+    channels: ["card", "mobile_money"],
+  },
+  ZAR: {
+    name: "ZAR",
+    symbol: "R",
+    channels: ["eft", "qr", "card"],
+  },
+  KES: {
+    name: "KES",
+    symbol: "KSh",
+    channels: ["card", "mobile_money"],
+  },
+  UGX: {
+    name: "UGX",
+    symbol: "USh",
+    channels: ["mobile_money"],
+  },
+  RWF: {
+    name: "RWF",
+    symbol: "FRw",
+    channels: ["mobile_money"],
+  },
+  // XOF: {
+  //   name: "XOF",
+  //   symbol: "CFA",
+  //   channels: ["mobile_money"],
+  // },
+  // XAF: {
+  //   name: "XAF",
+  //   symbol: "FCFA",
+  //   channels: ["mobile_money"],
+  // },
+};
+
 export const generatePaymentLink = async (
   userId: string,
   paymentType: string,
@@ -186,5 +229,5 @@ const getUserEmail = async (userId: string): Promise<string> => {
     select: { email: true },
   });
 
-  return user.email;
+  return user?.email || "";
 };
