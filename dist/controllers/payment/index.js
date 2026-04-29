@@ -479,11 +479,11 @@ paymentApp.get("/start-button-test", async (req, res) => {
         //   ["card", "mobile_money"],
         // // );
         // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-        const paymentData = await verifyPayment("YYZN8YWB0VS");
+        const paymentData = await verifyPayment("Q4W6ORTYYV");
         return res.status(200).json({ paymentData });
         // const results = await prismadb.paymentTransaction.findMany({
         //   orderBy: { createdAt: "desc" },
-        //   take: 50,
+        //   take: 40,
         //   include: {
         //     paymentStatus: {
         //       include: {
@@ -798,13 +798,13 @@ async function verifyPayment(reference) {
     if (!existingTx) {
         return { error: "Transaction not found" };
     }
-    if (existingTx.status === "success") {
-        return {
-            status: "success",
-            data: existingTx,
-            message: "Payment already processed",
-        };
-    }
+    // if (existingTx.status === "success") {
+    //   return {
+    //     status: "success",
+    //     data: existingTx,
+    //     message: "Payment already processed",
+    //   };
+    // }
     const [userPaymentStatus, course, user] = await Promise.all([
         prismadb_1.prismadb.paymentStatus.findUnique({
             where: {
@@ -1006,7 +1006,7 @@ async function verifyPayment(reference) {
         //   result.courseId,
         //   metadata.installmentNumber,
         // );
-        if (metadata.planType === "FULL_PAYMENT" && metadata.planType === "FULL") {
+        if (metadata.planType !== "FULL_PAYMENT" && metadata.planType !== "FULL") {
             const installments = userPaymentStatus?.paymentInstallments ?? [];
             const paidInstallments = installments.filter((i) => i.paid);
             const unpaidInstallments = installments.filter((i) => !i.paid);
