@@ -23,6 +23,7 @@ import {
 } from "date-fns";
 import {
   convertNairaToOtherCurrency,
+  currenciesInfo,
   CurrrencyType,
   initiateStartButtonPayment,
   verifyStartButtonTransaction,
@@ -497,28 +498,28 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
         // Store the new transaction
         await prismadb.paymentTransaction.create({
           data: {
-            transactionRef: paymentLink.data.reference,
+            transactionRef: paymentLink?.data?.reference,
             userId: userId as string,
             courseId: courseId as string,
             amount: paymentData.amount.toString(),
             status: "pending",
-            authorizationUrl: paymentLink.data.authorization_url,
+            authorizationUrl: paymentLink?.data?.authorization_url,
             paymentPlan: paymentData.callbackParams.paymentPlan,
-            metadata: JSON.stringify(paymentData.metadata),
+            metadata: JSON.stringify(metadata),
             paymentGateway: "PAYSTACK",
             paymentDate: new Date(),
           },
         });
 
         return res.json({
-          authorizationUrl: paymentLink.data.authorization_url,
+          authorizationUrl: paymentLink?.data?.authorization_url,
           exists: true,
           isNew: true,
         });
       } else {
         const paymentLink = await initiateStartButtonPayment(
-          user.email,
-          conversionData.amount * 100,
+          user?.email || "",
+          (conversionData?.amount || 0) * 100,
           (currency as CurrrencyType) || "NGN",
           metadata,
           paymentMethods as string[],
@@ -542,7 +543,7 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
             status: "pending",
             authorizationUrl: paymentLink.url,
             paymentPlan: paymentData.callbackParams.paymentPlan,
-            metadata: JSON.stringify(paymentData.metadata),
+            metadata: JSON.stringify(metadata),
             paymentGateway: paymentGateway as PAYMENT_GATEWAY,
             paymentDate: new Date(),
           },
@@ -579,8 +580,22 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
     // return res.status(200).json({ paymentData });
 
     const results = await prismadb.paymentTransaction.findMany({
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       take: 50,
+      include: {
+        paymentStatus: {
+          include: {
+            paymentInstallments: {
+              orderBy: { installmentNumber: "asc" },
+            },
+            course: true,
+            cohort: true,
+            user: {
+              select: { id: true, inactive: true },
+            },
+          },
+        },
+      },
     });
 
     res.status(200).json({ results });
@@ -722,13 +737,13 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
       });
 
       paymentLink = {
-        url: paystackLink.data.authorization_url,
-        reference: paystackLink.data.reference,
+        url: paystackLink?.data?.authorization_url,
+        reference: paystackLink?.data?.reference,
       };
     } else {
       const startButtonLink = await initiateStartButtonPayment(
         email,
-        conversionData.amount * 100,
+        (conversionData?.amount || 0) * 100,
         (currency as CurrrencyType) || "NGN",
         metadata,
         channels as string[],
@@ -788,6 +803,8 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
                 paymentData.callbackParams.installmentNumber ??
                 1,
               cohortName,
+              selectedCurrency: currency,
+              currencyAmount: conversionData.amount,
             }),
             paymentDate: new Date(),
           },
@@ -964,27 +981,39 @@ async function verifyPayment(reference: string) {
     };
   }
 
-  const course = await prismadb.course.findUnique({
-    where: { id: existingTx.courseId },
-    select: {
-      title: true,
-      id: true,
-    },
-  });
+  const [userPaymentStatus, course, user] = await Promise.all([
+    prismadb.paymentStatus.findUnique({
+      where: {
+        userId_courseId: {
+          userId: existingTx.userId,
+          courseId: existingTx.courseId,
+        },
+      },
+      include: { paymentInstallments: true },
+    }),
 
-  const user = await prismadb.user.findUnique({
-    where: { id: existingTx.userId },
-    select: {
-      name: true,
-      email: true,
-      id: true,
-    },
-  });
+    prismadb.course.findUnique({
+      where: { id: existingTx.courseId },
+      select: {
+        title: true,
+        id: true,
+      },
+    }),
+
+    prismadb.user.findUnique({
+      where: { id: existingTx.userId },
+      select: {
+        name: true,
+        email: true,
+        id: true,
+      },
+    }),
+  ]);
 
   if (existingTx.paymentGateway === "PAYSTACK") {
     const verification = await paystack.transaction.verify(reference as string);
 
-    if (verification.data.status !== "success") {
+    if (verification?.data?.status !== "success") {
       await prismadb.paymentTransaction.update({
         where: { transactionRef: reference as string },
         data: {
@@ -1195,14 +1224,52 @@ async function verifyPayment(reference: string) {
     //   result.courseId,
     //   metadata.installmentNumber,
     // );
-    await sendPaymentConfirmationEmail({
-      amountPaid: Number(existingTx.amount).toLocaleString(),
-      courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-      courseTitle: course.title,
-      paymentDate: format(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
-      userEmail: user.email,
-      userName: user.name,
-    });
+    if (metadata.planType === "FULL_PAYMENT" && metadata.planType === "FULL") {
+      const installments: any[] = userPaymentStatus?.paymentInstallments ?? [];
+      const paidInstallments = installments.filter((i) => i.paid);
+      const unpaidInstallments = installments.filter((i) => !i.paid);
+
+      const totalPaid = paidInstallments.reduce(
+        (s: number, i: any) => s + i.amount,
+        0,
+      );
+      const totalRemaining = unpaidInstallments.reduce(
+        (s: number, i: any) => s + i.amount,
+        0,
+      );
+      await sendPaymentConfirmationEmail({
+        amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
+        courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+        courseTitle: course?.title || "",
+        paymentType: "installment",
+        currentInstallment: metadata.installmentNumber || 1,
+        remainingBalance:
+          totalRemaining > 0
+            ? `${currenciesInfo.NGN.symbol}${totalRemaining.toLocaleString()}`
+            : "0",
+        totalAmountPaid: `${currenciesInfo.NGN.symbol}${Number(totalPaid).toLocaleString()}`,
+        totalInstallments: metadata.installmentsCount || 1,
+        paymentDate: format(
+          new Date(existingTx.paymentDate || ""),
+          "d MMM yyyy",
+        ),
+        userEmail: user?.email || "",
+        userName: user?.name || "Student",
+      });
+    } else {
+      await sendPaymentConfirmationEmail({
+        amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
+        courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+        courseTitle: course?.title || "",
+        paymentType: "one_time",
+        paymentDate: format(
+          new Date(existingTx.paymentDate || ""),
+          "d MMM yyyy",
+        ),
+        userEmail: user?.email || "",
+        userName: user?.name || "Student",
+      });
+    }
   } catch (emailError) {
     console.error("Email notification failed:", emailError);
   }
@@ -1263,7 +1330,7 @@ paymentApp.get("/payment/callback", async (req: Request, res: Response) => {
   try {
     const verification = await paystack.transaction.verify(reference as string);
 
-    if (verification.data.status === "success") {
+    if (verification?.data?.status === "success") {
       res.redirect(
         `${process.env.NEXT_PUBLIC_APP_URL}/payment/success?reference=${reference}`,
       );
@@ -1757,7 +1824,7 @@ async function handleInstallmentPayment(
     ) {
       // Get the cohort from payment status
       const cohort = await tx.cohort.findUnique({
-        where: { id: paymentStatus.cohortId },
+        where: { id: paymentStatus?.cohortId || "" },
         select: { startDate: true },
       });
 
@@ -2577,11 +2644,11 @@ paymentApp.post(
         reference as string,
       );
 
-      if (verification.data.status !== "success") {
+      if (verification?.data?.status !== "success") {
         return res.status(400).json({
           status: "error",
           error: "Paystack reports this transaction is not successful",
-          paystackStatus: verification.data.status,
+          paystackStatus: verification.data?.status,
         });
       }
 
@@ -2604,10 +2671,10 @@ paymentApp.post(
                 status: "success",
                 paymentDate: new Date(),
                 paymentPlan:
-                  ((verification.data.metadata as any)
+                  ((verification?.data?.metadata as any)
                     ?.paymentPlan as string) || "MANUAL",
                 metadata: JSON.stringify(
-                  (verification.data.metadata as any) || {},
+                  (verification?.data?.metadata as any) || {},
                 ),
               },
             });
@@ -2629,7 +2696,7 @@ paymentApp.post(
 
           const paymentPlan: string =
             paystackTx.paymentPlan ||
-            ((verification.data.metadata as any)?.paymentPlan as string) ||
+            ((verification?.data?.metadata as any)?.paymentPlan as string) ||
             "FULL_PAYMENT";
 
           if (!paymentStatus) {
@@ -2661,7 +2728,7 @@ paymentApp.post(
 
           if (isInstallmentPlan) {
             // Self-heal missing installments
-            if (paymentStatus.paymentInstallments.length === 0) {
+            if (paymentStatus?.paymentInstallments.length === 0) {
               const courseForPlan = await tx.course.findUnique({
                 where: { id: courseId },
                 select: { pricingPlans: true },
@@ -2726,7 +2793,7 @@ paymentApp.post(
             }
 
             // Mark the specified installment as paid
-            const targetInstallment = paymentStatus.paymentInstallments.find(
+            const targetInstallment = paymentStatus?.paymentInstallments.find(
               (i) => i.installmentNumber === Number(installmentNumber),
             );
             if (targetInstallment && !targetInstallment.paid) {
@@ -2741,14 +2808,14 @@ paymentApp.post(
 
             // Check if all installments are now paid
             const allInstallments = await tx.paymentInstallment.findMany({
-              where: { paymentStatusId: paymentStatus.id },
+              where: { paymentStatusId: paymentStatus?.id },
             });
             const allPaid = allInstallments.every(
               (i) =>
                 i.paid || i.installmentNumber === Number(installmentNumber),
             );
             await tx.paymentStatus.update({
-              where: { id: paymentStatus.id },
+              where: { id: paymentStatus?.id },
               data: {
                 status: allPaid
                   ? PaymentStatusType.COMPLETE
@@ -2758,7 +2825,7 @@ paymentApp.post(
           } else {
             // Full payment or legacy plan
             await tx.paymentStatus.update({
-              where: { id: paymentStatus.id },
+              where: { id: paymentStatus?.id },
               data: {
                 paymentPlan,
                 status: PaymentStatusType.COMPLETE,
@@ -2787,7 +2854,7 @@ paymentApp.post(
 
           return {
             paystackTxId: paystackTx.id,
-            paymentStatusId: paymentStatus.id,
+            paymentStatusId: paymentStatus?.id,
           };
         },
         { maxWait: 30000, timeout: 25000 },
