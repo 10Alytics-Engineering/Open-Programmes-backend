@@ -576,29 +576,29 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
     //   ["card", "mobile_money"],
     // // );
     // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-    // const paymentData = await verifyStartButtonTransaction("VZ96ZKBF33");
-    // return res.status(200).json({ paymentData });
+    const paymentData = await verifyPayment("YYZN8YWB0VS");
+    return res.status(200).json({ paymentData });
 
-    const results = await prismadb.paymentTransaction.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      include: {
-        paymentStatus: {
-          include: {
-            paymentInstallments: {
-              orderBy: { installmentNumber: "asc" },
-            },
-            course: true,
-            cohort: true,
-            user: {
-              select: { id: true, inactive: true },
-            },
-          },
-        },
-      },
-    });
+    // const results = await prismadb.paymentTransaction.findMany({
+    //   orderBy: { createdAt: "desc" },
+    //   take: 50,
+    //   include: {
+    //     paymentStatus: {
+    //       include: {
+    //         paymentInstallments: {
+    //           orderBy: { installmentNumber: "asc" },
+    //         },
+    //         course: true,
+    //         cohort: true,
+    //         user: {
+    //           select: { id: true, inactive: true },
+    //         },
+    //       },
+    //     },
+    //   },
+    // });
 
-    res.status(200).json({ results });
+    // res.status(200).json({ results });
   } catch (error) {
     console.log("Start Button Error: " + error);
     return res.status(500).json({
@@ -1358,6 +1358,7 @@ paymentApp.get(
 
       if (
         verification.transaction?.status === "successful" ||
+        verification.transaction?.status === "success" ||
         verification.transaction?.status === "verified"
       ) {
         res.redirect(
@@ -1388,7 +1389,11 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
   try {
     const verificationResponse = await verifyPayment(reference as string);
 
-    if (verificationResponse.status === "success") {
+    if (
+      verificationResponse.status === "successful" ||
+      verificationResponse.status === "success" ||
+      verificationResponse.status === "verified"
+    ) {
       return res.json(verificationResponse);
     } else if (verificationResponse) {
       return res.status(422).json(verificationResponse);
