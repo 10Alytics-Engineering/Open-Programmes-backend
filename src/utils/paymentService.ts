@@ -167,11 +167,6 @@ export const verifyStartButtonTransaction = async (reference: string) => {
         },
       },
     );
-
-    console.log(
-      "Start Button Transaction Verification Response:",
-      response.data,
-    );
     return response.data.data;
   } catch (error) {
     console.error("Error verifying start button payment:", error);

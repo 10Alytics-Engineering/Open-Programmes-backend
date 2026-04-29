@@ -485,18 +485,7 @@ paymentApp.get("/start-button-test", async (req, res) => {
         //   orderBy: { createdAt: "desc" },
         //   take: 40,
         //   include: {
-        //     paymentStatus: {
-        //       include: {
-        //         paymentInstallments: {
-        //           orderBy: { installmentNumber: "asc" },
-        //         },
-        //         course: true,
-        //         cohort: true,
-        //         user: {
-        //           select: { id: true, inactive: true },
-        //         },
-        //       },
-        //     },
+        //     paymentStatus: true,
         //   },
         // });
         // res.status(200).json({ results });
@@ -798,13 +787,13 @@ async function verifyPayment(reference) {
     if (!existingTx) {
         return { error: "Transaction not found" };
     }
-    // if (existingTx.status === "success") {
-    //   return {
-    //     status: "success",
-    //     data: existingTx,
-    //     message: "Payment already processed",
-    //   };
-    // }
+    if (existingTx.status === "success") {
+        return {
+            status: "success",
+            data: existingTx,
+            message: "Payment already processed",
+        };
+    }
     const [userPaymentStatus, course, user] = await Promise.all([
         prismadb_1.prismadb.paymentStatus.findUnique({
             where: {
@@ -1012,6 +1001,7 @@ async function verifyPayment(reference) {
             const unpaidInstallments = installments.filter((i) => !i.paid);
             const totalPaid = paidInstallments.reduce((s, i) => s + i.amount, 0);
             const totalRemaining = unpaidInstallments.reduce((s, i) => s + i.amount, 0);
+            console.log(`Installment payment summary for user ${user?.id} - Paid: ${totalPaid}, Remaining: ${totalRemaining}`);
             await (0, mail_1.sendPaymentConfirmationEmail)({
                 amountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${paymentService_1.currenciesInfo[metadata.selectedCurrency]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
                 courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
