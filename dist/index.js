@@ -57,11 +57,11 @@ const app = (0, express_1.default)();
 // CORS Configuration
 const corsOptions = {
     origin: [
-        process.env.NEXT_PUBLIC_APP_URL,
-        process.env.NEXT_ADMIN_APP_URL,
-        process.env.NEXT_LOCAL_APP_URL,
-        process.env.NEXT_LOCAL_ADMIN_APP_URL,
-        process.env.NEXT_TEST_APP_URL,
+        process.env.NEXT_PUBLIC_APP_URL || "",
+        process.env.NEXT_ADMIN_APP_URL || "",
+        process.env.NEXT_LOCAL_APP_URL || "",
+        process.env.NEXT_LOCAL_ADMIN_APP_URL || "",
+        process.env.NEXT_TEST_APP_URL || "",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:3001",
@@ -113,7 +113,7 @@ node_cron_1.default.schedule("*/30 * * * *", async () => {
         console.error("🔥 [CRON_CRITICAL_ERROR]: Sync job crashed!", err.message);
     }
 });
-server.listen(8000, () => {
-    console.log("🚀 Pluto Master Current is active at: http://localhost:8000");
+server.listen(8001, () => {
+    console.log(`🚀 Pluto Master Current is active at: ${process.env.BACKEND_URL}`);
 });
 //# sourceMappingURL=index.js.map

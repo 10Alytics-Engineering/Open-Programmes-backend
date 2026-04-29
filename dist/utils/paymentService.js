@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.convertNairaToOtherCurrency = exports.verifyStartButtonTransaction = exports.initiateStartButtonPayment = exports.verifyPaystackPayment = exports.generatePaymentLink = void 0;
+exports.convertNairaToOtherCurrency = exports.verifyStartButtonTransaction = exports.initiateStartButtonPayment = exports.verifyPaystackPayment = exports.generatePaymentLink = exports.currenciesInfo = void 0;
 const axios_1 = __importDefault(require("axios"));
 const index_1 = require("../index");
 const generate_ref_1 = require("../helpers/generate-ref");
@@ -12,6 +12,48 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const START_BUTTON_URL = process.env.START_BUTTON_API_URL;
 const START_BUTTON_SECRET_KEY = process.env.START_BUTTON_SECRET_KEY;
 const START_BUTTON_PUBLIC_KEY = process.env.START_BUTTON_PUBLIC_KEY;
+exports.currenciesInfo = {
+    NGN: {
+        name: "NGN",
+        symbol: "₦",
+        channels: ["bank", "card", "bank_transfer", "ussd"],
+    },
+    GHS: {
+        name: "GHS",
+        symbol: "₵",
+        channels: ["card", "mobile_money"],
+    },
+    ZAR: {
+        name: "ZAR",
+        symbol: "R",
+        channels: ["eft", "qr", "card"],
+    },
+    KES: {
+        name: "KES",
+        symbol: "KSh",
+        channels: ["card", "mobile_money"],
+    },
+    UGX: {
+        name: "UGX",
+        symbol: "USh",
+        channels: ["mobile_money"],
+    },
+    RWF: {
+        name: "RWF",
+        symbol: "FRw",
+        channels: ["mobile_money"],
+    },
+    // XOF: {
+    //   name: "XOF",
+    //   symbol: "CFA",
+    //   channels: ["mobile_money"],
+    // },
+    // XAF: {
+    //   name: "XAF",
+    //   symbol: "FCFA",
+    //   channels: ["mobile_money"],
+    // },
+};
 const generatePaymentLink = async (userId, paymentType, itemId, amount, // in kobo
 description) => {
     try {
@@ -99,6 +141,7 @@ const verifyStartButtonTransaction = async (reference) => {
                 Authorization: `Bearer ${START_BUTTON_SECRET_KEY}`,
             },
         });
+        console.log("Start Button Transaction Verification Response:", response.data);
         return response.data.data;
     }
     catch (error) {
@@ -144,6 +187,6 @@ const getUserEmail = async (userId) => {
         where: { id: userId },
         select: { email: true },
     });
-    return user.email;
+    return user?.email || "";
 };
 //# sourceMappingURL=paymentService.js.map
