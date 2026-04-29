@@ -582,18 +582,7 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
     //   orderBy: { createdAt: "desc" },
     //   take: 40,
     //   include: {
-    //     paymentStatus: {
-    //       include: {
-    //         paymentInstallments: {
-    //           orderBy: { installmentNumber: "asc" },
-    //         },
-    //         course: true,
-    //         cohort: true,
-    //         user: {
-    //           select: { id: true, inactive: true },
-    //         },
-    //       },
-    //     },
+    //     paymentStatus: true,
     //   },
     // });
     // res.status(200).json({ results });
@@ -971,13 +960,13 @@ async function verifyPayment(reference: string) {
     return { error: "Transaction not found" };
   }
 
-  // if (existingTx.status === "success") {
-  //   return {
-  //     status: "success",
-  //     data: existingTx,
-  //     message: "Payment already processed",
-  //   };
-  // }
+  if (existingTx.status === "success") {
+    return {
+      status: "success",
+      data: existingTx,
+      message: "Payment already processed",
+    };
+  }
 
   const [userPaymentStatus, course, user] = await Promise.all([
     prismadb.paymentStatus.findUnique({
@@ -1234,6 +1223,10 @@ async function verifyPayment(reference: string) {
       const totalRemaining = unpaidInstallments.reduce(
         (s: number, i: any) => s + i.amount,
         0,
+      );
+
+      console.log(
+        `Installment payment summary for user ${user?.id} - Paid: ${totalPaid}, Remaining: ${totalRemaining}`,
       );
       await sendPaymentConfirmationEmail({
         amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,

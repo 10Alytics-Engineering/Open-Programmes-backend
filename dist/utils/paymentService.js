@@ -141,7 +141,6 @@ const verifyStartButtonTransaction = async (reference) => {
                 Authorization: `Bearer ${START_BUTTON_SECRET_KEY}`,
             },
         });
-        console.log("Start Button Transaction Verification Response:", response.data);
         return response.data.data;
     }
     catch (error) {
