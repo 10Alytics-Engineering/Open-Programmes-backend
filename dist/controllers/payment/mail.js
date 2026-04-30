@@ -1082,6 +1082,26 @@ const escapeHtml = (s) => s
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+const receiptRow = (label, value, isFirst = false) => {
+    const borderTop = isFirst ? "" : "border-top:1px solid #E5E3DB;";
+    return `
+    <tr>
+      <td style="padding:10px 0;font-size:14px;color:#555;${borderTop}">${label}</td>
+      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;${borderTop}">
+        ${value}
+      </td>
+    </tr>
+  `;
+};
+/** Highlighted row used for the most important number (amount paid this time). */
+const receiptRowEmphasis = (label, value) => `
+  <tr>
+    <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">${label}</td>
+    <td style="padding:10px 0;font-size:18px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
+      ${value}
+    </td>
+  </tr>
+`;
 const sendPaymentConfirmationEmail = async (params) => {
     const { userName, userEmail, courseTitle, amountPaid, paymentDate, courseAccessLink, } = params;
     const safeName = escapeHtml(userName);
@@ -1090,7 +1110,44 @@ const sendPaymentConfirmationEmail = async (params) => {
     const safeDate = escapeHtml(paymentDate);
     const safeLink = escapeHtml(courseAccessLink);
     const safeLogo = escapeHtml(`${process.env.BACKEND_URL}/logo.png`);
-    const subject = `Payment confirmed: ${courseTitle}`;
+    // Build the receipt rows + intro/outro copy based on payment type.
+    let receiptRowsHtml;
+    let introParagraph;
+    let subject;
+    if (params.paymentType === "installment") {
+        const installmentsLeft = Math.max(0, params.totalInstallments - params.currentInstallment);
+        const safeTotalPaid = escapeHtml(params.totalAmountPaid);
+        const safeRemaining = escapeHtml(params.remainingBalance);
+        const installmentLabel = `${params.currentInstallment} of ${params.totalInstallments}`;
+        const isFinal = installmentsLeft === 0;
+        subject = isFinal
+            ? `Final payment received: ${courseTitle}`
+            : `Installment ${installmentLabel} received: ${courseTitle}`;
+        introParagraph = isFinal
+            ? `We've received your <strong>final installment</strong> for <span class="course-name">${safeTitle}</span>. Your plan is now fully paid — thank you!`
+            : `We've received installment <strong>${installmentLabel}</strong> for <span class="course-name">${safeTitle}</span>. Your course access remains active — keep going!`;
+        receiptRowsHtml = [
+            receiptRow("Name", safeName, true),
+            receiptRow("Course", safeTitle),
+            receiptRow("Installment", installmentLabel),
+            receiptRowEmphasis("Amount paid (this installment)", safeAmount),
+            receiptRow("Total paid so far", safeTotalPaid),
+            receiptRow("Remaining balance", safeRemaining),
+            receiptRow("Installments left", isFinal ? "0 — fully paid 🎉" : String(installmentsLeft)),
+            receiptRow("Date", safeDate),
+        ].join("");
+    }
+    else {
+        // one_time
+        subject = `Payment confirmed: ${courseTitle}`;
+        introParagraph = `We've received your payment for <span class="course-name">${safeTitle}</span>. Your course access is now active — you can start learning right away.`;
+        receiptRowsHtml = [
+            receiptRow("Name", safeName, true),
+            receiptRow("Course", safeTitle),
+            receiptRowEmphasis("Amount paid", safeAmount),
+            receiptRow("Date", safeDate),
+        ].join("");
+    }
     const html = `
     <!DOCTYPE html>
     <html>
@@ -1180,7 +1237,7 @@ const sendPaymentConfirmationEmail = async (params) => {
             <h1>Payment Confirmed</h1>
  
             <p>Dear ${safeName},</p>
-            <p>We've received your payment for <span class="course-name">${safeTitle}</span>. Your course access is now active — you can start learning right away.</p>
+            <p>${introParagraph}</p>
  
             <!-- Receipt summary -->
             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
@@ -1191,30 +1248,7 @@ const sendPaymentConfirmationEmail = async (params) => {
                     Payment Receipt
                   </p>
                   <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;">Name</td>
-                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;">
-                        ${safeName}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Course</td>
-                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
-                        ${safeTitle}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Amount paid</td>
-                      <td style="padding:10px 0;font-size:18px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
-                        ${safeAmount}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style="padding:10px 0;font-size:14px;color:#555;border-top:1px solid #E5E3DB;">Date</td>
-                      <td style="padding:10px 0;font-size:14px;color:#333;font-weight:bold;text-align:right;border-top:1px solid #E5E3DB;">
-                        ${safeDate}
-                      </td>
-                    </tr>
+                    ${receiptRowsHtml}
                   </table>
                 </td>
               </tr>
@@ -1225,7 +1259,7 @@ const sendPaymentConfirmationEmail = async (params) => {
             </p>
  
             <p>If you have any questions or need help getting started, our support team is here for you.</p>
-            <p>Welcome aboard!<br>The 10Alytics Team</p>
+            <p>Welcome aboard!<br>The 10Alytics Business Team</p>
           </div>
  
           <div class="footer">
