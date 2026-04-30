@@ -41,6 +41,7 @@ const express_1 = __importDefault(require("express"));
 const prismadb_1 = require("../../lib/prismadb");
 const date_fns_1 = require("date-fns");
 const paymentService_1 = require("../../utils/paymentService");
+const client_1 = require("@prisma/client");
 const salesDashboardApp = express_1.default.Router();
 salesDashboardApp.use(express_1.default.json());
 // Helper function to convert BigInt to Number for JSON serialization
@@ -452,6 +453,553 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
                     start: previousPeriodStart,
                     end: previousPeriodEnd,
                 },
+            },
+        });
+    }
+    catch (error) {
+        console.error("Error fetching dashboard data:", error);
+        res.status(500).json({
+            error: "Failed to fetch dashboard data",
+            details: error instanceof Error ? error.message : "Unknown error",
+        });
+    }
+});
+salesDashboardApp.get("/dashboard-all", async (req, res) => {
+    try {
+        const { period, duration = "7d" } = req.query;
+        // Pricing is now per-course via CoursePricingPlan, so we no longer infer
+        // revenue from a fixed fee. All revenue numbers come from summing the
+        // actual amounts on successful transactions in either transaction table.
+        // ---------------------------------------------------------------------
+        // Period boundaries — drives the legacy current-vs-previous revenue
+        // comparison shown as the growth % on the Collected card.
+        // ---------------------------------------------------------------------
+        const now = new Date();
+        const currentPeriodStart = period === "year" ? (0, date_fns_1.startOfYear)(now) : (0, date_fns_1.startOfMonth)(now);
+        const currentPeriodEnd = period === "year" ? (0, date_fns_1.endOfYear)(now) : (0, date_fns_1.endOfMonth)(now);
+        const previousPeriodStart = new Date(currentPeriodStart);
+        const previousPeriodEnd = new Date(currentPeriodEnd);
+        if (period === "year") {
+            previousPeriodStart.setFullYear(previousPeriodStart.getFullYear() - 1);
+            previousPeriodEnd.setFullYear(previousPeriodEnd.getFullYear() - 1);
+        }
+        else {
+            previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 1);
+            previousPeriodEnd.setMonth(previousPeriodEnd.getMonth() - 1);
+        }
+        // ---------------------------------------------------------------------
+        // Duration boundary — used by the dashboard's 7D/30D/90D/All toggle.
+        // Anything time-bound (plan status, plan mix, top courses, activity)
+        // respects this. Current-state metrics (scheduled, at risk, aging)
+        // ignore it.
+        // ---------------------------------------------------------------------
+        let durationStart = new Date();
+        if (duration === "30d")
+            durationStart.setDate(durationStart.getDate() - 30);
+        else if (duration === "90d")
+            durationStart.setDate(durationStart.getDate() - 90);
+        else if (duration === "all")
+            durationStart = new Date(0);
+        else
+            durationStart.setDate(durationStart.getDate() - 7);
+        durationStart.setHours(0, 0, 0, 0);
+        // ---------------------------------------------------------------------
+        // Parallel fetch.
+        // ---------------------------------------------------------------------
+        const [currentPaystack, currentPayment, previousPaystack, previousPayment, activityPaystack, activityPayment, planStatusRows, financialsRow, planMixRows, avgPlanLengthRow, avgTimeToFullRow, scheduledRows, agingRows, onTimeRow, currencyRows, topCourseRows, paymentPlanDistRows,] = await Promise.all([
+            // -- Current/previous period revenue, both transaction tables --------
+            prismadb_1.prismadb.paystackTransaction.findMany({
+                where: {
+                    status: "success",
+                    paymentDate: { gte: currentPeriodStart, lte: currentPeriodEnd },
+                },
+                select: { amount: true },
+            }),
+            prismadb_1.prismadb.paymentTransaction.findMany({
+                where: {
+                    status: "success",
+                    paymentDate: { gte: currentPeriodStart, lte: currentPeriodEnd },
+                },
+                select: { amount: true },
+            }),
+            prismadb_1.prismadb.paystackTransaction.findMany({
+                where: {
+                    status: "success",
+                    paymentDate: { gte: previousPeriodStart, lte: previousPeriodEnd },
+                },
+                select: { amount: true },
+            }),
+            prismadb_1.prismadb.paymentTransaction.findMany({
+                where: {
+                    status: "success",
+                    paymentDate: { gte: previousPeriodStart, lte: previousPeriodEnd },
+                },
+                select: { amount: true },
+            }),
+            // -- Activity stats (status counts within duration window) -----------
+            prismadb_1.prismadb.paystackTransaction.findMany({
+                where: { createdAt: { gte: durationStart } },
+                select: { status: true },
+            }),
+            prismadb_1.prismadb.paymentTransaction.findMany({
+                where: { createdAt: { gte: durationStart } },
+                select: { status: true },
+            }),
+            // -- Plan status: counts per state, scoped to duration window -------
+            // A plan is classified as:
+            //   paid_in_full: FULL_PAYMENT plan, OR all installments paid
+            //   overdue:      any past-due unpaid installment
+            //   in_progress:  installment plan, no overdue, not yet fully paid
+            //                 (includes brand-new plans with 0 paid)
+            // The buckets are mutually exclusive in that order.
+            prismadb_1.prismadb.$queryRaw `
+        WITH ps_state AS (
+          SELECT
+            ps.id,
+            ps."paymentPlan",
+            (
+              EXISTS (SELECT 1 FROM "PaystackTransaction" pt
+                      WHERE pt."paymentStatusId" = ps.id AND pt.status = 'success')
+              OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
+                         WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'success')
+            ) AS has_paid_tx,
+            COUNT(pi.id) FILTER (WHERE pi.paid = false AND pi."dueDate" < NOW()) AS overdue_count,
+            COUNT(pi.id) FILTER (WHERE pi.paid = true) AS paid_count,
+            COUNT(pi.id) AS total_count
+          FROM "PaymentStatus" ps
+          LEFT JOIN "PaymentInstallment" pi ON pi."paymentStatusId" = ps.id
+          WHERE ps.status::text != 'EXPIRED'
+            AND ps."createdAt" >= ${durationStart}
+          GROUP BY ps.id, ps."paymentPlan"
+        )
+        SELECT
+          COUNT(*) AS total_plans,
+          COUNT(*) FILTER (
+            WHERE ("paymentPlan" = 'FULL_PAYMENT' AND has_paid_tx)
+               OR (total_count > 0 AND paid_count = total_count)
+          ) AS paid_in_full,
+          COUNT(*) FILTER (WHERE overdue_count > 0) AS overdue,
+          COUNT(*) FILTER (
+            WHERE "paymentPlan" != 'FULL_PAYMENT'
+              AND "paymentPlan" IS NOT NULL
+              AND total_count > 0
+              AND paid_count < total_count
+              AND overdue_count = 0
+          ) AS in_progress
+        FROM ps_state
+      `,
+            // -- Financials -----------------------------------------------------
+            // collected: actual money received in the duration window — sum of
+            //   successful transactions across both tables, by paymentDate.
+            // scheduled: lifetime current-state — future unpaid installments.
+            // at_risk:   lifetime current-state — past-due unpaid installments.
+            prismadb_1.prismadb.$queryRaw `
+        SELECT
+          (
+            COALESCE((
+              SELECT SUM(CAST(amount AS NUMERIC))
+              FROM "PaystackTransaction"
+              WHERE status = 'success' AND "paymentDate" >= ${durationStart}
+            ), 0)
+            +
+            COALESCE((
+              SELECT SUM(CAST(amount AS NUMERIC))
+              FROM "PaymentTransaction"
+              WHERE status = 'success' AND "paymentDate" >= ${durationStart}
+            ), 0)
+          )::float AS collected,
+          COALESCE((
+            SELECT SUM(pi.amount)
+            FROM "PaymentInstallment" pi
+            INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
+            WHERE pi.paid = false
+              AND pi."dueDate" >= NOW()
+              AND ps.status::text != 'EXPIRED'
+          ), 0)::float AS scheduled,
+          COALESCE((
+            SELECT SUM(pi.amount)
+            FROM "PaymentInstallment" pi
+            INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
+            WHERE pi.paid = false
+              AND pi."dueDate" < NOW()
+              AND ps.status::text != 'EXPIRED'
+          ), 0)::float AS at_risk
+      `,
+            // -- Plan mix: one-time vs installment, scoped to duration ---------
+            prismadb_1.prismadb.$queryRaw `
+        SELECT
+          CASE WHEN "paymentPlan" = 'FULL_PAYMENT' THEN 'one_time' ELSE 'installment' END AS kind,
+          COUNT(*) AS count
+        FROM "PaymentStatus"
+        WHERE status::text != 'EXPIRED'
+          AND "paymentPlan" IS NOT NULL
+          AND "createdAt" >= ${durationStart}
+        GROUP BY kind
+      `,
+            // -- Avg plan length (installment plans only) ----------------------
+            prismadb_1.prismadb.$queryRaw `
+        SELECT AVG(installment_count)::float AS avg_length
+        FROM (
+          SELECT COUNT(*) AS installment_count
+          FROM "PaymentInstallment" pi
+          INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
+          WHERE ps.status::text != 'EXPIRED'
+            AND ps."paymentPlan" != 'FULL_PAYMENT'
+            AND ps."paymentPlan" IS NOT NULL
+            AND ps."createdAt" >= ${durationStart}
+          GROUP BY ps.id
+        ) sub
+      `,
+            // -- Avg time to full (months), only for fully-paid installment plans
+            // Uses pi.updatedAt as a paid_at proxy. See note at top of file.
+            prismadb_1.prismadb.$queryRaw `
+        SELECT AVG(EXTRACT(EPOCH FROM (max_paid - min_paid)) / 2592000)::float AS avg_months
+        FROM (
+          SELECT
+            ps.id,
+            MIN(pi."updatedAt") AS min_paid,
+            MAX(pi."updatedAt") AS max_paid,
+            COUNT(*) AS total_inst,
+            COUNT(*) FILTER (WHERE pi.paid = true) AS paid_inst
+          FROM "PaymentStatus" ps
+          INNER JOIN "PaymentInstallment" pi ON pi."paymentStatusId" = ps.id
+          WHERE ps.status::text != 'EXPIRED'
+            AND ps."paymentPlan" != 'FULL_PAYMENT'
+            AND ps."paymentPlan" IS NOT NULL
+          GROUP BY ps.id
+        ) sub
+        WHERE total_inst = paid_inst AND total_inst > 1
+      `,
+            // -- Scheduled installments: next 8 weeks (current-state) ----------
+            prismadb_1.prismadb.$queryRaw `
+        SELECT
+          CEIL(EXTRACT(EPOCH FROM (pi."dueDate" - NOW())) / (7 * 86400))::int AS week,
+          COALESCE(SUM(pi.amount), 0)::float AS amount,
+          COUNT(*) AS count
+        FROM "PaymentInstallment" pi
+        INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
+        WHERE pi.paid = false
+          AND pi."dueDate" >= NOW()
+          AND pi."dueDate" < NOW() + INTERVAL '8 weeks'
+          AND ps.status::text != 'EXPIRED'
+        GROUP BY week
+        ORDER BY week
+      `,
+            // -- Overdue aging buckets (current-state) -------------------------
+            prismadb_1.prismadb.$queryRaw `
+        SELECT
+          CASE
+            WHEN NOW() - pi."dueDate" <= INTERVAL '7 days'  THEN '1-7'
+            WHEN NOW() - pi."dueDate" <= INTERVAL '30 days' THEN '8-30'
+            WHEN NOW() - pi."dueDate" <= INTERVAL '60 days' THEN '31-60'
+            ELSE '60+'
+          END AS bucket,
+          COALESCE(SUM(pi.amount), 0)::float AS amount,
+          COUNT(DISTINCT ps.id) AS count
+        FROM "PaymentInstallment" pi
+        INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
+        WHERE pi.paid = false
+          AND pi."dueDate" < NOW()
+          AND ps.status::text != 'EXPIRED'
+        GROUP BY bucket
+      `,
+            // -- Historical on-time payment rate (current-state, lifetime) -----
+            // % of installments that came due and were paid on or before due date.
+            prismadb_1.prismadb.$queryRaw `
+        SELECT
+          COUNT(*) FILTER (WHERE pi.paid = true AND pi."updatedAt" <= pi."dueDate") AS paid_on_time,
+          COUNT(*) FILTER (WHERE pi."dueDate" <= NOW()) AS total_due
+        FROM "PaymentInstallment" pi
+        INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
+        WHERE ps.status::text != 'EXPIRED'
+      `,
+            // -- Currency breakdown --------------------------------------------
+            // The transaction `amount` column holds the NGN equivalent. The
+            // user's chosen currency lives in metadata.selectedCurrency and the
+            // amount they actually paid in that currency lives in
+            // metadata.currencyAmount. NGN payments may not have those fields
+            // set — we default them to NGN at face value.
+            //
+            // Note: this assumes metadata, when non-null, is valid JSON. The
+            // application writes it via JSON.stringify so this should hold,
+            // but a malformed row would error this query.
+            prismadb_1.prismadb.$queryRaw `
+        WITH tx AS (
+          SELECT
+            COALESCE((NULLIF(metadata, '')::jsonb)->>'selectedCurrency', 'NGN') AS currency,
+            CAST(COALESCE(
+              (NULLIF(metadata, '')::jsonb)->>'currencyAmount',
+              amount
+            ) AS NUMERIC) AS native_amount,
+            CAST(amount AS NUMERIC) AS amount_in_base
+          FROM "PaystackTransaction"
+          WHERE status = 'success' AND "paymentDate" >= ${durationStart}
+          UNION ALL
+          SELECT
+            COALESCE((NULLIF(metadata, '')::jsonb)->>'selectedCurrency', 'NGN') AS currency,
+            CAST(COALESCE(
+              (NULLIF(metadata, '')::jsonb)->>'currencyAmount',
+              amount
+            ) AS NUMERIC) AS native_amount,
+            CAST(amount AS NUMERIC) AS amount_in_base
+          FROM "PaymentTransaction"
+          WHERE status = 'success' AND "paymentDate" >= ${durationStart}
+        )
+        SELECT
+          currency,
+          COALESCE(SUM(native_amount), 0)::float AS native_amount,
+          COALESCE(SUM(amount_in_base), 0)::float AS amount_in_base,
+          COUNT(*) AS count
+        FROM tx
+        GROUP BY currency
+        ORDER BY amount_in_base DESC
+      `,
+            // -- Top courses by revenue, scoped to duration --------------------
+            // Revenue per course = sum of successful transactions linked to plans
+            // for that course, where the plan was created in the duration window.
+            // The ps_paid CTE computes paid amount per PaymentStatus once, then
+            // aggregates by course.
+            prismadb_1.prismadb.$queryRaw `
+        WITH ps_paid AS (
+          SELECT
+            ps.id AS ps_id,
+            ps."courseId",
+            ps."userId",
+            COALESCE(pt_sum.amt, 0) + COALESCE(pmt_sum.amt, 0) AS paid_amount
+          FROM "PaymentStatus" ps
+          LEFT JOIN (
+            SELECT "paymentStatusId", SUM(CAST(amount AS NUMERIC)) AS amt
+            FROM "PaystackTransaction"
+            WHERE status = 'success' AND "paymentStatusId" IS NOT NULL
+            GROUP BY "paymentStatusId"
+          ) pt_sum ON pt_sum."paymentStatusId" = ps.id
+          LEFT JOIN (
+            SELECT "paymentStatusId", SUM(CAST(amount AS NUMERIC)) AS amt
+            FROM "PaymentTransaction"
+            WHERE status = 'success' AND "paymentStatusId" IS NOT NULL
+            GROUP BY "paymentStatusId"
+          ) pmt_sum ON pmt_sum."paymentStatusId" = ps.id
+          WHERE ps.status::text != 'EXPIRED'
+            AND ps."createdAt" >= ${durationStart}
+        )
+        SELECT
+          c.id,
+          c.title,
+          COALESCE(SUM(ps_paid.paid_amount), 0)::float AS revenue,
+          COUNT(DISTINCT ps_paid."userId") AS enrollments
+        FROM "Course" c
+        LEFT JOIN ps_paid ON c.id = ps_paid."courseId"
+        GROUP BY c.id, c.title
+        ORDER BY revenue DESC NULLS LAST
+        LIMIT 5
+      `,
+            // -- Payment plan distribution -------------------------------------
+            // Same approach: revenue per plan = sum of actual successful
+            // transactions for plans of that type created in the duration window.
+            prismadb_1.prismadb.$queryRaw `
+        WITH ps_paid AS (
+          SELECT
+            ps.id AS ps_id,
+            ps."paymentPlan",
+            COALESCE(pt_sum.amt, 0) + COALESCE(pmt_sum.amt, 0) AS paid_amount
+          FROM "PaymentStatus" ps
+          LEFT JOIN (
+            SELECT "paymentStatusId", SUM(CAST(amount AS NUMERIC)) AS amt
+            FROM "PaystackTransaction"
+            WHERE status = 'success' AND "paymentStatusId" IS NOT NULL
+            GROUP BY "paymentStatusId"
+          ) pt_sum ON pt_sum."paymentStatusId" = ps.id
+          LEFT JOIN (
+            SELECT "paymentStatusId", SUM(CAST(amount AS NUMERIC)) AS amt
+            FROM "PaymentTransaction"
+            WHERE status = 'success' AND "paymentStatusId" IS NOT NULL
+            GROUP BY "paymentStatusId"
+          ) pmt_sum ON pmt_sum."paymentStatusId" = ps.id
+          WHERE ps.status::text != 'EXPIRED'
+            AND ps."createdAt" >= ${durationStart}
+        )
+        SELECT
+          "paymentPlan",
+          COUNT(*) AS count,
+          COALESCE(SUM(paid_amount), 0)::float AS revenue
+        FROM ps_paid
+        GROUP BY "paymentPlan"
+      `,
+        ]);
+        // ---------------------------------------------------------------------
+        // Combine transaction reads from both tables.
+        // ---------------------------------------------------------------------
+        const currentPayments = [...currentPaystack, ...currentPayment];
+        const previousPayments = [...previousPaystack, ...previousPayment];
+        const activityTransactions = [...activityPaystack, ...activityPayment];
+        const currentRevenue = currentPayments.reduce((s, p) => s + Number(p.amount), 0);
+        const previousRevenue = previousPayments.reduce((s, p) => s + Number(p.amount), 0);
+        const growthPercentage = previousRevenue > 0
+            ? ((currentRevenue - previousRevenue) / previousRevenue) * 100
+            : currentRevenue > 0
+                ? 100
+                : 0;
+        const activityStats = {
+            total: activityTransactions.length,
+            success: activityTransactions.filter((t) => t.status === "success")
+                .length,
+            pending: activityTransactions.filter((t) => t.status === "pending")
+                .length,
+            failed: activityTransactions.filter((t) => t.status === "failed" || t.status === "expired").length,
+        };
+        // ---------------------------------------------------------------------
+        // Top-courses plan mix — runs after we know which course IDs are top 5.
+        // ---------------------------------------------------------------------
+        const topCourseIds = topCourseRows.map((c) => c.id).filter(Boolean);
+        const topCoursesPlanMixRows = topCourseIds.length > 0
+            ? await prismadb_1.prismadb.$queryRaw `
+            SELECT "courseId", "paymentPlan", COUNT(*) AS count
+            FROM "PaymentStatus"
+            WHERE "courseId" IN (${client_1.Prisma.join(topCourseIds)})
+              AND status::text != 'EXPIRED'
+              AND "paymentPlan" IS NOT NULL
+              AND "createdAt" >= ${durationStart}
+            GROUP BY "courseId", "paymentPlan"
+          `
+            : [];
+        // ---------------------------------------------------------------------
+        // Reshape into the response contract the dashboard component expects.
+        // ---------------------------------------------------------------------
+        // Plan status
+        const ps0 = planStatusRows[0] ?? {
+            total_plans: 0n,
+            paid_in_full: 0n,
+            in_progress: 0n,
+            overdue: 0n,
+        };
+        const planStatus = {
+            totalPlans: Number(ps0.total_plans),
+            paidInFull: Number(ps0.paid_in_full),
+            inProgress: Number(ps0.in_progress),
+            overdue: Number(ps0.overdue),
+        };
+        // Financials
+        const fin0 = financialsRow[0] ?? { collected: 0, scheduled: 0, at_risk: 0 };
+        const collected = Number(fin0.collected);
+        const scheduled = Number(fin0.scheduled);
+        const atRisk = Number(fin0.at_risk);
+        const financials = {
+            collected,
+            scheduled,
+            contractValue: collected + scheduled,
+            atRisk,
+        };
+        // Plan mix
+        const oneTimeCount = Number(planMixRows.find((r) => r.kind === "one_time")?.count ?? 0n);
+        const installmentCount = Number(planMixRows.find((r) => r.kind === "installment")?.count ?? 0n);
+        const totalForMix = oneTimeCount + installmentCount;
+        const planMix = {
+            oneTime: {
+                count: oneTimeCount,
+                percent: totalForMix > 0 ? (oneTimeCount / totalForMix) * 100 : 0,
+            },
+            installment: {
+                count: installmentCount,
+                percent: totalForMix > 0 ? (installmentCount / totalForMix) * 100 : 0,
+            },
+            avgPlanLength: avgPlanLengthRow[0]?.avg_length
+                ? Number(avgPlanLengthRow[0].avg_length.toFixed(1))
+                : null,
+            avgTimeToFullMonths: avgTimeToFullRow[0]?.avg_months
+                ? Number(avgTimeToFullRow[0].avg_months.toFixed(1))
+                : null,
+        };
+        // Currency breakdown — derived from metadata.selectedCurrency on each
+        // successful transaction. NGN payments without metadata fall through to
+        // a synthetic 'NGN' bucket. Percentages are based on the NGN-equivalent
+        // total so they always sum to 100 regardless of FX rates.
+        const totalInBase = currencyRows.reduce((s, r) => s + Number(r.amount_in_base), 0);
+        const currencyBreakdown = currencyRows.map((r) => ({
+            currency: r.currency,
+            amountInBase: Number(r.amount_in_base),
+            nativeAmount: Number(r.native_amount),
+            count: Number(r.count),
+            percent: totalInBase > 0 ? (Number(r.amount_in_base) / totalInBase) * 100 : 0,
+        }));
+        // Scheduled installments — fill missing weeks with 0 so the bar chart
+        // always shows 8 buckets.
+        const weekMap = new Map(scheduledRows.map((r) => [Number(r.week), Number(r.amount)]));
+        const weeks = Array.from({ length: 8 }, (_, i) => ({
+            label: `W${i + 1}`,
+            amount: weekMap.get(i + 1) ?? 0,
+        }));
+        const totalDueNext8 = weeks.reduce((s, w) => s + w.amount, 0);
+        const totalDueCount = Number(onTimeRow[0]?.total_due ?? 0n);
+        const paidOnTimeCount = Number(onTimeRow[0]?.paid_on_time ?? 0n);
+        const onTimeRate = totalDueCount > 0
+            ? Math.round((paidOnTimeCount / totalDueCount) * 100)
+            : null;
+        const scheduledInstallments = {
+            weeks,
+            totalDue: totalDueNext8,
+            onTimeRate,
+        };
+        // Overdue aging — ensure all four buckets exist even when empty.
+        const agingMap = new Map(agingRows.map((r) => [
+            r.bucket,
+            { amount: Number(r.amount), count: Number(r.count) },
+        ]));
+        const overdueAging = {
+            "1-7": agingMap.get("1-7") ?? { amount: 0, count: 0 },
+            "8-30": agingMap.get("8-30") ?? { amount: 0, count: 0 },
+            "31-60": agingMap.get("31-60") ?? { amount: 0, count: 0 },
+            "60+": agingMap.get("60+") ?? { amount: 0, count: 0 },
+        };
+        // Top courses with embedded plan mix
+        const planMixByCourse = new Map();
+        for (const row of topCoursesPlanMixRows) {
+            const list = planMixByCourse.get(row.courseId) ?? [];
+            list.push({ paymentPlan: row.paymentPlan, count: Number(row.count) });
+            planMixByCourse.set(row.courseId, list);
+        }
+        const topCourses = topCourseRows.map((c) => {
+            const mix = planMixByCourse.get(c.id) ?? [];
+            const totalMixCount = mix.reduce((s, m) => s + m.count, 0);
+            return {
+                id: c.id,
+                title: c.title,
+                revenue: Number(c.revenue ?? 0),
+                enrollments: Number(c.enrollments ?? 0n),
+                planMix: totalMixCount > 0
+                    ? mix.map((m) => ({
+                        plan: (m.paymentPlan ?? "unknown").toLowerCase(),
+                        percent: (m.count / totalMixCount) * 100,
+                    }))
+                    : [],
+            };
+        });
+        // ---------------------------------------------------------------------
+        // Response.
+        // ---------------------------------------------------------------------
+        res.json({
+            summary: {
+                currentRevenue,
+                previousRevenue,
+                growthPercentage,
+                transactions: currentPayments.length,
+                averageTransaction: currentPayments.length > 0
+                    ? currentRevenue / currentPayments.length
+                    : 0,
+                activityStats,
+                activeDuration: duration,
+            },
+            planStatus,
+            financials,
+            planMix,
+            currencyBreakdown,
+            scheduledInstallments,
+            overdueAging,
+            topCourses,
+            paymentPlanDistribution: convertBigIntToNumber(paymentPlanDistRows),
+            period: {
+                type: period || "month",
+                current: { start: currentPeriodStart, end: currentPeriodEnd },
+                previous: { start: previousPeriodStart, end: previousPeriodEnd },
             },
         });
     }
