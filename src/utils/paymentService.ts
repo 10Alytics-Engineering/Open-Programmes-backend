@@ -10,6 +10,8 @@ const START_BUTTON_PUBLIC_KEY = process.env.START_BUTTON_PUBLIC_KEY;
 
 export type CurrrencyType = "GHS" | "NGN" | "ZAR" | "KES" | "UGX" | "RWF";
 
+export type PAYMENT_GATEWAY = "STRIPE" | "PAYSTACK" | "START_BUTTON";
+
 export const currenciesInfo = {
   NGN: {
     name: "NGN",
@@ -230,3 +232,14 @@ const getUserEmail = async (userId: string): Promise<string> => {
 
   return user?.email || "";
 };
+
+export const sortByPaymentDateDesc = <
+  T extends { createdAt: Date | null | undefined },
+>(
+  rows: T[],
+) =>
+  rows.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });

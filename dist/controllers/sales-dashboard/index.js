@@ -40,6 +40,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const prismadb_1 = require("../../lib/prismadb");
 const date_fns_1 = require("date-fns");
+const paymentService_1 = require("../../utils/paymentService");
 const salesDashboardApp = express_1.default.Router();
 salesDashboardApp.use(express_1.default.json());
 // Helper function to convert BigInt to Number for JSON serialization
@@ -105,40 +106,47 @@ salesDashboardApp.get("/monthly-sales", async (req, res) => {
                 userPayments: [],
                 period: {
                     start: startDate,
-                    end: endDate
-                }
+                    end: endDate,
+                },
             });
         }
         // Get user and course details for the payments
-        const userIds = [...new Set(monthlyPayments.map(p => p.userId))];
-        const courseIds = [...new Set(monthlyPayments.map(p => p.courseId))];
+        const userIds = [...new Set(monthlyPayments.map((p) => p.userId))];
+        const courseIds = [...new Set(monthlyPayments.map((p) => p.courseId))];
         const [users, courses] = await Promise.all([
             prismadb_1.prismadb.user.findMany({
                 where: { id: { in: userIds } },
-                select: { id: true, name: true, email: true, phone_number: true }
+                select: { id: true, name: true, email: true, phone_number: true },
             }),
             prismadb_1.prismadb.course.findMany({
                 where: { id: { in: courseIds } },
-                select: { id: true, title: true }
-            })
+                select: { id: true, title: true },
+            }),
         ]);
-        const userMap = new Map(users.map(user => [user.id, user]));
-        const courseMap = new Map(courses.map(course => [course.id, course]));
+        const userMap = new Map(users.map((user) => [user.id, user]));
+        const courseMap = new Map(courses.map((course) => [course.id, course]));
         // Calculate total revenue for the month
         const totalRevenue = monthlyPayments.reduce((sum, payment) => {
             return sum + Number(payment.amount);
         }, 0);
         // Group by user
         const userPayments = {};
-        monthlyPayments.forEach(payment => {
+        monthlyPayments.forEach((payment) => {
             const userId = payment.userId;
-            const user = userMap.get(userId) || { id: userId, name: "Unknown User", email: "No email available" };
-            const course = courseMap.get(payment.courseId) || { id: payment.courseId, title: "Unknown Course" };
+            const user = userMap.get(userId) || {
+                id: userId,
+                name: "Unknown User",
+                email: "No email available",
+            };
+            const course = courseMap.get(payment.courseId) || {
+                id: payment.courseId,
+                title: "Unknown Course",
+            };
             if (!userPayments[userId]) {
                 userPayments[userId] = {
                     user: user,
                     total: 0,
-                    payments: []
+                    payments: [],
                 };
             }
             userPayments[userId].total += Number(payment.amount);
@@ -147,7 +155,7 @@ salesDashboardApp.get("/monthly-sales", async (req, res) => {
                 amount: Number(payment.amount),
                 course: course,
                 paymentDate: payment.paymentDate,
-                paymentPlan: payment.paymentPlan
+                paymentPlan: payment.paymentPlan,
             });
         });
         res.json({
@@ -155,8 +163,8 @@ salesDashboardApp.get("/monthly-sales", async (req, res) => {
             userPayments: Object.values(userPayments),
             period: {
                 start: startDate,
-                end: endDate
-            }
+                end: endDate,
+            },
         });
     }
     catch (error) {
@@ -187,20 +195,20 @@ salesDashboardApp.get("/yearly-sales", async (req, res) => {
             },
         });
         // Initialize monthly data
-        const monthlyData = months.map(month => {
+        const monthlyData = months.map((month) => {
             const monthStart = (0, date_fns_1.startOfMonth)(month);
             const monthEnd = (0, date_fns_1.endOfMonth)(month);
             return {
-                month: (0, date_fns_1.format)(month, 'MMMM'),
+                month: (0, date_fns_1.format)(month, "MMMM"),
                 year: targetYear,
                 start: monthStart,
                 end: monthEnd,
                 revenue: 0,
-                transactions: 0
+                transactions: 0,
             };
         });
         // Calculate revenue per month
-        yearlyPayments.forEach(payment => {
+        yearlyPayments.forEach((payment) => {
             const paymentDate = payment.paymentDate;
             if (!paymentDate)
                 return;
@@ -215,7 +223,7 @@ salesDashboardApp.get("/yearly-sales", async (req, res) => {
             year: targetYear,
             totalRevenue: totalYearlyRevenue,
             totalTransactions: totalYearlyTransactions,
-            monthlyData
+            monthlyData,
         });
     }
     catch (error) {
@@ -235,34 +243,34 @@ salesDashboardApp.get("/programs-enrollment", async (req, res) => {
                 _count: {
                     select: {
                         purchases: true,
-                    }
+                    },
                 },
                 cohorts: {
                     include: {
                         _count: {
                             select: {
-                                users: true
-                            }
-                        }
-                    }
+                                users: true,
+                            },
+                        },
+                    },
                 },
                 paymentStatuses: {
                     where: {
                         status: {
-                            not: "EXPIRED"
-                        }
-                    }
-                }
+                            not: "EXPIRED",
+                        },
+                    },
+                },
             },
             orderBy: {
                 purchases: {
-                    _count: "desc"
-                }
-            }
+                    _count: "desc",
+                },
+            },
         });
         // Format the data
-        const programsData = coursesWithEnrollment.map(course => {
-            const activeEnrollments = course.paymentStatuses.filter(ps => ps.status !== "EXPIRED").length;
+        const programsData = coursesWithEnrollment.map((course) => {
+            const activeEnrollments = course.paymentStatuses.filter((ps) => ps.status !== "EXPIRED").length;
             // Calculate cohort enrollments
             const cohortEnrollments = course.cohorts.reduce((sum, cohort) => {
                 return sum + cohort._count.users;
@@ -272,13 +280,13 @@ salesDashboardApp.get("/programs-enrollment", async (req, res) => {
                 title: course.title,
                 totalPurchases: course._count.purchases,
                 activeEnrollments: Math.max(activeEnrollments, cohortEnrollments),
-                cohorts: course.cohorts.map(cohort => ({
+                cohorts: course.cohorts.map((cohort) => ({
                     id: cohort.id,
                     name: cohort.name,
                     enrollments: cohort._count.users,
                     startDate: cohort.startDate,
-                    endDate: cohort.endDate
-                }))
+                    endDate: cohort.endDate,
+                })),
             };
         });
         res.json(programsData);
@@ -300,12 +308,12 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
         const HALF_COURSE_FEE = TOTAL_COURSE_FEE / 2;
         // Get current period data
         const now = new Date();
-        const currentPeriodStart = period === 'year' ? (0, date_fns_1.startOfYear)(now) : (0, date_fns_1.startOfMonth)(now);
-        const currentPeriodEnd = period === 'year' ? (0, date_fns_1.endOfYear)(now) : (0, date_fns_1.endOfMonth)(now);
+        const currentPeriodStart = period === "year" ? (0, date_fns_1.startOfYear)(now) : (0, date_fns_1.startOfMonth)(now);
+        const currentPeriodEnd = period === "year" ? (0, date_fns_1.endOfYear)(now) : (0, date_fns_1.endOfMonth)(now);
         // Get previous period data
         const previousPeriodStart = new Date(currentPeriodStart);
         const previousPeriodEnd = new Date(currentPeriodEnd);
-        if (period === 'year') {
+        if (period === "year") {
             previousPeriodStart.setFullYear(previousPeriodStart.getFullYear() - 1);
             previousPeriodEnd.setFullYear(previousPeriodEnd.getFullYear() - 1);
         }
@@ -340,7 +348,9 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
         // Calculate growth percentage
         const growthPercentage = previousRevenue > 0
             ? ((currentRevenue - previousRevenue) / previousRevenue) * 100
-            : currentRevenue > 0 ? 100 : 0;
+            : currentRevenue > 0
+                ? 100
+                : 0;
         // Get top courses by revenue
         const topCourses = await prismadb_1.prismadb.$queryRaw `
       SELECT 
@@ -403,18 +413,20 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
         const activityTransactions = await prismadb_1.prismadb.paystackTransaction.findMany({
             where: {
                 createdAt: {
-                    gte: startDate
-                }
+                    gte: startDate,
+                },
             },
             select: {
-                status: true
-            }
+                status: true,
+            },
         });
         const activityStats = {
             total: activityTransactions.length,
-            success: activityTransactions.filter(t => t.status === "success").length,
-            pending: activityTransactions.filter(t => t.status === "pending").length,
-            failed: activityTransactions.filter(t => t.status === "failed" || t.status === "expired").length,
+            success: activityTransactions.filter((t) => t.status === "success")
+                .length,
+            pending: activityTransactions.filter((t) => t.status === "pending")
+                .length,
+            failed: activityTransactions.filter((t) => t.status === "failed" || t.status === "expired").length,
         };
         res.json({
             summary: {
@@ -422,23 +434,25 @@ salesDashboardApp.get("/dashboard", async (req, res) => {
                 previousRevenue,
                 growthPercentage,
                 transactions: currentPayments.length,
-                averageTransaction: currentPayments.length > 0 ? currentRevenue / currentPayments.length : 0,
+                averageTransaction: currentPayments.length > 0
+                    ? currentRevenue / currentPayments.length
+                    : 0,
                 activityStats,
-                activeDuration: duration
+                activeDuration: duration,
             },
             topCourses: convertBigIntToNumber(topCourses),
             paymentPlanDistribution: convertBigIntToNumber(paymentPlanDistribution),
             period: {
-                type: period || 'month',
+                type: period || "month",
                 current: {
                     start: currentPeriodStart,
-                    end: currentPeriodEnd
+                    end: currentPeriodEnd,
                 },
                 previous: {
                     start: previousPeriodStart,
-                    end: previousPeriodEnd
-                }
-            }
+                    end: previousPeriodEnd,
+                },
+            },
         });
     }
     catch (error) {
@@ -454,20 +468,20 @@ salesDashboardApp.get("/users", async (req, res) => {
     try {
         const users = await prismadb_1.prismadb.user.findMany({
             where: {
-                role: "USER"
+                role: "USER",
             },
             include: {
                 paymentStatus: {
                     include: {
                         course: true,
                         cohort: true,
-                        paymentInstallments: true
-                    }
-                }
+                        paymentInstallments: true,
+                    },
+                },
             },
             orderBy: {
-                createdAt: "desc"
-            }
+                createdAt: "desc",
+            },
         });
         res.json(users);
     }
@@ -476,10 +490,31 @@ salesDashboardApp.get("/users", async (req, res) => {
         res.status(500).json({ error: "Failed to fetch users" });
     }
 });
+const transactionDetailInclude = {
+    paymentStatus: {
+        include: {
+            user: true,
+            course: true,
+            cohort: true,
+            paymentInstallments: {
+                orderBy: { installmentNumber: "asc" },
+            },
+        },
+    },
+};
+const transactionInclude = {
+    paymentStatus: {
+        include: {
+            user: true,
+            course: true,
+            cohort: true,
+        },
+    },
+};
 // 6. List all transactions
 salesDashboardApp.get("/transactions", async (req, res) => {
     try {
-        const { duration = "all" } = req.query; // Default to all for list page unless specified
+        const { duration = "all", gateway } = req.query; // Default to all for list page unless specified
         let dateFilter = {};
         if (duration !== "all") {
             let startDate = new Date();
@@ -495,43 +530,62 @@ salesDashboardApp.get("/transactions", async (req, res) => {
             startDate.setHours(0, 0, 0, 0);
             dateFilter = {
                 createdAt: {
-                    gte: startDate
-                }
+                    gte: startDate,
+                },
             };
         }
-        const transactions = await prismadb_1.prismadb.paystackTransaction.findMany({
-            where: dateFilter,
-            include: {
-                paymentStatus: {
-                    include: {
-                        user: true,
-                        course: true,
-                        cohort: true
-                    }
-                }
-            },
-            orderBy: {
-                paymentDate: "desc"
-            }
-        });
+        if (gateway &&
+            gateway !== "PAYSTACK" &&
+            gateway !== "STRIPE" &&
+            gateway !== "START_BUTTON") {
+            return res
+                .status(400)
+                .json({ error: "Invalid payment gateway specified" });
+        }
+        const [paystackRows, paymentRows] = await Promise.all([
+            gateway === "PAYSTACK" || gateway === undefined
+                ? prismadb_1.prismadb.paystackTransaction.findMany({
+                    where: dateFilter,
+                    include: transactionInclude,
+                    orderBy: { paymentDate: "desc" },
+                })
+                : Promise.resolve([]),
+            prismadb_1.prismadb.paymentTransaction.findMany({
+                where: {
+                    ...dateFilter,
+                    ...(gateway && { paymentGateway: gateway }),
+                },
+                include: transactionInclude,
+                orderBy: { paymentDate: "desc" },
+            }),
+        ]);
+        // Tag each row with its source so the frontend can disambiguate.
+        const tagged = [
+            ...paystackRows.map((t) => ({ ...t, source: "paystack" })),
+            ...paymentRows.map((t) => ({ ...t, source: "unified" })),
+        ];
         // Check if we need to manually fill in some user/course data
-        const missingDataTransactions = transactions.filter(t => !t.paymentStatus);
+        const missingDataTransactions = tagged.filter((t) => !t.paymentStatus);
         if (missingDataTransactions.length > 0) {
-            const userIds = [...new Set(missingDataTransactions.map(t => t.userId))];
-            const courseIds = [...new Set(missingDataTransactions.map(t => t.courseId))];
+            const userIds = [
+                ...new Set(missingDataTransactions.map((t) => t.userId)),
+            ];
+            const courseIds = [
+                ...new Set(missingDataTransactions.map((t) => t.courseId)),
+            ];
             const [users, courses] = await Promise.all([
                 prismadb_1.prismadb.user.findMany({
                     where: { id: { in: userIds } },
-                    select: { id: true, name: true, email: true, phone_number: true }
+                    select: { id: true, name: true, email: true, phone_number: true },
                 }),
                 prismadb_1.prismadb.course.findMany({
                     where: { id: { in: courseIds } },
-                    select: { id: true, title: true }
-                })
+                    select: { id: true, title: true },
+                }),
             ]);
-            const userMap = new Map(users.map(u => [u.id, u]));
-            const courseMap = new Map(courses.map(c => [c.id, c]));
-            const enrichedTransactions = transactions.map(t => {
+            const userMap = new Map(users.map((u) => [u.id, u]));
+            const courseMap = new Map(courses.map((c) => [c.id, c]));
+            const enrichedTransactions = tagged.map((t) => {
                 if (!t.paymentStatus) {
                     return {
                         ...t,
@@ -542,15 +596,35 @@ salesDashboardApp.get("/transactions", async (req, res) => {
                             paymentPlan: t.paymentPlan,
                             createdAt: t.createdAt,
                             updatedAt: t.updatedAt,
-                            paymentInstallments: []
-                        }
+                            paymentInstallments: [],
+                        },
                     };
                 }
                 return t;
             });
-            return res.json(enrichedTransactions);
+            const sorted = (0, paymentService_1.sortByPaymentDateDesc)(enrichedTransactions);
+            return res.json({
+                transactions: sorted,
+                count: sorted.length,
+                countBySource: {
+                    paystack: sorted.filter((t) => t.source === "paystack").length +
+                        sorted.filter((t) => t.source === "unified" && t.paymentGateway === "PAYSTACK").length,
+                    stripe: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "STRIPE").length,
+                    startButton: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "START_BUTTON").length,
+                },
+            });
         }
-        res.json(transactions);
+        const sorted = (0, paymentService_1.sortByPaymentDateDesc)(tagged);
+        res.json({
+            transactions: sorted,
+            count: sorted.length,
+            countBySource: {
+                paystack: sorted.filter((t) => t.source === "paystack").length +
+                    sorted.filter((t) => t.source === "unified" && t.paymentGateway === "PAYSTACK").length,
+                stripe: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "STRIPE").length,
+                startButton: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "START_BUTTON").length,
+            },
+        });
     }
     catch (error) {
         console.error("Error fetching transactions:", error);
@@ -561,37 +635,66 @@ salesDashboardApp.get("/transactions", async (req, res) => {
 salesDashboardApp.get("/transactions/:id", async (req, res) => {
     try {
         const { id } = req.params;
-        const transaction = await prismadb_1.prismadb.paystackTransaction.findUnique({
-            where: { id },
-            include: {
-                paymentStatus: {
-                    include: {
-                        user: true,
-                        course: true,
-                        cohort: true,
-                        paymentInstallments: {
-                            orderBy: {
-                                installmentNumber: "asc"
-                            }
-                        }
-                    }
-                }
+        const { source } = req.query;
+        let transaction = null;
+        let txSource = null;
+        if (source === "paystack") {
+            transaction = await prismadb_1.prismadb.paystackTransaction.findUnique({
+                where: { id },
+                include: transactionDetailInclude,
+            });
+            if (transaction)
+                txSource = "paystack";
+        }
+        else if (source === "unified") {
+            transaction = await prismadb_1.prismadb.paymentTransaction.findUnique({
+                where: { id },
+                include: transactionDetailInclude,
+            });
+            if (transaction)
+                txSource = "unified";
+        }
+        else {
+            // No source hint — try both in parallel and take whichever hits.
+            const [paystackTx, paymentTx] = await Promise.all([
+                prismadb_1.prismadb.paystackTransaction.findUnique({
+                    where: { id },
+                    include: transactionDetailInclude,
+                }),
+                prismadb_1.prismadb.paymentTransaction.findUnique({
+                    where: { id },
+                    include: transactionDetailInclude,
+                }),
+            ]);
+            if (paystackTx) {
+                transaction = paystackTx;
+                txSource = "paystack";
             }
-        });
+            else if (paymentTx) {
+                transaction = paymentTx;
+                txSource = "unified";
+            }
+        }
         if (!transaction) {
             return res.status(404).json({ error: "Transaction not found" });
         }
+        // const paymentInstallments = await prismadb.paymentInstallment.findMany({
+        //   where: {
+        //     paymentStatusId: transaction.paymentStatusId,
+        //   },
+        //   orderBy: { installmentNumber: "asc" },
+        // });
         // Manual enrichment if paymentStatus is null
         if (!transaction.paymentStatus) {
             const [user, course] = await Promise.all([
                 prismadb_1.prismadb.user.findUnique({
                     where: { id: transaction.userId },
-                    select: { id: true, name: true, email: true, phone_number: true }
+                    select: { id: true, name: true, email: true, phone_number: true },
                 }),
                 prismadb_1.prismadb.course.findUnique({
                     where: { id: transaction.courseId },
-                    select: { id: true, title: true }
-                })
+                    select: { id: true, title: true },
+                }),
             ]);
             const enrichedTransaction = {
                 ...transaction,
@@ -602,12 +705,12 @@ salesDashboardApp.get("/transactions/:id", async (req, res) => {
                     paymentPlan: transaction.paymentPlan,
                     createdAt: transaction.createdAt,
                     updatedAt: transaction.updatedAt,
-                    paymentInstallments: []
-                }
+                    paymentInstallments: [],
+                },
             };
-            return res.json(enrichedTransaction);
+            return res.json({ ...enrichedTransaction });
         }
-        res.json(transaction);
+        res.json({ ...transaction });
     }
     catch (error) {
         console.error("Error fetching transaction detail:", error);
@@ -621,20 +724,28 @@ salesDashboardApp.post("/export-to-sheets", async (req, res) => {
         const result = await GoogleSheetsSyncService.syncPaymentData();
         if (result && result.success) {
             const spreadsheetId = process.env.GOOGLE_SHEETS_PAYMENTS_SPREADSHEET_ID;
-            const sheetUrl = spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : null;
+            const sheetUrl = spreadsheetId
+                ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
+                : null;
             res.json({
                 success: true,
                 message: `Successfully exported ${result.count} records to Google Sheets.`,
-                sheetUrl
+                sheetUrl,
             });
         }
         else {
-            res.status(500).json({ success: false, error: result?.error || 'Unknown error occurred during sync' });
+            res.status(500).json({
+                success: false,
+                error: result?.error || "Unknown error occurred during sync",
+            });
         }
     }
     catch (error) {
         console.error("Error exporting to sheets:", error);
-        res.status(500).json({ success: false, error: "Failed to export data to Google Sheets" });
+        res.status(500).json({
+            success: false,
+            error: "Failed to export data to Google Sheets",
+        });
     }
 });
 exports.default = salesDashboardApp;
