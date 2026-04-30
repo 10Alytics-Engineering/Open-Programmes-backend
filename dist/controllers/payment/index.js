@@ -479,7 +479,7 @@ paymentApp.get("/start-button-test", async (req, res) => {
         //   ["card", "mobile_money"],
         // // );
         // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-        const paymentData = await verifyPayment("Q4W6ORTYYV");
+        const paymentData = await verifyPayment("DIR83XPPL4D");
         return res.status(200).json({ paymentData });
         // const results = await prismadb.paymentTransaction.findMany({
         //   orderBy: { createdAt: "desc" },
@@ -857,6 +857,7 @@ async function verifyPayment(reference) {
         let updatedTx = await tx.paymentTransaction.update({
             where: { transactionRef: reference },
             data: {
+                paymentStatusId: userPaymentStatus?.id,
                 status: "success",
                 paymentDate: new Date(),
                 updatedAt: new Date(),
