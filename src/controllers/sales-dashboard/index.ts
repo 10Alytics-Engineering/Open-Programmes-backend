@@ -517,6 +517,7 @@ salesDashboardApp.get("/dashboard", async (req: Request, res: Response) => {
   }
 });
 
+// Dashboard route to fetch all relevant data for the sales dashboard
 salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
   try {
     const { period, duration = "7d" } = req.query;
@@ -574,8 +575,6 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
       planMixRows,
       avgPlanLengthRow,
       avgTimeToFullRow,
-      scheduledRows,
-      agingRows,
       onTimeRow,
       currencyRows,
       topCourseRows,
@@ -634,42 +633,78 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
           paid_in_full: bigint;
           in_progress: bigint;
           overdue: bigint;
+          abandoned: bigint;
         }>
       >`
         WITH ps_state AS (
-          SELECT
-            ps.id,
-            ps."paymentPlan",
-            (
-              EXISTS (SELECT 1 FROM "PaystackTransaction" pt
-                      WHERE pt."paymentStatusId" = ps.id AND pt.status = 'success')
-              OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
-                         WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'success')
-            ) AS has_paid_tx,
-            COUNT(pi.id) FILTER (WHERE pi.paid = false AND pi."dueDate" < NOW()) AS overdue_count,
-            COUNT(pi.id) FILTER (WHERE pi.paid = true) AS paid_count,
-            COUNT(pi.id) AS total_count
-          FROM "PaymentStatus" ps
-          LEFT JOIN "PaymentInstallment" pi ON pi."paymentStatusId" = ps.id
-          WHERE ps.status::text != 'EXPIRED'
-            AND ps."createdAt" >= ${durationStart}
-          GROUP BY ps.id, ps."paymentPlan"
-        )
         SELECT
-          COUNT(*) AS total_plans,
-          COUNT(*) FILTER (
-            WHERE ("paymentPlan" = 'FULL_PAYMENT' AND has_paid_tx)
-               OR (total_count > 0 AND paid_count = total_count)
-          ) AS paid_in_full,
-          COUNT(*) FILTER (WHERE overdue_count > 0) AS overdue,
-          COUNT(*) FILTER (
-            WHERE "paymentPlan" != 'FULL_PAYMENT'
-              AND "paymentPlan" IS NOT NULL
-              AND total_count > 0
-              AND paid_count < total_count
-              AND overdue_count = 0
-          ) AS in_progress
-        FROM ps_state
+          ps.id,
+          ps.status::text AS status_text,
+          ps."paymentPlan",
+          -- Transaction signals across both tables
+          (
+            EXISTS (SELECT 1 FROM "PaystackTransaction" pt
+                    WHERE pt."paymentStatusId" = ps.id AND pt.status = 'success')
+            OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
+                      WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'success')
+          ) AS has_success_tx,
+          (
+            EXISTS (SELECT 1 FROM "PaystackTransaction" pt
+                    WHERE pt."paymentStatusId" = ps.id AND pt.status = 'pending')
+            OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
+                      WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'pending')
+          ) AS has_pending_tx,
+          (
+            (SELECT COUNT(*) FROM "PaystackTransaction" pt WHERE pt."paymentStatusId" = ps.id)
+            +
+            (SELECT COUNT(*) FROM "PaymentTransaction" pmt WHERE pmt."paymentStatusId" = ps.id)
+          ) AS tx_count,
+          -- Installment signals
+          COUNT(pi.id) FILTER (WHERE pi.paid = false AND pi."dueDate" < NOW()) AS overdue_count,
+          COUNT(pi.id) FILTER (WHERE pi.paid = true) AS paid_count,
+          COUNT(pi.id) AS total_count
+        FROM "PaymentStatus" ps
+        LEFT JOIN "PaymentInstallment" pi ON pi."paymentStatusId" = ps.id
+        WHERE ps."createdAt" >= ${durationStart}
+        GROUP BY ps.id, ps.status, ps."paymentPlan"
+      )
+      SELECT
+        COUNT(*) AS total_plans,
+    
+        COUNT(*) FILTER (
+          WHERE status_text != 'EXPIRED'
+            AND (
+              ("paymentPlan" = 'FULL_PAYMENT' AND has_success_tx)
+              OR (total_count > 0 AND paid_count = total_count)
+            )
+        ) AS paid_in_full,
+    
+        COUNT(*) FILTER (
+          WHERE status_text != 'EXPIRED'
+            AND overdue_count > 0
+        ) AS overdue,
+    
+        COUNT(*) FILTER (
+          WHERE status_text != 'EXPIRED'
+            AND "paymentPlan" != 'FULL_PAYMENT'
+            AND "paymentPlan" IS NOT NULL
+            AND total_count > 0
+            AND paid_count < total_count
+            AND overdue_count = 0
+            AND paid_count > 0
+        ) AS in_progress,
+    
+        COUNT(*) FILTER (
+          WHERE
+            -- One-time plans: had transaction attempts, none succeeded or are pending
+            ("paymentPlan" = 'FULL_PAYMENT' AND tx_count > 0
+              AND NOT has_success_tx AND NOT has_pending_tx)
+            -- Installment plans: no success/pending transactions at all
+            OR ("paymentPlan" != 'FULL_PAYMENT' AND "paymentPlan" IS NOT NULL
+              AND NOT has_success_tx AND NOT has_pending_tx)
+        ) AS abandoned
+      FROM ps_state
+
       `,
 
       // -- Financials -----------------------------------------------------
@@ -758,45 +793,6 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
           GROUP BY ps.id
         ) sub
         WHERE total_inst = paid_inst AND total_inst > 1
-      `,
-
-      // -- Scheduled installments: next 8 weeks (current-state) ----------
-      prismadb.$queryRaw<
-        Array<{ week: number; amount: number; count: bigint }>
-      >`
-        SELECT
-          CEIL(EXTRACT(EPOCH FROM (pi."dueDate" - NOW())) / (7 * 86400))::int AS week,
-          COALESCE(SUM(pi.amount), 0)::float AS amount,
-          COUNT(*) AS count
-        FROM "PaymentInstallment" pi
-        INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
-        WHERE pi.paid = false
-          AND pi."dueDate" >= NOW()
-          AND pi."dueDate" < NOW() + INTERVAL '8 weeks'
-          AND ps.status::text != 'EXPIRED'
-        GROUP BY week
-        ORDER BY week
-      `,
-
-      // -- Overdue aging buckets (current-state) -------------------------
-      prismadb.$queryRaw<
-        Array<{ bucket: string; amount: number; count: bigint }>
-      >`
-        SELECT
-          CASE
-            WHEN NOW() - pi."dueDate" <= INTERVAL '7 days'  THEN '1-7'
-            WHEN NOW() - pi."dueDate" <= INTERVAL '30 days' THEN '8-30'
-            WHEN NOW() - pi."dueDate" <= INTERVAL '60 days' THEN '31-60'
-            ELSE '60+'
-          END AS bucket,
-          COALESCE(SUM(pi.amount), 0)::float AS amount,
-          COUNT(DISTINCT ps.id) AS count
-        FROM "PaymentInstallment" pi
-        INNER JOIN "PaymentStatus" ps ON pi."paymentStatusId" = ps.id
-        WHERE pi.paid = false
-          AND pi."dueDate" < NOW()
-          AND ps.status::text != 'EXPIRED'
-        GROUP BY bucket
       `,
 
       // -- Historical on-time payment rate (current-state, lifetime) -----
@@ -1005,12 +1001,14 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
       paid_in_full: 0n,
       in_progress: 0n,
       overdue: 0n,
+      abandoned: 0n,
     };
     const planStatus = {
       totalPlans: Number(ps0.total_plans),
       paidInFull: Number(ps0.paid_in_full),
       inProgress: Number(ps0.in_progress),
       overdue: Number(ps0.overdue),
+      abandoned: Number(ps0.abandoned),
     };
 
     // Financials
@@ -1069,14 +1067,6 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
 
     // Scheduled installments — fill missing weeks with 0 so the bar chart
     // always shows 8 buckets.
-    const weekMap = new Map(
-      scheduledRows.map((r) => [Number(r.week), Number(r.amount)]),
-    );
-    const weeks = Array.from({ length: 8 }, (_, i) => ({
-      label: `W${i + 1}`,
-      amount: weekMap.get(i + 1) ?? 0,
-    }));
-    const totalDueNext8 = weeks.reduce((s, w) => s + w.amount, 0);
 
     const totalDueCount = Number(onTimeRow[0]?.total_due ?? 0n);
     const paidOnTimeCount = Number(onTimeRow[0]?.paid_on_time ?? 0n);
@@ -1084,26 +1074,6 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
       totalDueCount > 0
         ? Math.round((paidOnTimeCount / totalDueCount) * 100)
         : null;
-
-    const scheduledInstallments = {
-      weeks,
-      totalDue: totalDueNext8,
-      onTimeRate,
-    };
-
-    // Overdue aging — ensure all four buckets exist even when empty.
-    const agingMap = new Map(
-      agingRows.map((r) => [
-        r.bucket,
-        { amount: Number(r.amount), count: Number(r.count) },
-      ]),
-    );
-    const overdueAging = {
-      "1-7": agingMap.get("1-7") ?? { amount: 0, count: 0 },
-      "8-30": agingMap.get("8-30") ?? { amount: 0, count: 0 },
-      "31-60": agingMap.get("31-60") ?? { amount: 0, count: 0 },
-      "60+": agingMap.get("60+") ?? { amount: 0, count: 0 },
-    };
 
     // Top courses with embedded plan mix
     const planMixByCourse = new Map<
@@ -1154,8 +1124,6 @@ salesDashboardApp.get("/dashboard-all", async (req: Request, res: Response) => {
       financials,
       planMix,
       currencyBreakdown,
-      scheduledInstallments,
-      overdueAging,
       topCourses,
       paymentPlanDistribution: convertBigIntToNumber(paymentPlanDistRows),
       period: {
@@ -1226,7 +1194,7 @@ const transactionInclude = {
 // 6. List all transactions
 salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
   try {
-    const { duration = "all", gateway } = req.query; // Default to all for list page unless specified
+    const { duration = "all", gateway, status } = req.query; // Default to all for list page unless specified
     let dateFilter = {};
 
     if (duration !== "all") {
@@ -1246,6 +1214,128 @@ salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
       };
     }
 
+    const TX_STATUS_VALUES = ["success", "pending", "failed"];
+    let txStatusFilter: any = {};
+    if (typeof status === "string" && TX_STATUS_VALUES.includes(status)) {
+      if (status === "failed") {
+        txStatusFilter = { status: { in: ["failed", "expired"] } };
+      } else {
+        txStatusFilter = { status };
+      }
+    }
+
+    const PLAN_STATUS_VALUES = [
+      "paid_in_full",
+      "in_progress",
+      "overdue",
+      "abandoned",
+    ];
+    let planStatusFilter: string[] | null = null;
+
+    if (typeof status === "string" && PLAN_STATUS_VALUES.includes(status)) {
+      // Build the WHERE clause for this status. Each clause asserts the plan
+      // matches *this* bucket AND doesn't qualify for any higher-priority bucket.
+      // Priority order matches the dashboard CASE statement:
+      //   paid_in_full > overdue > in_progress > abandoned
+      // This keeps the dashboard counts and the click-through results in sync.
+
+      const isPaidInFull = Prisma.sql`
+        status_text != 'EXPIRED' AND (
+          ("paymentPlan" = 'FULL_PAYMENT' AND has_success_tx)
+          OR (total_count > 0 AND paid_count = total_count)
+        )
+      `;
+
+      const isOverdue = Prisma.sql`
+        status_text != 'EXPIRED' AND overdue_count > 0
+      `;
+
+      const isInProgress = Prisma.sql`
+        status_text != 'EXPIRED'
+        AND "paymentPlan" != 'FULL_PAYMENT'
+        AND "paymentPlan" IS NOT NULL
+        AND total_count > 0
+        AND paid_count > 0
+        AND paid_count < total_count
+        AND overdue_count = 0
+      `;
+
+      const isAbandoned = Prisma.sql`
+        (
+          ("paymentPlan" = 'FULL_PAYMENT' AND tx_count > 0 AND NOT has_success_tx AND NOT has_pending_tx)
+          OR ("paymentPlan" != 'FULL_PAYMENT' AND "paymentPlan" IS NOT NULL AND NOT has_success_tx AND NOT has_pending_tx)
+        )
+      `;
+
+      let classificationSql: Prisma.Sql;
+      if (status === "paid_in_full") {
+        // Highest priority — no exclusions needed.
+        classificationSql = isPaidInFull;
+      } else if (status === "overdue") {
+        // Excludes paid_in_full.
+        classificationSql = Prisma.sql`NOT (${isPaidInFull}) AND ${isOverdue}`;
+      } else if (status === "in_progress") {
+        // Excludes paid_in_full and overdue.
+        classificationSql = Prisma.sql`
+          NOT (${isPaidInFull})
+          AND NOT (${isOverdue})
+          AND ${isInProgress}
+        `;
+      } else if (status === "abandoned") {
+        // Excludes everything above it.
+        classificationSql = Prisma.sql`
+          NOT (${isPaidInFull})
+          AND ${isAbandoned}
+        `;
+      } else {
+        // Defensive fallback — should be unreachable since we checked PLAN_STATUS_VALUES.
+        classificationSql = Prisma.sql`FALSE`;
+      }
+
+      const matchingPlans = await prismadb.$queryRaw<Array<{ id: string }>>`
+    WITH ps_state AS (
+      SELECT
+        ps.id,
+        ps.status::text AS status_text,
+        ps."paymentPlan",
+        (
+          EXISTS (SELECT 1 FROM "PaystackTransaction" pt
+                  WHERE pt."paymentStatusId" = ps.id AND pt.status = 'success')
+          OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
+                     WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'success')
+        ) AS has_success_tx,
+        (
+          EXISTS (SELECT 1 FROM "PaystackTransaction" pt
+                  WHERE pt."paymentStatusId" = ps.id AND pt.status = 'pending')
+          OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
+                     WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'pending')
+        ) AS has_pending_tx,
+        (
+          (SELECT COUNT(*) FROM "PaystackTransaction" pt WHERE pt."paymentStatusId" = ps.id)
+          +
+          (SELECT COUNT(*) FROM "PaymentTransaction" pmt WHERE pmt."paymentStatusId" = ps.id)
+        ) AS tx_count,
+        COUNT(pi.id) FILTER (WHERE pi.paid = false AND pi."dueDate" < NOW()) AS overdue_count,
+        COUNT(pi.id) FILTER (WHERE pi.paid = true) AS paid_count,
+        COUNT(pi.id) AS total_count
+      FROM "PaymentStatus" ps
+      LEFT JOIN "PaymentInstallment" pi ON pi."paymentStatusId" = ps.id
+      GROUP BY ps.id, ps.status, ps."paymentPlan"
+    )
+    SELECT id FROM ps_state WHERE ${classificationSql}
+  `;
+
+      planStatusFilter = matchingPlans.map((p) => p.id);
+
+      if (planStatusFilter.length === 0) {
+        return res.json({
+          transactions: [],
+          count: 0,
+          countBySource: { paystack: 0, unified: 0 },
+        });
+      }
+    }
+
     if (
       gateway &&
       gateway !== "PAYSTACK" &&
@@ -1260,7 +1350,13 @@ salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
     const [paystackRows, paymentRows] = await Promise.all([
       gateway === "PAYSTACK" || gateway === undefined
         ? prismadb.paystackTransaction.findMany({
-            where: dateFilter,
+            where: {
+              ...dateFilter,
+              ...txStatusFilter,
+              ...(planStatusFilter
+                ? { paymentStatusId: { in: planStatusFilter } }
+                : {}),
+            },
             include: transactionInclude,
             orderBy: { paymentDate: "desc" },
           })
@@ -1270,6 +1366,10 @@ salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
         where: {
           ...dateFilter,
           ...(gateway && { paymentGateway: gateway as PAYMENT_GATEWAY }),
+          ...txStatusFilter,
+          ...(planStatusFilter
+            ? { paymentStatusId: { in: planStatusFilter } }
+            : {}),
         },
         include: transactionInclude,
         orderBy: { paymentDate: "desc" },

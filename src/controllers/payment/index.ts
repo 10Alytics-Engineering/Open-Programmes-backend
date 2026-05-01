@@ -759,8 +759,9 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
 
     const transaction = await prismadb.$transaction(
       async (tx) => {
+        let newPaymentStatus = null;
         if (userId && !existingPayment) {
-          await createPaymentStatus(tx, {
+          newPaymentStatus = await createPaymentStatus(tx, {
             userId,
             courseId,
             paymentData,
@@ -774,6 +775,9 @@ paymentApp.post("/initiate-payment", async (req: Request, res: Response) => {
           data: {
             transactionRef: paymentLink.reference,
             paymentGateway: paymentGateway,
+            paymentStatusId: !existingPayment?.id
+              ? newPaymentStatus?.id
+              : existingPayment?.id,
             userId: userId || "IWD_PENDING",
             courseId,
             amount: paymentData.amount.toString(),

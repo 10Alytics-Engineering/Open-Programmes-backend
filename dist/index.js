@@ -113,7 +113,7 @@ node_cron_1.default.schedule("*/30 * * * *", async () => {
         console.error("🔥 [CRON_CRITICAL_ERROR]: Sync job crashed!", err.message);
     }
 });
-server.listen(8001, () => {
+server.listen(8002, () => {
     console.log(`🚀 Pluto Master Current is active at: ${process.env.BACKEND_URL}`);
 });
 //# sourceMappingURL=index.js.map
