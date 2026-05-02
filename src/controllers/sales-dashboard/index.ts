@@ -1187,9 +1187,30 @@ const transactionInclude = {
       user: true,
       course: true,
       cohort: true,
+      paymentInstallments: {
+        select: { paid: true },
+      },
     },
   },
 };
+
+const withPlanCompletion = <T extends any>(rows: T[]) =>
+  rows.map((t: any) => {
+    const installments = t.paymentStatus?.paymentInstallments ?? [];
+    const planType = t.paymentPlan ?? t.paymentStatus?.paymentPlan;
+    const isOneTime = planType === "FULL_PAYMENT" || installments.length === 0;
+    const paidCount = installments.filter((i: any) => i.paid).length;
+    const totalCount = installments.length;
+    const allPaid = totalCount > 0 && paidCount === totalCount;
+
+    return {
+      ...t,
+      planComplete: isOneTime || allPaid,
+      installmentProgress: isOneTime
+        ? null
+        : { paid: paidCount, total: totalCount },
+    };
+  });
 
 // 6. List all transactions
 salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
@@ -1425,7 +1446,9 @@ salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
         return t;
       });
 
-      const sorted = sortByPaymentDateDesc(enrichedTransactions);
+      const sorted = sortByPaymentDateDesc(
+        withPlanCompletion(enrichedTransactions),
+      );
       return res.json({
         transactions: sorted,
         count: sorted.length,
@@ -1446,7 +1469,7 @@ salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
       });
     }
 
-    const sorted = sortByPaymentDateDesc(tagged);
+    const sorted = sortByPaymentDateDesc(withPlanCompletion(tagged));
     res.json({
       transactions: sorted,
       count: sorted.length,
@@ -1456,9 +1479,6 @@ salesDashboardApp.get("/transactions", async (req: Request, res: Response) => {
           sorted.filter(
             (t) => t.source === "unified" && t.paymentGateway === "PAYSTACK",
           ).length,
-        stripe: sorted.filter(
-          (t) => t.source === "unified" && t.paymentGateway === "STRIPE",
-        ).length,
         startButton: sorted.filter(
           (t) => t.source === "unified" && t.paymentGateway === "START_BUTTON",
         ).length,
