@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.convertNairaToOtherCurrency = exports.verifyStartButtonTransaction = exports.initiateStartButtonPayment = exports.verifyPaystackPayment = exports.generatePaymentLink = exports.currenciesInfo = void 0;
+exports.sortByPaymentDateDesc = exports.convertNairaToOtherCurrency = exports.verifyStartButtonTransaction = exports.initiateStartButtonPayment = exports.verifyPaystackPayment = exports.generatePaymentLink = exports.currenciesInfo = void 0;
 const axios_1 = __importDefault(require("axios"));
 const index_1 = require("../index");
 const generate_ref_1 = require("../helpers/generate-ref");
@@ -188,4 +188,10 @@ const getUserEmail = async (userId) => {
     });
     return user?.email || "";
 };
+const sortByPaymentDateDesc = (rows) => rows.sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+});
+exports.sortByPaymentDateDesc = sortByPaymentDateDesc;
 //# sourceMappingURL=paymentService.js.map

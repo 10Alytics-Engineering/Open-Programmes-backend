@@ -479,7 +479,7 @@ paymentApp.get("/start-button-test", async (req, res) => {
         //   ["card", "mobile_money"],
         // // );
         // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-        const paymentData = await verifyPayment("Q4W6ORTYYV");
+        const paymentData = await verifyPayment("DIR83XPPL4D");
         return res.status(200).json({ paymentData });
         // const results = await prismadb.paymentTransaction.findMany({
         //   orderBy: { createdAt: "desc" },
@@ -622,8 +622,9 @@ paymentApp.post("/initiate-payment", async (req, res) => {
                 .json({ error: `Failed to initiate ${paymentGateway} payment link` });
         }
         const transaction = await prismadb_1.prismadb.$transaction(async (tx) => {
+            let newPaymentStatus = null;
             if (userId && !existingPayment) {
-                await createPaymentStatus(tx, {
+                newPaymentStatus = await createPaymentStatus(tx, {
                     userId,
                     courseId,
                     paymentData,
@@ -636,6 +637,9 @@ paymentApp.post("/initiate-payment", async (req, res) => {
                 data: {
                     transactionRef: paymentLink.reference,
                     paymentGateway: paymentGateway,
+                    paymentStatusId: !existingPayment?.id
+                        ? newPaymentStatus?.id
+                        : existingPayment?.id,
                     userId: userId || "IWD_PENDING",
                     courseId,
                     amount: paymentData.amount.toString(),
@@ -857,6 +861,7 @@ async function verifyPayment(reference) {
         let updatedTx = await tx.paymentTransaction.update({
             where: { transactionRef: reference },
             data: {
+                paymentStatusId: userPaymentStatus?.id,
                 status: "success",
                 paymentDate: new Date(),
                 updatedAt: new Date(),

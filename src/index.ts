@@ -95,7 +95,7 @@ cron.schedule("*/30 * * * *", async () => {
   }
 });
 
-server.listen(8001, () => {
+server.listen(8002, () => {
   console.log(
     `🚀 Pluto Master Current is active at: ${process.env.BACKEND_URL}`,
   );
