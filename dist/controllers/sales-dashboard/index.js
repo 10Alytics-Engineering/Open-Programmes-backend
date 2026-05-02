@@ -1037,9 +1037,27 @@ const transactionInclude = {
             user: true,
             course: true,
             cohort: true,
+            paymentInstallments: {
+                select: { paid: true },
+            },
         },
     },
 };
+const withPlanCompletion = (rows) => rows.map((t) => {
+    const installments = t.paymentStatus?.paymentInstallments ?? [];
+    const planType = t.paymentPlan ?? t.paymentStatus?.paymentPlan;
+    const isOneTime = planType === "FULL_PAYMENT" || installments.length === 0;
+    const paidCount = installments.filter((i) => i.paid).length;
+    const totalCount = installments.length;
+    const allPaid = totalCount > 0 && paidCount === totalCount;
+    return {
+        ...t,
+        planComplete: isOneTime || allPaid,
+        installmentProgress: isOneTime
+            ? null
+            : { paid: paidCount, total: totalCount },
+    };
+});
 // 6. List all transactions
 salesDashboardApp.get("/transactions", async (req, res) => {
     try {
@@ -1257,7 +1275,7 @@ salesDashboardApp.get("/transactions", async (req, res) => {
                 }
                 return t;
             });
-            const sorted = (0, paymentService_1.sortByPaymentDateDesc)(enrichedTransactions);
+            const sorted = (0, paymentService_1.sortByPaymentDateDesc)(withPlanCompletion(enrichedTransactions));
             return res.json({
                 transactions: sorted,
                 count: sorted.length,
@@ -1269,14 +1287,13 @@ salesDashboardApp.get("/transactions", async (req, res) => {
                 },
             });
         }
-        const sorted = (0, paymentService_1.sortByPaymentDateDesc)(tagged);
+        const sorted = (0, paymentService_1.sortByPaymentDateDesc)(withPlanCompletion(tagged));
         res.json({
             transactions: sorted,
             count: sorted.length,
             countBySource: {
                 paystack: sorted.filter((t) => t.source === "paystack").length +
                     sorted.filter((t) => t.source === "unified" && t.paymentGateway === "PAYSTACK").length,
-                stripe: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "STRIPE").length,
                 startButton: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "START_BUTTON").length,
             },
         });
