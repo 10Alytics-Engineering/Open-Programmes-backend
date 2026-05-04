@@ -62,12 +62,6 @@ const corsOptions = {
         process.env.NEXT_LOCAL_APP_URL || "",
         process.env.NEXT_LOCAL_ADMIN_APP_URL || "",
         process.env.NEXT_TEST_APP_URL || "",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:3002",
-        "http://127.0.0.1:3002",
         "https://paystack.com",
     ].filter(Boolean),
 };
@@ -84,8 +78,37 @@ app.use("/api/admin", sales_dashboard_1.default); // Add this line
 app.use("/uploads", express_1.default.static(path_1.default.join(process.cwd(), "uploads")));
 app.use(express_1.default.static(path_1.default.join(process.cwd(), "public")));
 const server = http_1.default.createServer(app);
-node_cron_1.default.schedule("0 * * * *", async () => {
-    console.log("🔄 Running hourly transaction cleanup...", new Date().toISOString());
+// Live Class Notifications Task (Every minute)
+node_cron_1.default.schedule("* * * * *", async () => {
+    const { notifyCohortMembers } = await Promise.resolve().then(() => __importStar(require("./utils/liveClassNotifications")));
+    const now = new Date();
+    const in30Mins = new Date(now.getTime() + 30 * 60 * 1000);
+    try {
+        // 1. 30 Minutes Reminder
+        const soonClasses = await prismadb_1.prismadb.liveClass.findMany({
+            where: {
+                startTime: { lte: in30Mins, gte: now },
+                notified30m: false,
+            }
+        });
+        for (const lc of soonClasses) {
+            await notifyCohortMembers(lc.id, 'reminder');
+        }
+        // 2. Class Started Notification
+        const startingClasses = await prismadb_1.prismadb.liveClass.findMany({
+            where: {
+                startTime: { lte: now },
+                endTime: { gte: now },
+                notifiedStart: false,
+            }
+        });
+        for (const lc of startingClasses) {
+            await notifyCohortMembers(lc.id, 'started');
+        }
+    }
+    catch (err) {
+        console.error("Cron Live Class Notify Error:", err);
+    }
 });
 // Run Google Sheets Full Sync every 30 minutes
 node_cron_1.default.schedule("*/30 * * * *", async () => {
