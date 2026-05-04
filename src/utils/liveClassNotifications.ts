@@ -48,7 +48,16 @@ export const sendLiveClassEmail = async (
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="margin:0; font-size: 24px;">10Alytics Business Live</h1>
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="vertical-align: middle; padding-right: 10px;">
+                    <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                  </td>
+                  <td style="vertical-align: middle;">
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business Live</h1>
+                  </td>
+                </tr>
+              </table>
             </div>
             <div class="content">
               <p>Hi ${recipient.name || 'Student'},</p>
