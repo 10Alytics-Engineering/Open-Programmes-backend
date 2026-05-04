@@ -6,7 +6,7 @@ export const sendLiveClassEmail = async (
   liveClass: any,
   type: 'creation' | 'reminder' | 'started'
 ) => {
-  const joinLink = `${process.env.NEXT_PUBLIC_APP_URL}/join-live?classId=${liveClass.id}&userId=${recipient.userId}`;
+  const joinLink = `${process.env.NEXT_PUBLIC_APP_URL}/join-live?classId=${liveClass.id}&email=${recipient.email}`;
 
   let subject = "";
   let message = "";
@@ -62,11 +62,6 @@ export const sendLiveClassEmail = async (
               <div style="text-align: center;">
                 <a href="${joinLink}" class="btn">Join Class Now</a>
               </div>
-              
-              <p style="font-size: 13px; color: #777; margin-top: 30px; text-align: center;">
-                If the button doesn't work, copy this link:<br>
-                <span style="color: #6742FA; word-break: break-all;">${joinLink}</span>
-              </p>
             </div>
             <div class="footer">
               <p>You're receiving this because you're enrolled in a 10Alytics Business program.</p>

@@ -4,9 +4,20 @@ exports.getLiveClassDetails = exports.getLiveClassesForUser = exports.recordAtte
 const prismadb_1 = require("../../lib/prismadb");
 const recordAttendance = async (req, res) => {
     try {
-        const { liveClassId, userId } = req.body;
-        if (!liveClassId || !userId) {
+        const { liveClassId, userId: providedUserId, email: providedEmail } = req.body;
+        if (!liveClassId || (!providedUserId && !providedEmail)) {
             return res.status(400).json({ error: "Missing required fields" });
+        }
+        let userId = providedUserId;
+        // If userId not provided, lookup by email
+        if (!userId && providedEmail) {
+            const user = await prismadb_1.prismadb.user.findUnique({
+                where: { email: providedEmail }
+            });
+            if (!user) {
+                return res.status(404).json({ error: "User not found" });
+            }
+            userId = user.id;
         }
         // Check if attendance already recorded
         const existing = await prismadb_1.prismadb.liveClassAttendance.findUnique({
