@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
-import { sendClassroomNotificationEmail } from "../authentication/mail";
+import { 
+  sendClassroomNotificationEmail 
+} from "../authentication/mail";
+import { notifyCohortMembers } from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
 
 export const getClassroomData = async (req: Request, res: Response) => {
@@ -57,28 +60,68 @@ export const getClassroomData = async (req: Request, res: Response) => {
 export const getClassroomTopics = async (req: Request, res: Response) => {
   try {
     const { cohortId } = req.params;
+    const { cohortCourseId } = req.query;
 
-    const topics = await prismadb.classroomTopic.findMany({
-      where: {
-        cohortCourse: {
-          cohortId: cohortId,
+    let topicsWhere: any = {};
+    let itemsWhere: any = {};
+
+    if (cohortId) {
+      topicsWhere = { cohortCourse: { cohortId } };
+      itemsWhere = { cohortCourse: { cohortId }, classroomTopicId: null };
+    } else if (cohortCourseId) {
+      topicsWhere = { cohortCourseId: cohortCourseId as string };
+      itemsWhere = { cohortCourseId: cohortCourseId as string, classroomTopicId: null };
+    } else {
+      return res.status(400).json({ error: "Missing identifying parameter (cohortId or cohortCourseId)" });
+    }
+
+    const [topics, unassignedAssignments, unassignedMaterials, unassignedRecordings, unassignedLiveClasses] = await Promise.all([
+      prismadb.classroomTopic.findMany({
+        where: topicsWhere,
+        include: {
+          assignments: {
+            orderBy: { createdAt: "asc" },
+          },
+          classMaterials: {
+            orderBy: { createdAt: "asc" },
+          },
+          classRecordings: {
+            orderBy: { createdAt: "asc" },
+          },
+          liveClasses: {
+            orderBy: { createdAt: "asc" },
+          },
         },
-      },
-      include: {
-        assignments: {
-          orderBy: { createdAt: "asc" },
-        },
-        classMaterials: {
-          orderBy: { createdAt: "asc" },
-        },
-        classRecordings: {
-          orderBy: { createdAt: "asc" },
-        },
-      },
-      orderBy: [{ isPinned: "desc" }, { order: "asc" }, { createdAt: "desc" }],
+        orderBy: [{ isPinned: "desc" }, { order: "asc" }, { createdAt: "desc" }],
+      }),
+      prismadb.assignment.findMany({
+        where: itemsWhere,
+        orderBy: { createdAt: "desc" },
+      }),
+      prismadb.classMaterial.findMany({
+        where: itemsWhere,
+        orderBy: { createdAt: "desc" },
+      }),
+      prismadb.classRecording.findMany({
+        where: itemsWhere,
+        orderBy: { createdAt: "desc" },
+      }),
+      // @ts-ignore
+      prismadb.liveClass.findMany({
+        where: itemsWhere,
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    res.json({ 
+      topics,
+      unassignedItems: {
+        assignments: unassignedAssignments,
+        materials: unassignedMaterials,
+        recordings: unassignedRecordings,
+        liveClasses: unassignedLiveClasses
+      }
     });
-
-    res.json({ topics });
   } catch (error) {
     console.error("Topics error:", error);
     res.status(500).json({ error: "Failed to fetch topics" });
@@ -222,35 +265,44 @@ export const deleteTopic = async (req: Request, res: Response) => {
 
 export const addSubItem = async (req: Request, res: Response) => {
   try {
-    const { topicId, type, data } = req.body;
+    const { topicId, cohortCourseId, type, data } = req.body;
 
-    const topic = await prismadb.classroomTopic.findUnique({
-      where: { id: topicId },
-      select: {
-        id: true,
-        cohortCourseId: true,
-        cohortCourse: {
-          select: {
-            id: true,
-            cohortId: true,
-            cohort: {
-              select: {
-                name: true
-              }
+    let targetCohortCourseId = cohortCourseId;
+    let cohortId = "";
+    let cohortName = "Classroom";
+
+    if (topicId) {
+      const topic = await prismadb.classroomTopic.findUnique({
+        where: { id: topicId },
+        select: {
+          cohortCourseId: true,
+          cohortCourse: {
+            select: {
+              cohortId: true,
+              cohort: { select: { name: true } }
             }
-          },
-        },
-      },
-    });
+          }
+        }
+      });
 
-    if (!topic) {
-      return res.status(404).json({ error: "Topic not found" });
-    }
+      if (!topic) return res.status(404).json({ error: "Topic not found" });
+      targetCohortCourseId = topic.cohortCourseId;
+      cohortId = topic.cohortCourse.cohortId;
+      cohortName = topic.cohortCourse.cohort.name;
+    } else {
+      // If no topic and no cohortCourseId, we can't proceed
+      if (!targetCohortCourseId) {
+        return res.status(400).json({ error: "Either topicId or cohortCourseId must be provided" });
+      }
 
-    if (!topic.cohortCourseId) {
-      return res
-        .status(400)
-        .json({ error: "Topic is not associated with a valid cohort course" });
+      // Fetch cohort name for notification
+      const cohortCourse = await prismadb.cohortCourse.findUnique({
+        where: { id: targetCohortCourseId },
+        include: { cohort: { select: { id: true, name: true } } }
+      });
+      if (!cohortCourse) return res.status(404).json({ error: "Cohort course not found" });
+      cohortId = cohortCourse.cohort.id;
+      cohortName = cohortCourse.cohort.name;
     }
 
     let result;
@@ -260,8 +312,8 @@ export const addSubItem = async (req: Request, res: Response) => {
         result = await prismadb.assignment.create({
           data: {
             ...data,
-            classroomTopicId: topicId,
-            cohortCourseId: topic.cohortCourseId,
+            classroomTopicId: topicId || null,
+            cohortCourseId: targetCohortCourseId,
           },
         });
         break;
@@ -269,8 +321,8 @@ export const addSubItem = async (req: Request, res: Response) => {
         result = await prismadb.classMaterial.create({
           data: {
             ...data,
-            classroomTopicId: topicId,
-            cohortCourseId: topic.cohortCourseId,
+            classroomTopicId: topicId || null,
+            cohortCourseId: targetCohortCourseId,
           },
         });
         break;
@@ -278,10 +330,24 @@ export const addSubItem = async (req: Request, res: Response) => {
         result = await prismadb.classRecording.create({
           data: {
             ...data,
-            classroomTopicId: topicId,
-            cohortCourseId: topic.cohortCourseId,
+            classroomTopicId: topicId || null,
+            cohortCourseId: targetCohortCourseId,
           },
         });
+        break;
+      case "liveClass":
+        // @ts-ignore - Prisma might be generating locally
+        result = await prismadb.liveClass.create({
+          data: {
+            ...data,
+            classroomTopicId: topicId || null,
+            cohortCourseId: targetCohortCourseId,
+          },
+        });
+        // Trigger notification asynchronously
+        notifyCohortMembers(result.id, 'creation').catch(err => 
+          console.error("Failed to send creation notification:", err)
+        );
         break;
       default:
         return res.status(400).json({ error: "Invalid item type" });
@@ -290,7 +356,7 @@ export const addSubItem = async (req: Request, res: Response) => {
     // Send Notification to all students in the cohort
     try {
       const students = await prismadb.userCohort.findMany({
-        where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+        where: { cohortId: cohortId, isActive: true },
         include: { user: { select: { email: true } } }
       });
 
@@ -300,7 +366,7 @@ export const addSubItem = async (req: Request, res: Response) => {
       if (emails.length > 0) {
         await sendClassroomNotificationEmail(
           emails,
-          topic.cohortCourse.cohort.name,
+          cohortName,
           type,
           data.title,
           data.description || data.instructions || "",
@@ -418,7 +484,8 @@ export const getStreamActivities = async (req: Request, res: Response) => {
       materials,
       recordings,
       announcements,
-      streamPosts
+      streamPosts,
+      liveClasses
     ] = await Promise.all([
       // Topics
       prismadb.classroomTopic.findMany({
@@ -532,6 +599,24 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
+      // Live Classes
+      prismadb.liveClass.findMany({
+        where: {
+          cohortCourse: {
+            cohortId: cohortId,
+          },
+        },
+        include: {
+          cohortCourse: {
+            include: {
+              cohort: true,
+            },
+          },
+          classroomTopic: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
     ]);
 
     // Combine all activities into one stream
@@ -620,6 +705,22 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         createdAt: post.createdAt.toISOString(),
         metadata: {
           postId: post.id,
+        },
+      })),
+
+      ...liveClasses.map(live => ({
+        id: `live-${live.id}`,
+        type: 'live' as const,
+        title: live.title,
+        description: live.description || "Join our live session!",
+        author: { id: 'system', name: 'Instructor' },
+        createdAt: live.createdAt.toISOString(),
+        metadata: {
+          liveClassId: live.id,
+          startTime: live.startTime.toISOString(),
+          endTime: live.endTime.toISOString(),
+          liveLink: live.liveLink,
+          topicTitle: live.classroomTopic?.title,
         },
       })),
     ];
@@ -734,5 +835,130 @@ export const deleteRecording = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Delete recording error:", error);
     res.status(500).json({ error: "Failed to delete recording" });
+  }
+};
+
+export const deleteLiveClass = async (req: Request, res: Response) => {
+  try {
+    const { liveClassId } = req.params;
+
+    const liveClass = await prismadb.liveClass.findUnique({
+      where: { id: liveClassId }
+    });
+
+    if (!liveClass) {
+      return res.status(404).json({ error: "Live class not found" });
+    }
+
+    await prismadb.liveClass.delete({
+      where: { id: liveClassId }
+    });
+
+    res.json({
+      message: "Live class deleted successfully",
+      deletedLiveClass: {
+        id: liveClass.id,
+        title: liveClass.title
+      }
+    });
+  } catch (error) {
+    console.error("Delete live class error:", error);
+    res.status(500).json({ error: "Failed to delete live class" });
+  }
+};
+
+export const joinLiveClass = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const user = req.user as NebiantUser;
+
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Record attendance
+    await prismadb.liveClassAttendance.upsert({
+      where: {
+        liveClassId_userId: {
+          liveClassId: id,
+          userId: user.id
+        }
+      },
+      update: { joinedAt: new Date() },
+      create: {
+        liveClassId: id,
+        userId: user.id
+      }
+    });
+
+    // Get live class link for redirection
+    const liveClass = await prismadb.liveClass.findUnique({
+      where: { id }
+    });
+
+    if (!liveClass) {
+      return res.status(404).json({ error: "Live class not found" });
+    }
+
+    res.json({ liveLink: liveClass.liveLink });
+  } catch (error) {
+    console.error("Join live class error:", error);
+    res.status(500).json({ error: "Failed to join live class" });
+  }
+};
+
+export const getLiveClassAttendance = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const attendance = await prismadb.liveClassAttendance.findMany({
+      where: { liveClassId: id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true
+          }
+        }
+      },
+      orderBy: { joinedAt: "desc" }
+    });
+
+    const liveClass = await prismadb.liveClass.findUnique({
+      where: { id },
+      select: { title: true, startTime: true }
+    });
+
+    res.json({ attendance, liveClass });
+  } catch (error) {
+    console.error("Get attendance error:", error);
+    res.status(500).json({ error: "Failed to fetch attendance" });
+  }
+};
+
+export const getCohortLiveClasses = async (req: Request, res: Response) => {
+  try {
+    const { cohortId } = req.params;
+
+    const liveClasses = await prismadb.liveClass.findMany({
+      where: {
+        cohortCourse: {
+          cohortId: cohortId
+        }
+      },
+      include: {
+        _count: {
+          select: { attendance: true }
+        }
+      },
+      orderBy: { startTime: "desc" }
+    });
+
+    res.json({ liveClasses });
+  } catch (error) {
+    console.error("Get cohort live classes error:", error);
+    res.status(500).json({ error: "Failed to fetch live classes" });
   }
 };

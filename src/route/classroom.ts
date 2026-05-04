@@ -11,7 +11,10 @@ import {
   createStreamPost,
   deleteAssignment,
   deleteMaterial,
-  deleteRecording
+  deleteRecording,
+  joinLiveClass,
+  getLiveClassAttendance,
+  getCohortLiveClasses
 } from "../controllers/classroom";
 import {
   addBatchItem,
@@ -27,6 +30,7 @@ export default (router: express.Router) => {
     getTopicsForCohorts
   );
   router.get("/classroom/:cohortId", isLoggedIn, getClassroomData);
+  router.get("/classroom/topics", isLoggedIn, getClassroomTopics);
   router.get("/classroom/:cohortId/topics", isLoggedIn, getClassroomTopics);
   router.get("/stream/:cohortId", isLoggedIn, getStreamPosts);
   router.get("/stream/:cohortId/activities", isLoggedIn, getStreamActivities);
@@ -45,6 +49,9 @@ export default (router: express.Router) => {
     deleteTopic
   );
   router.post("/classroom/items", isLoggedIn, isCourseAdmin, addSubItem);
+  router.post("/classroom/live-class/:id/join", isLoggedIn, joinLiveClass);
+  router.get("/classroom/live-class/:id/attendance", isLoggedIn, isCourseAdmin, getLiveClassAttendance);
+  router.get("/classroom/:cohortId/live-classes", isLoggedIn, isCourseAdmin, getCohortLiveClasses);
 
   // Batch operations
   router.post(

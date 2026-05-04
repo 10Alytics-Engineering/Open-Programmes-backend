@@ -128,22 +128,22 @@ model PaymentStatus {
   paystackTransactions PaystackTransaction[]
   secondPaymentDueDate DateTime?
   desiredStartDate     DateTime?
-  
-  changeRequests       ChangeRequest[]
+
+  changeRequests ChangeRequest[]
 
   @@unique([userId, courseId])
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          UserRole  @default(USER)
-  accounts      Account[]
-  access_token  String?
+  id                   String    @id @default(cuid())
+  name                 String
+  email                String?   @unique
+  emailVerified        DateTime?
+  image                String?
+  password             String?
+  role                 UserRole  @default(USER)
+  accounts             Account[]
+  access_token         String?
   accountPaymentStatus String?   @default("UNPAID")
 
   phone_number String? @unique
@@ -154,7 +154,7 @@ model User {
   ongoing_courses   String[] //return Ids
   completed_courses String[] //return Ids
 
-  course_purchased     Purchase[]
+  course_purchased Purchase[]
 
   cohorts UserCohort[] // return userId, cohortId, cohort
 
@@ -164,55 +164,56 @@ model User {
   //Make adjustments based on courseId
   paymentStatus PaymentStatus[]
   inactive      Boolean         @default(false)
- 
-  changeRequests     ChangeRequest[] @relation("UserChangeRequests")
-  processedChangeRequests  ChangeRequest[] @relation("ProcessedBy")
+
+  changeRequests          ChangeRequest[] @relation("UserChangeRequests")
+  processedChangeRequests ChangeRequest[] @relation("ProcessedBy")
 
   // New connections for assignments and discussions
-  streamPost  StreamPost[]
-  assignmentSubmissions AssignmentSubmission[]
+  streamPost                StreamPost[]
+  assignmentSubmissions     AssignmentSubmission[]
   assignmentQuizSubmissions AssignmentQuizSubmission[]
-  announcements         Announcement[]
-  comments              Comment[]
-  gradedSubmissions     AssignmentSubmission[] @relation("GradedBy")
+  announcements             Announcement[]
+  comments                  Comment[]
+  gradedSubmissions         AssignmentSubmission[]     @relation("GradedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   scholarshipApplications ScholarshipApplication[]
+  liveClassAttendance     LiveClassAttendance[]
 }
 
 model ChangeRequest {
-  id                String        @id @default(cuid())
-  type              RequestType
-  userId            String
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade, name: "UserChangeRequests")
-  
+  id     String      @id @default(cuid())
+  type   RequestType
+  userId String
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade, name: "UserChangeRequests")
+
   // For course change
-  currentCourseId   String?
-  currentCourse     Course?       @relation(fields: [currentCourseId], references: [id], name: "CurrentCourse", onDelete: SetNull)
-  desiredCourseId   String?
-  desiredCourse     Course?       @relation(fields: [desiredCourseId], references: [id], name: "DesiredCourse", onDelete: SetNull)
-  
+  currentCourseId String?
+  currentCourse   Course? @relation(fields: [currentCourseId], references: [id], name: "CurrentCourse", onDelete: SetNull)
+  desiredCourseId String?
+  desiredCourse   Course? @relation(fields: [desiredCourseId], references: [id], name: "DesiredCourse", onDelete: SetNull)
+
   // For deferment
-  currentCohortId   String?
-  currentCohort     Cohort?       @relation(fields: [currentCohortId], references: [id], name: "CurrentCohort", onDelete: SetNull)
-  desiredCohortId   String?
-  desiredCohort     Cohort?       @relation(fields: [desiredCohortId], references: [id], name: "DesiredCohort", onDelete: SetNull)
-  
-  reason            String
-  status            RequestStatus @default(PENDING)
-  adminReason       String?
-  paymentStatusId   String?
-  paymentStatus     PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
-  processedById     String?
-  processedBy       User?         @relation(fields: [processedById], references: [id], name: "ProcessedBy")
-  processedAt       DateTime?
-  paymentDueDate    DateTime?
-  paymentLink       String?
-  
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  currentCohortId String?
+  currentCohort   Cohort? @relation(fields: [currentCohortId], references: [id], name: "CurrentCohort", onDelete: SetNull)
+  desiredCohortId String?
+  desiredCohort   Cohort? @relation(fields: [desiredCohortId], references: [id], name: "DesiredCohort", onDelete: SetNull)
+
+  reason          String
+  status          RequestStatus  @default(PENDING)
+  adminReason     String?
+  paymentStatusId String?
+  paymentStatus   PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
+  processedById   String?
+  processedBy     User?          @relation(fields: [processedById], references: [id], name: "ProcessedBy")
+  processedAt     DateTime?
+  paymentDueDate  DateTime?
+  paymentLink     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([status])
@@ -236,8 +237,8 @@ model UserCohort {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  isActive      Boolean   @default(true)
-  archivedAt    DateTime?
+  isActive             Boolean   @default(true)
+  archivedAt           DateTime?
   previousEnrollmentId String?
 
   @@unique([userId, cohortId, courseId])
@@ -256,7 +257,7 @@ model Cohort {
   users           UserCohort[] // return userId, user and cohortId
   cohortCourses   CohortCourse[]
   paymentStatuses PaymentStatus[]
-  
+
   // ADDED: Relations for ChangeRequest
   currentChangeRequests ChangeRequest[] @relation("CurrentCohort")
   desiredChangeRequests ChangeRequest[] @relation("DesiredCohort")
@@ -283,7 +284,7 @@ model CohortCourse {
   course_instructor_title       String?
   course_instructor_description String? @db.Text
   brochureUrl                   String?
-  onboardingBrochureUrl String?
+  onboardingBrochureUrl         String?
   course_preview_video          String?
 
   cohortTimeTable   CohortCourseTimeTable[]
@@ -295,11 +296,12 @@ model CohortCourse {
 
   // New connections
   classroomTopic ClassroomTopic[]
-  streamPost  StreamPost[]
-  assignments   Assignment[]
-  announcements Announcement[]
-  classMaterial ClassMaterial[]
+  streamPost     StreamPost[]
+  assignments    Assignment[]
+  announcements  Announcement[]
+  classMaterial  ClassMaterial[]
   classRecording ClassRecording[]
+  liveClasses    LiveClass[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -478,37 +480,36 @@ model Course {
 
   timetable TimeTable[]
 
-  cohorts              Cohort[]
-  cohortCourses        CohortCourse[]
-  paymentStatuses      PaymentStatus[]
-  facilitators Facilitator[]
+  cohorts         Cohort[]
+  cohortCourses   CohortCourse[]
+  paymentStatuses PaymentStatus[]
+  facilitators    Facilitator[]
 
   currentChangeRequests ChangeRequest[] @relation("CurrentCourse")
   desiredChangeRequests ChangeRequest[] @relation("DesiredCourse")
 
-  syllabus        String? @db.Text
+  syllabus String? @db.Text
 
-  pricingPlans    CoursePricingPlan[]
+  pricingPlans CoursePricingPlan[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model CoursePricingPlan {
-  id                   String   @id @default(cuid())
+  id                   String @id @default(cuid())
   courseId             String
-  course               Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  planType             String   // e.g., "FULL_PAYMENT", "TWO_INSTALLMENTS", "THREE_INSTALLMENTS", etc.
-  amountPerInstallment Float    // The price per installment
-  installmentsCount    Int      // 1, 2, 3, 4, 5
-  discountPrice        Float?   // The "fake" original price to show as discount
-  
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  course               Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  planType             String // e.g., "FULL_PAYMENT", "TWO_INSTALLMENTS", "THREE_INSTALLMENTS", etc.
+  amountPerInstallment Float // The price per installment
+  installmentsCount    Int // 1, 2, 3, 4, 5
+  discountPrice        Float? // The "fake" original price to show as discount
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([courseId, planType])
 }
-
 
 model CourseWeek {
   id String @id @default(cuid())
@@ -672,7 +673,7 @@ model PaystackTransaction {
   transactionRef   String         @unique
   userId           String
   courseId         String
-  paymentType      String?  
+  paymentType      String?
   paymentPlan      String?
   paymentStatusId  String?
   paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
@@ -692,11 +693,11 @@ model PaystackTransaction {
 
 model PaymentTransaction {
   id               String         @id @default(cuid())
-  transactionRef   String?         @unique
+  transactionRef   String?        @unique
   paymentGateway   PaymentSource
   userId           String
   courseId         String
-  paymentType      String?  
+  paymentType      String?
   paymentPlan      String?
   paymentStatusId  String?
   paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
@@ -713,7 +714,6 @@ model PaymentTransaction {
   @@index([status])
   @@index([createdAt])
 }
-
 
 model CatalogHeaderTags {
   id       String  @id @default(cuid())
@@ -822,18 +822,18 @@ model sessions {
 }
 
 model Facilitator {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  email       String   @unique
+  email       String  @unique
   phoneNumber String
   imageUrl    String?
   bio         String?
   title       String?
-  
-  courses     Course[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  courses Course[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Links {
@@ -846,17 +846,17 @@ model Links {
 }
 
 model programLeads {
-  id            Int       @id @default(autoincrement())
-  programType   String
-  firstName     String
-  lastName      String
-  email         String
-  gender        String
-  phoneNumber   String
-  hearAbout     String?
-  otherSource   String?
-  createdAt     DateTime? @default(now())
-  updatedAt     DateTime? @updatedAt
+  id          Int       @id @default(autoincrement())
+  programType String
+  firstName   String
+  lastName    String
+  email       String
+  gender      String
+  phoneNumber String
+  hearAbout   String?
+  otherSource String?
+  createdAt   DateTime? @default(now())
+  updatedAt   DateTime? @updatedAt
 }
 
 // Add to your existing schema - All new models start with "AssignmentQuiz"
@@ -866,102 +866,101 @@ enum AssignmentType {
 }
 
 model Assignment {
-  id          String   @id @default(cuid())
-  title       String
-  description String?  @db.Text
-  instructions String? @db.Text
-  dueDate     DateTime?
-  points      Int?
-  type        AssignmentType @default(REGULAR)
-  
+  id           String         @id @default(cuid())
+  title        String
+  description  String?        @db.Text
+  instructions String?        @db.Text
+  dueDate      DateTime?
+  points       Int?
+  type         AssignmentType @default(REGULAR)
+
   // Quiz specific fields
-  assignmentQuizQuestions AssignmentQuizQuestion[]
-  assignmentQuizSubmissions AssignmentQuizSubmission[]  // ADD THIS LINE
-  
+  assignmentQuizQuestions   AssignmentQuizQuestion[]
+  assignmentQuizSubmissions AssignmentQuizSubmission[] // ADD THIS LINE
+
   cohortCourseId String
   cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
+
   cohortCourseModuleId String?
   cohortCourseModule   CohortCourseModule? @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
-  
+
   attachments AssignmentAttachment[]
   submissions AssignmentSubmission[]
-  
+
   classroomTopicId String?
   classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model AssignmentQuizQuestion {
-  id            String   @id @default(cuid())
-  question      String
-  order         Int      @default(0)
-  points        Int      @default(1)
-  
-  assignmentId  String
-  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  
+  id       String @id @default(cuid())
+  question String
+  order    Int    @default(0)
+  points   Int    @default(1)
+
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
   assignmentQuizOptions AssignmentQuizOption[]
-  assignmentQuizAnswers AssignmentQuizAnswer[]  // ADD THIS LINE
-  
+  assignmentQuizAnswers AssignmentQuizAnswer[] // ADD THIS LINE
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model AssignmentQuizOption {
-  id              String   @id @default(cuid())
-  text            String
-  isCorrect       Boolean  @default(false)
-  order           Int      @default(0)
-  
-  assignmentQuizQuestionId  String
-  assignmentQuizQuestion    AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
-  
-  assignmentQuizAnswers AssignmentQuizAnswer[]  // ADD THIS LINE
-  
+  id        String  @id @default(cuid())
+  text      String
+  isCorrect Boolean @default(false)
+  order     Int     @default(0)
+
+  assignmentQuizQuestionId String
+  assignmentQuizQuestion   AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
+
+  assignmentQuizAnswers AssignmentQuizAnswer[] // ADD THIS LINE
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model AssignmentQuizSubmission {
-  id              String   @id @default(cuid())
-  assignmentId    String
-  assignment      Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  
-  studentId       String
-  student         User     @relation(fields: [studentId], references: [id])
-  
+  id           String     @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id])
+
   assignmentQuizAnswers AssignmentQuizAnswer[]
-  totalScore      Int
-  maxScore        Int
-  submittedAt     DateTime @default(now())
-  
-  @@unique([assignmentId, studentId])
-  
+  totalScore            Int
+  maxScore              Int
+  submittedAt           DateTime               @default(now())
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([assignmentId, studentId])
 }
 
 model AssignmentQuizAnswer {
-  id               String   @id @default(cuid())
+  id                         String                   @id @default(cuid())
   assignmentQuizSubmissionId String
   assignmentQuizSubmission   AssignmentQuizSubmission @relation(fields: [assignmentQuizSubmissionId], references: [id], onDelete: Cascade)
-  
-  assignmentQuizQuestionId       String
-  assignmentQuizQuestion         AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
-  
+
+  assignmentQuizQuestionId String
+  assignmentQuizQuestion   AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
+
   selectedAssignmentQuizOptionId String
   selectedAssignmentQuizOption   AssignmentQuizOption @relation(fields: [selectedAssignmentQuizOptionId], references: [id], onDelete: Cascade)
-  
-  isCorrect        Boolean
-  pointsEarned     Int
-  
+
+  isCorrect    Boolean
+  pointsEarned Int
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
 
 model AssignmentAttachment {
   id           String     @id @default(cuid())
@@ -969,153 +968,189 @@ model AssignmentAttachment {
   url          String
   assignmentId String
   assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model AssignmentSubmission {
-  id           String     @id @default(cuid())
-  content      String?    @db.Text  // For text submissions
-  fileUrl      String?    // For file submissions
-  submittedAt  DateTime   @default(now())
-  
+  id          String   @id @default(cuid())
+  content     String?  @db.Text // For text submissions
+  fileUrl     String? // For file submissions
+  submittedAt DateTime @default(now())
+
   // Grading
-  grade        Int?       // e.g., 85/100
-  feedback     String?    @db.Text
-  gradedAt     DateTime?
-  gradedById   String?
-  gradedBy     User?      @relation(fields: [gradedById], references: [id], name: "GradedBy")
-  
+  grade      Int? // e.g., 85/100
+  feedback   String?   @db.Text
+  gradedAt   DateTime?
+  gradedById String?
+  gradedBy   User?     @relation(fields: [gradedById], references: [id], name: "GradedBy")
+
   // Relations
   assignmentId String
   assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   studentId    String
   student      User       @relation(fields: [studentId], references: [id])
-  
+
   // Comments on submissions
-  comments     Comment[]
-  
-  @@unique([assignmentId, studentId]) // One submission per student per assignment
-  
+  comments Comment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([assignmentId, studentId]) // One submission per student per assignment
 }
 
 model Announcement {
-  id             String   @id @default(cuid())
-  title          String
-  content        String   @db.Text
-  isPinned       Boolean  @default(false)
-  
+  id       String  @id @default(cuid())
+  title    String
+  content  String  @db.Text
+  isPinned Boolean @default(false)
+
   cohortCourseId String
   cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  authorId       String
-  author         User     @relation(fields: [authorId], references: [id])
-  
-  comments       Comment[]
-  
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  comments Comment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Comment {
-  id             String      @id @default(cuid())
-  content        String      @db.Text
-  authorId       String
-  author         User        @relation(fields: [authorId], references: [id])
-  
+  id       String @id @default(cuid())
+  content  String @db.Text
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
   // Can comment on announcements, assignment submissions, or stream posts
   announcementId String?
   announcement   Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
-  
-  submissionId   String?
-  submission     AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  
-  streamPostId   String?
-  streamPost     StreamPost? @relation(fields: [streamPostId], references: [id], onDelete: Cascade)
-  
+
+  submissionId String?
+  submission   AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  streamPostId String?
+  streamPost   StreamPost? @relation(fields: [streamPostId], references: [id], onDelete: Cascade)
+
   // For nested comments/replies
-  parentId       String?
-  parent         Comment?    @relation("CommentReplies", fields: [parentId], references: [id])
-  replies        Comment[]   @relation("CommentReplies")
-      
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model ClassroomTopic {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?  @db.Text
-  isPinned        Boolean  @default(false)
-  order           Int      @default(0)
-  
-  cohortCourseId  String
-  cohortCourse    CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
+  id          String  @id @default(cuid())
+  title       String
+  description String? @db.Text
+  isPinned    Boolean @default(false)
+  order       Int     @default(0)
+
+  cohortCourseId String
+  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+
   // Subs: assignments, materials, recordings with CASCADE delete
   assignments     Assignment[]
   classMaterials  ClassMaterial[]
   classRecordings ClassRecording[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  liveClasses     LiveClass[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([cohortCourseId, isPinned, order])
   @@map("classroom_topics")
 }
 
 model ClassMaterial {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   title       String
   description String?
   fileUrl     String
-  fileType    String   @default("pdf")
-  
+  fileType    String  @default("pdf")
+
   cohortCourseId String
   cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
+
   classroomTopicId String?
   classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model ClassRecording {
-  id           String   @id @default(cuid())
+  id           String  @id @default(cuid())
   title        String
   description  String?
   recordingUrl String
-  
+
   cohortCourseId String
   cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
 
   classroomTopicId String?
   classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+model LiveClass {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  liveLink    String
+  startTime   DateTime
+  endTime     DateTime
+
+  notified30m   Boolean @default(false)
+  notifiedStart Boolean @default(false)
+
+  cohortCourseId String
+  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+
+  classroomTopicId String?
+  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
+
+  attendance LiveClassAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LiveClassAttendance {
+  id          String    @id @default(cuid())
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([liveClassId, userId])
+}
+
 model StreamPost {
-  id              String   @id @default(cuid())
-  title           String
-  content         String   @db.Text
-  isPinned        Boolean  @default(false)
-  authorId        String
-  author          User     @relation(fields: [authorId], references: [id])
-  
-  cohortCourseId  String
-  cohortCourse    CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  comments        Comment[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  id       String  @id @default(cuid())
+  title    String
+  content  String  @db.Text
+  isPinned Boolean @default(false)
+  authorId String
+  author   User    @relation(fields: [authorId], references: [id])
+
+  cohortCourseId String
+  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+
+  comments Comment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@map("stream_posts")
 }
 
@@ -1139,24 +1174,24 @@ model ScholarshipApplication {
 }
 
 model WebinarAiAutomation {
-  id                  String   @id @default(cuid())
+  id                  String  @id @default(cuid())
   full_name           String
   email               String
   phone               String
   skill_interested_in String?
-  terms_accepted      Boolean  @default(true)
+  terms_accepted      Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model WebinarGenerativeAiData {
-  id                  String   @id @default(cuid())
+  id                  String  @id @default(cuid())
   full_name           String
   email               String
   phone               String
   skill_interested_in String?
-  terms_accepted      Boolean  @default(true)
+  terms_accepted      Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
