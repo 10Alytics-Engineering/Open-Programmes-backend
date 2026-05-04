@@ -380,20 +380,26 @@ exports.getStreamPosts = getStreamPosts;
 const createStreamPost = async (req, res) => {
     try {
         const { cohortId } = req.params;
-        const { title, content, authorId } = req.body;
+        const { title, content } = req.body;
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+        console.log(`[STREAM_POST] Creating post for cohort ${cohortId} by user ${user.email}`);
         // Find the cohort course for this cohort
         const cohortCourse = await prismadb_1.prismadb.cohortCourse.findFirst({
             where: { cohortId: cohortId },
             include: { cohort: true }
         });
         if (!cohortCourse) {
+            console.error(`[STREAM_POST] Cohort course not found for cohortId: ${cohortId}`);
             return res.status(404).json({ error: "Cohort course not found" });
         }
         const post = await prismadb_1.prismadb.streamPost.create({
             data: {
                 title,
                 content,
-                authorId,
+                authorId: user.id,
                 cohortCourseId: cohortCourse.id,
             },
             include: {
@@ -401,6 +407,7 @@ const createStreamPost = async (req, res) => {
                 comments: true,
             },
         });
+        console.log(`[STREAM_POST] Created post ${post.id}`);
         // Send Notification to all students in the cohort
         try {
             const students = await prismadb_1.prismadb.userCohort.findMany({
@@ -413,13 +420,13 @@ const createStreamPost = async (req, res) => {
             }
         }
         catch (notifError) {
-            console.error("Failed to send stream post notification:", notifError);
+            console.error("[STREAM_POST] Failed to send notification:", notifError);
         }
         res.json({ post });
     }
     catch (error) {
         console.error("Create stream post error:", error);
-        res.status(500).json({ error: "Failed to create post" });
+        res.status(500).json({ error: "Failed to create post", details: error instanceof Error ? error.message : String(error) });
     }
 };
 exports.createStreamPost = createStreamPost;

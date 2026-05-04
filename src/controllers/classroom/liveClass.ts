@@ -4,10 +4,24 @@ import { NebiantUser } from "../../middleware";
 
 export const recordAttendance = async (req: Request, res: Response) => {
   try {
-    const { liveClassId, userId } = req.body;
+    const { liveClassId, userId: providedUserId, email: providedEmail } = req.body;
 
-    if (!liveClassId || !userId) {
+    if (!liveClassId || (!providedUserId && !providedEmail)) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    let userId = providedUserId;
+
+    // If userId not provided, lookup by email
+    if (!userId && providedEmail) {
+      const user = await prismadb.user.findUnique({
+        where: { email: providedEmail }
+      });
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      userId = user.id;
     }
 
     // Check if attendance already recorded

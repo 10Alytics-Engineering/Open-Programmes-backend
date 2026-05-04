@@ -4,7 +4,7 @@ exports.notifyCohortMembers = exports.sendLiveClassEmail = void 0;
 const prismadb_1 = require("../lib/prismadb");
 const nodemailer_1 = require("./nodemailer");
 const sendLiveClassEmail = async (recipient, liveClass, type) => {
-    const joinLink = `${process.env.NEXT_PUBLIC_APP_URL}/join-live?classId=${liveClass.id}&userId=${recipient.userId}`;
+    const joinLink = `${process.env.NEXT_PUBLIC_APP_URL}/join-live?classId=${liveClass.id}&email=${recipient.email}`;
     let subject = "";
     let message = "";
     switch (type) {
@@ -43,7 +43,16 @@ const sendLiveClassEmail = async (recipient, liveClass, type) => {
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="margin:0; font-size: 24px;">10Alytics Business Live</h1>
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                <tr>
+                  <td style="vertical-align: middle; padding-right: 10px;">
+                    <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
+                  </td>
+                  <td style="vertical-align: middle;">
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business Live</h1>
+                  </td>
+                </tr>
+              </table>
             </div>
             <div class="content">
               <p>Hi ${recipient.name || 'Student'},</p>
@@ -57,11 +66,6 @@ const sendLiveClassEmail = async (recipient, liveClass, type) => {
               <div style="text-align: center;">
                 <a href="${joinLink}" class="btn">Join Class Now</a>
               </div>
-              
-              <p style="font-size: 13px; color: #777; margin-top: 30px; text-align: center;">
-                If the button doesn't work, copy this link:<br>
-                <span style="color: #6742FA; word-break: break-all;">${joinLink}</span>
-              </p>
             </div>
             <div class="footer">
               <p>You're receiving this because you're enrolled in a 10Alytics Business program.</p>
