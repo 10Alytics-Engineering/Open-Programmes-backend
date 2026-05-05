@@ -13,7 +13,7 @@ export default (router: express.Router) => {
   
   // Authenticated endpoints
   router.get("/live-class/active", isLoggedIn, getLiveClassesForUser);
-  router.get("/live-class/:liveClassId", isLoggedIn, getLiveClassDetails);
+  router.get("/live-class/:liveClassId", getLiveClassDetails);
   
   router.delete(
     "/live-class/:liveClassId",
