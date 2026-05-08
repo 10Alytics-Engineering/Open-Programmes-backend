@@ -69,7 +69,7 @@ const isAuthorized = (req, res, next) => {
         (0, exports.isLoggedIn)(req, res, () => {
             const user = req.user;
             const requestedUserId = req.params.userId || req.body.userId;
-            if (user?.id === requestedUserId || user?.role === "ADMIN") {
+            if (user?.id === requestedUserId || user?.role === "ADMIN" || user?.role === "COURSE_ADMIN") {
                 next();
             }
             else {
