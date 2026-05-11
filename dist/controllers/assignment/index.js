@@ -328,32 +328,39 @@ exports.bulkGradeSubmissions = bulkGradeSubmissions;
 //create quiz assignment
 const createQuizAssignment = async (req, res) => {
     try {
-        const { title, description, instructions, dueDate, points, classroomTopicId, questions } = req.body;
+        const { title, description, instructions, dueDate, points, classroomTopicId, cohortCourseId: bodyCohortCourseId, questions } = req.body;
         // Validate required fields
-        if (!title || !classroomTopicId) {
+        if (!title) {
             return res.status(400).json({
-                error: "Title and topic ID are required"
+                error: "Title is required"
             });
         }
-        // Get the topic to get the cohortCourseId (same as in addSubItem)
-        const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
-            where: { id: classroomTopicId },
-            select: {
-                id: true,
-                cohortCourseId: true,
-                cohortCourse: {
-                    select: {
-                        id: true,
-                        cohortId: true,
+        let finalCohortCourseId = bodyCohortCourseId;
+        if (classroomTopicId) {
+            // Get the topic to get the cohortCourseId (same as in addSubItem)
+            const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
+                where: { id: classroomTopicId },
+                select: {
+                    id: true,
+                    cohortCourseId: true,
+                    cohortCourse: {
+                        select: {
+                            id: true,
+                            cohortId: true,
+                        },
                     },
                 },
-            },
-        });
-        if (!topic) {
-            return res.status(404).json({ error: "Topic not found" });
+            });
+            if (!topic) {
+                return res.status(404).json({ error: "Topic not found" });
+            }
+            if (!topic.cohortCourseId) {
+                return res.status(400).json({ error: "Topic is not associated with a valid cohort course" });
+            }
+            finalCohortCourseId = topic.cohortCourseId;
         }
-        if (!topic.cohortCourseId) {
-            return res.status(400).json({ error: "Topic is not associated with a valid cohort course" });
+        if (!finalCohortCourseId) {
+            return res.status(400).json({ error: "Either classroomTopicId or cohortCourseId must be provided" });
         }
         // Validate questions
         if (!questions || !Array.isArray(questions) || questions.length === 0) {
@@ -399,8 +406,8 @@ const createQuizAssignment = async (req, res) => {
                 dueDate: dueDate ? new Date(dueDate) : null,
                 points: parseInt(totalPoints) || 100,
                 type: "QUIZ",
-                classroomTopicId: classroomTopicId,
-                cohortCourseId: topic.cohortCourseId, // Use the cohortCourseId from the topic
+                classroomTopicId: classroomTopicId || null,
+                cohortCourseId: finalCohortCourseId, // Use the finalCohortCourseId
                 assignmentQuizQuestions: {
                     create: questions.map((q, index) => ({
                         question: q.question.trim(),
@@ -434,7 +441,7 @@ const createQuizAssignment = async (req, res) => {
         // Send Notification to all students in the cohort
         try {
             const students = await prismadb_1.prismadb.userCohort.findMany({
-                where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+                where: { cohortId: assignment.cohortCourse.cohortId, isActive: true },
                 include: { user: { select: { email: true } } }
             });
             const emails = students.map(s => s.user.email).filter(Boolean);
