@@ -411,7 +411,7 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
       if (!topic.cohortCourseId) {
         return res.status(400).json({ error: "Topic is not associated with a valid cohort course" });
       }
-      
+
       finalCohortCourseId = topic.cohortCourseId;
     }
 
@@ -501,7 +501,7 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
       },
     });
 
-    // Send Notification to all students in the cohort
+    // Send Notifications to all students in the cohort
     try {
       const students = await prismadb.userCohort.findMany({
         where: { cohortId: assignment.cohortCourse.cohortId, isActive: true },

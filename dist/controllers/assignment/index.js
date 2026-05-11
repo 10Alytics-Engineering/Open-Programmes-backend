@@ -438,7 +438,7 @@ const createQuizAssignment = async (req, res) => {
                 },
             },
         });
-        // Send Notification to all students in the cohort
+        // Send Notifications to all students in the cohort
         try {
             const students = await prismadb_1.prismadb.userCohort.findMany({
                 where: { cohortId: assignment.cohortCourse.cohortId, isActive: true },
