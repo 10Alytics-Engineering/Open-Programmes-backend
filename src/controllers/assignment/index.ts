@@ -639,6 +639,43 @@ const handleAssignmentQuizSubmission = async (
   });
 };
 
+// Get all quiz submissions for an assignment (Instructor view)
+export const getAssignmentQuizSubmissions = async (req: Request, res: Response) => {
+  try {
+    const { assignmentId } = req.params;
+
+    const quizSubmissions = await prismadb.assignmentQuizSubmission.findMany({
+      where: { assignmentId },
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
+        assignmentQuizAnswers: {
+          include: {
+            assignmentQuizQuestion: {
+              include: {
+                assignmentQuizOptions: true
+              }
+            },
+            selectedAssignmentQuizOption: true
+          }
+        }
+      },
+      orderBy: { submittedAt: "desc" },
+    });
+
+    res.json({ quizSubmissions });
+  } catch (error) {
+    console.error("Get quiz submissions error:", error);
+    res.status(500).json({ error: "Failed to fetch quiz submissions" });
+  }
+};
+
 // Get quiz results for a student
 export const getAssignmentQuizResults = async (req: Request, res: Response) => {
   try {

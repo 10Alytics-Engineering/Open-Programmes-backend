@@ -7,7 +7,8 @@ import {
   gradeSubmission, 
   bulkGradeSubmissions,
   createQuizAssignment,
-  getAssignmentQuizResults
+  getAssignmentQuizResults,
+  getAssignmentQuizSubmissions
 } from "../controllers/assignment";
 import { isLoggedIn, isCourseAdmin } from "../middleware";
 
@@ -47,6 +48,12 @@ export default (router: express.Router) => {
     isLoggedIn,
     isCourseAdmin,
     createQuizAssignment
+  );
+  router.get(
+    "/assignments/:assignmentId/quiz-submissions",
+    isLoggedIn,
+    isCourseAdmin,
+    getAssignmentQuizSubmissions
   );
   router.get(
     "/assignments/:assignmentId/quiz-results",
