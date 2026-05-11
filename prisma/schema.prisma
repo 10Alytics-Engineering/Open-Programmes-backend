@@ -175,6 +175,7 @@ model User {
   announcements             Announcement[]
   comments                  Comment[]
   gradedSubmissions         AssignmentSubmission[]     @relation("GradedBy")
+  gradedQuizSubmissions     AssignmentQuizSubmission[] @relation("QuizGradedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -873,6 +874,7 @@ model Assignment {
   dueDate      DateTime?
   points       Int?
   type         AssignmentType @default(REGULAR)
+  isLocked     Boolean        @default(false)
 
   // Quiz specific fields
   assignmentQuizQuestions   AssignmentQuizQuestion[]
@@ -937,6 +939,12 @@ model AssignmentQuizSubmission {
   totalScore            Int
   maxScore              Int
   submittedAt           DateTime               @default(now())
+
+  // Grading
+  feedback   String?   @db.Text
+  gradedAt   DateTime?
+  gradedById String?
+  gradedBy   User?     @relation(fields: [gradedById], references: [id], name: "QuizGradedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

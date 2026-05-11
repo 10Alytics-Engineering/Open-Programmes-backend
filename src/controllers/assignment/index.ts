@@ -125,7 +125,11 @@ export const submitAssignment = async (req: Request, res: Response) => {
       return await handleAssignmentQuizSubmission(assignment, quizAnswers, studentId, res);
     }
 
-    // Handle regular assignment submission (existing code)
+    if (assignment.isLocked) {
+      return res.status(403).json({ error: "Submissions for this assignment are locked." });
+    }
+
+    // Handle regular assignment submission
     const existingSubmission = await prismadb.assignmentSubmission.findUnique({
       where: {
         assignmentId_studentId: {
@@ -139,10 +143,6 @@ export const submitAssignment = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Assignment already submitted" });
     }
 
-    // Check if assignment is past due date
-    if (assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
-      return res.status(400).json({ error: "Assignment submission is overdue" });
-    }
 
     // Create submission with Cloudinary URL
     const submission = await prismadb.assignmentSubmission.create({
@@ -296,6 +296,28 @@ export const gradeSubmission = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Grade submission error:", error);
     res.status(500).json({ error: "Failed to grade submission" });
+  }
+};
+
+export const gradeQuizSubmission = async (req: Request, res: Response) => {
+  try {
+    const { submissionId } = req.params;
+    const { grade, feedback, gradedById } = req.body;
+
+    const submission = await prismadb.assignmentQuizSubmission.update({
+      where: { id: submissionId },
+      data: {
+        totalScore: parseInt(grade),
+        feedback: feedback || null,
+        gradedById,
+        gradedAt: new Date(),
+      }
+    });
+
+    res.json({ submission });
+  } catch (error) {
+    console.error("Grade quiz error:", error);
+    res.status(500).json({ error: "Failed to grade quiz" });
   }
 };
 
@@ -550,6 +572,23 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
   }
 };
 
+export const updateAssignment = async (req: Request, res: Response) => {
+  try {
+    const { assignmentId } = req.params;
+    const data = req.body;
+
+    const assignment = await prismadb.assignment.update({
+      where: { id: assignmentId },
+      data: data,
+    });
+
+    res.json({ assignment, message: "Assignment updated successfully" });
+  } catch (error) {
+    console.error("Update assignment error:", error);
+    res.status(500).json({ error: "Failed to update assignment" });
+  }
+};
+
 // Helper function for quiz submission
 const handleAssignmentQuizSubmission = async (
   assignment: any,
@@ -557,6 +596,10 @@ const handleAssignmentQuizSubmission = async (
   studentId: string,
   res: Response
 ) => {
+  if (assignment.isLocked) {
+    return res.status(403).json({ error: "Quiz submissions are locked." });
+  }
+
   // Check if already submitted
   const existingSubmission = await prismadb.assignmentQuizSubmission.findUnique({
     where: {
@@ -637,6 +680,44 @@ const handleAssignmentQuizSubmission = async (
     percentage: Math.round((totalScore / maxScore) * 100),
     message: "Quiz submitted successfully"
   });
+};
+
+// Get all quiz submissions for an assignment (Instructor view)
+export const getAssignmentQuizSubmissions = async (req: Request, res: Response) => {
+  try {
+    const { assignmentId } = req.params;
+
+    const quizSubmissions = await prismadb.assignmentQuizSubmission.findMany({
+      where: { assignmentId },
+      include: {
+        assignment: true,
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
+        assignmentQuizAnswers: {
+          include: {
+            assignmentQuizQuestion: {
+              include: {
+                assignmentQuizOptions: true
+              }
+            },
+            selectedAssignmentQuizOption: true
+          }
+        }
+      },
+      orderBy: { submittedAt: "desc" },
+    });
+
+    res.json({ submissions: quizSubmissions });
+  } catch (error) {
+    console.error("Get quiz submissions error:", error);
+    res.status(500).json({ error: "Failed to fetch quiz submissions" });
+  }
 };
 
 // Get quiz results for a student
