@@ -4,7 +4,7 @@ exports.getLiveClassDetails = exports.getLiveClassesForUser = exports.recordAtte
 const prismadb_1 = require("../../lib/prismadb");
 const recordAttendance = async (req, res) => {
     try {
-        const { liveClassId, userId: providedUserId, email: providedEmail } = req.body;
+        const { liveClassId, userId: providedUserId, email: providedEmail, } = req.body;
         if (!liveClassId || (!providedUserId && !providedEmail)) {
             return res.status(400).json({ error: "Missing required fields" });
         }
@@ -12,7 +12,7 @@ const recordAttendance = async (req, res) => {
         // If userId not provided, lookup by email
         if (!userId && providedEmail) {
             const user = await prismadb_1.prismadb.user.findUnique({
-                where: { email: providedEmail }
+                where: { email: providedEmail },
             });
             if (!user) {
                 return res.status(404).json({ error: "User not found" });
@@ -55,7 +55,7 @@ const getLiveClassesForUser = async (req, res) => {
         const userCohorts = await prismadb_1.prismadb.userCohort.findMany({
             where: { userId: user.id, isActive: true },
         });
-        const cohortIds = userCohorts.map(uc => uc.cohortId);
+        const cohortIds = userCohorts.map((uc) => uc.cohortId);
         // Find active live classes for these cohorts
         const activeLiveClasses = await prismadb_1.prismadb.liveClass.findMany({
             where: {
@@ -70,10 +70,10 @@ const getLiveClassesForUser = async (req, res) => {
                     include: {
                         cohort: true,
                         course: true,
-                    }
-                }
+                    },
+                },
             },
-            orderBy: { startTime: 'asc' },
+            orderBy: { startTime: "asc" },
         });
         res.json({ activeLiveClasses });
     }
@@ -92,12 +92,12 @@ const getLiveClassDetails = async (req, res) => {
                 cohortCourse: {
                     include: {
                         cohort: true,
-                    }
+                    },
                 },
                 _count: {
-                    select: { attendance: true }
-                }
-            }
+                    select: { attendance: true },
+                },
+            },
         });
         if (!liveClass) {
             return res.status(404).json({ error: "Live class not found" });

@@ -4,7 +4,11 @@ import { NebiantUser } from "../../middleware";
 
 export const recordAttendance = async (req: Request, res: Response) => {
   try {
-    const { liveClassId, userId: providedUserId, email: providedEmail } = req.body;
+    const {
+      liveClassId,
+      userId: providedUserId,
+      email: providedEmail,
+    } = req.body;
 
     if (!liveClassId || (!providedUserId && !providedEmail)) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -15,9 +19,9 @@ export const recordAttendance = async (req: Request, res: Response) => {
     // If userId not provided, lookup by email
     if (!userId && providedEmail) {
       const user = await prismadb.user.findUnique({
-        where: { email: providedEmail }
+        where: { email: providedEmail },
       });
-      
+
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
@@ -58,13 +62,13 @@ export const getLiveClassesForUser = async (req: Request, res: Response) => {
     if (!user) return res.status(401).json({ error: "Unauthorized" });
 
     const now = new Date();
-    
+
     // Get all cohorts the user is in
     const userCohorts = await prismadb.userCohort.findMany({
       where: { userId: user.id, isActive: true },
     });
 
-    const cohortIds = userCohorts.map(uc => uc.cohortId);
+    const cohortIds = userCohorts.map((uc) => uc.cohortId);
 
     // Find active live classes for these cohorts
     const activeLiveClasses = await prismadb.liveClass.findMany({
@@ -80,10 +84,10 @@ export const getLiveClassesForUser = async (req: Request, res: Response) => {
           include: {
             cohort: true,
             course: true,
-          }
-        }
+          },
+        },
       },
-      orderBy: { startTime: 'asc' },
+      orderBy: { startTime: "asc" },
     });
 
     res.json({ activeLiveClasses });
@@ -96,19 +100,19 @@ export const getLiveClassesForUser = async (req: Request, res: Response) => {
 export const getLiveClassDetails = async (req: Request, res: Response) => {
   try {
     const { liveClassId } = req.params;
-    
+
     const liveClass = await prismadb.liveClass.findUnique({
       where: { id: liveClassId },
       include: {
         cohortCourse: {
           include: {
             cohort: true,
-          }
+          },
         },
         _count: {
-          select: { attendance: true }
-        }
-      }
+          select: { attendance: true },
+        },
+      },
     });
 
     if (!liveClass) {

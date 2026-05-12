@@ -1,8 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
-import { 
-  sendClassroomNotificationEmail 
-} from "../authentication/mail";
+import { sendClassroomNotificationEmail } from "../authentication/mail";
 import { generateUniqueAssignmentSlug } from "../../utils/slugify";
 import { notifyCohortMembers } from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
@@ -71,12 +69,23 @@ export const getClassroomTopics = async (req: Request, res: Response) => {
       itemsWhere = { cohortCourse: { cohortId }, classroomTopicId: null };
     } else if (cohortCourseId) {
       topicsWhere = { cohortCourseId: cohortCourseId as string };
-      itemsWhere = { cohortCourseId: cohortCourseId as string, classroomTopicId: null };
+      itemsWhere = {
+        cohortCourseId: cohortCourseId as string,
+        classroomTopicId: null,
+      };
     } else {
-      return res.status(400).json({ error: "Missing identifying parameter (cohortId or cohortCourseId)" });
+      return res.status(400).json({
+        error: "Missing identifying parameter (cohortId or cohortCourseId)",
+      });
     }
 
-    const [topics, unassignedAssignments, unassignedMaterials, unassignedRecordings, unassignedLiveClasses] = await Promise.all([
+    const [
+      topics,
+      unassignedAssignments,
+      unassignedMaterials,
+      unassignedRecordings,
+      unassignedLiveClasses,
+    ] = await Promise.all([
       prismadb.classroomTopic.findMany({
         where: topicsWhere,
         include: {
@@ -89,11 +98,15 @@ export const getClassroomTopics = async (req: Request, res: Response) => {
           classRecordings: {
             orderBy: { createdAt: "asc" },
           },
-          liveClasses: {
+          LiveClass: {
             orderBy: { createdAt: "asc" },
           },
         },
-        orderBy: [{ isPinned: "desc" }, { order: "asc" }, { createdAt: "desc" }],
+        orderBy: [
+          { isPinned: "desc" },
+          { order: "asc" },
+          { createdAt: "desc" },
+        ],
       }),
       prismadb.assignment.findMany({
         where: itemsWhere,
@@ -114,14 +127,14 @@ export const getClassroomTopics = async (req: Request, res: Response) => {
       }),
     ]);
 
-    res.json({ 
+    res.json({
       topics,
       unassignedItems: {
         assignments: unassignedAssignments,
         materials: unassignedMaterials,
         recordings: unassignedRecordings,
-        liveClasses: unassignedLiveClasses
-      }
+        liveClasses: unassignedLiveClasses,
+      },
     });
   } catch (error) {
     console.error("Topics error:", error);
@@ -159,20 +172,22 @@ export const createTopic = async (req: Request, res: Response) => {
       include: {
         cohortCourse: {
           include: {
-            cohort: true
-          }
-        }
-      }
+            cohort: true,
+          },
+        },
+      },
     });
 
     // Send Notification to all students in the cohort
     try {
       const students = await prismadb.userCohort.findMany({
         where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
-        include: { user: { select: { email: true } } }
+        include: { user: { select: { email: true } } },
       });
 
-      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const emails = students
+        .map((s) => s.user.email)
+        .filter(Boolean) as string[];
       const currentUser = req.user as NebiantUser;
 
       if (emails.length > 0) {
@@ -182,7 +197,7 @@ export const createTopic = async (req: Request, res: Response) => {
           "topic",
           title,
           description || "",
-          currentUser?.name || "Instructor"
+          currentUser?.name || "Instructor",
         );
       }
     } catch (notifError) {
@@ -256,7 +271,7 @@ export const deleteTopic = async (req: Request, res: Response) => {
         assignmentsCount: topic.assignments.length,
         materialsCount: topic.classMaterials.length,
         recordingsCount: topic.classRecordings.length,
-      }
+      },
     });
   } catch (error) {
     console.error("Delete topic error:", error);
@@ -280,10 +295,10 @@ export const addSubItem = async (req: Request, res: Response) => {
           cohortCourse: {
             select: {
               cohortId: true,
-              cohort: { select: { name: true } }
-            }
-          }
-        }
+              cohort: { select: { name: true } },
+            },
+          },
+        },
       });
 
       if (!topic) return res.status(404).json({ error: "Topic not found" });
@@ -293,15 +308,18 @@ export const addSubItem = async (req: Request, res: Response) => {
     } else {
       // If no topic and no cohortCourseId, we can't proceed
       if (!targetCohortCourseId) {
-        return res.status(400).json({ error: "Either topicId or cohortCourseId must be provided" });
+        return res
+          .status(400)
+          .json({ error: "Either topicId or cohortCourseId must be provided" });
       }
 
       // Fetch cohort name for notification
       const cohortCourse = await prismadb.cohortCourse.findUnique({
         where: { id: targetCohortCourseId },
-        include: { cohort: { select: { id: true, name: true } } }
+        include: { cohort: { select: { id: true, name: true } } },
       });
-      if (!cohortCourse) return res.status(404).json({ error: "Cohort course not found" });
+      if (!cohortCourse)
+        return res.status(404).json({ error: "Cohort course not found" });
       cohortId = cohortCourse.cohort.id;
       cohortName = cohortCourse.cohort.name;
     }
@@ -347,8 +365,8 @@ export const addSubItem = async (req: Request, res: Response) => {
           },
         });
         // Trigger notification asynchronously
-        notifyCohortMembers(result.id, 'creation').catch(err => 
-          console.error("Failed to send creation notification:", err)
+        notifyCohortMembers(result.id, "creation").catch((err) =>
+          console.error("Failed to send creation notification:", err),
         );
         break;
       default:
@@ -359,10 +377,12 @@ export const addSubItem = async (req: Request, res: Response) => {
     try {
       const students = await prismadb.userCohort.findMany({
         where: { cohortId: cohortId, isActive: true },
-        include: { user: { select: { email: true } } }
+        include: { user: { select: { email: true } } },
       });
 
-      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const emails = students
+        .map((s) => s.user.email)
+        .filter(Boolean) as string[];
       const user = req.user as NebiantUser;
 
       if (emails.length > 0) {
@@ -372,7 +392,7 @@ export const addSubItem = async (req: Request, res: Response) => {
           type,
           data.title,
           data.description || data.instructions || "",
-          user?.name || "Instructor"
+          user?.name || "Instructor",
         );
       }
     } catch (notifError) {
@@ -427,16 +447,20 @@ export const createStreamPost = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    console.log(`[STREAM_POST] Creating post for cohort ${cohortId} by user ${user.email}`);
+    console.log(
+      `[STREAM_POST] Creating post for cohort ${cohortId} by user ${user.email}`,
+    );
 
     // Find the cohort course for this cohort
     const cohortCourse = await prismadb.cohortCourse.findFirst({
       where: { cohortId: cohortId },
-      include: { cohort: true }
+      include: { cohort: true },
     });
 
     if (!cohortCourse) {
-      console.error(`[STREAM_POST] Cohort course not found for cohortId: ${cohortId}`);
+      console.error(
+        `[STREAM_POST] Cohort course not found for cohortId: ${cohortId}`,
+      );
       return res.status(404).json({ error: "Cohort course not found" });
     }
 
@@ -459,10 +483,12 @@ export const createStreamPost = async (req: Request, res: Response) => {
     try {
       const students = await prismadb.userCohort.findMany({
         where: { cohortId: cohortId, isActive: true },
-        include: { user: { select: { email: true } } }
+        include: { user: { select: { email: true } } },
       });
 
-      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const emails = students
+        .map((s) => s.user.email)
+        .filter(Boolean) as string[];
 
       if (emails.length > 0) {
         await sendClassroomNotificationEmail(
@@ -471,7 +497,7 @@ export const createStreamPost = async (req: Request, res: Response) => {
           "announcement",
           title,
           content,
-          post.author.name || "Instructor"
+          post.author.name || "Instructor",
         );
       }
     } catch (notifError) {
@@ -481,7 +507,10 @@ export const createStreamPost = async (req: Request, res: Response) => {
     res.json({ post });
   } catch (error) {
     console.error("Create stream post error:", error);
-    res.status(500).json({ error: "Failed to create post", details: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({
+      error: "Failed to create post",
+      details: error instanceof Error ? error.message : String(error),
+    });
   }
 };
 
@@ -497,7 +526,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
       recordings,
       announcements,
       streamPosts,
-      liveClasses
+      liveClasses,
     ] = await Promise.all([
       // Topics
       prismadb.classroomTopic.findMany({
@@ -513,7 +542,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
 
@@ -532,7 +561,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           },
           classroomTopic: true, // Include topic info if it exists
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
 
@@ -551,7 +580,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           },
           classroomTopic: true, // Include topic info if it exists
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
 
@@ -570,7 +599,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           },
           classroomTopic: true, // Include topic info if it exists
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
 
@@ -589,7 +618,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
 
@@ -608,7 +637,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
       // Live Classes
@@ -626,31 +655,31 @@ export const getStreamActivities = async (req: Request, res: Response) => {
           },
           classroomTopic: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: 50,
       }),
     ]);
 
     // Combine all activities into one stream
     const activities = [
-      ...topics.map(topic => ({
+      ...topics.map((topic) => ({
         id: `topic-${topic.id}`,
-        type: 'topic' as const,
+        type: "topic" as const,
         title: topic.title,
         description: topic.description,
-        author: { id: 'system', name: 'Instructor' },
+        author: { id: "system", name: "Instructor" },
         createdAt: topic.createdAt.toISOString(),
         metadata: {
           topicId: topic.id,
         },
       })),
 
-      ...assignments.map(assignment => ({
+      ...assignments.map((assignment) => ({
         id: `assignment-${assignment.id}`,
-        type: 'assignment' as const,
+        type: "assignment" as const,
         title: assignment.title,
         description: assignment.description || assignment.instructions,
-        author: { id: 'system', name: 'Instructor' },
+        author: { id: "system", name: "Instructor" },
         createdAt: assignment.createdAt.toISOString(),
         metadata: {
           assignmentId: assignment.slug || assignment.id,
@@ -660,12 +689,12 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         },
       })),
 
-      ...materials.map(material => ({
+      ...materials.map((material) => ({
         id: `material-${material.id}`,
-        type: 'material' as const,
+        type: "material" as const,
         title: material.title,
         description: material.description,
-        author: { id: 'system', name: 'Instructor' },
+        author: { id: "system", name: "Instructor" },
         createdAt: material.createdAt.toISOString(),
         metadata: {
           materialId: material.id,
@@ -674,12 +703,12 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         },
       })),
 
-      ...recordings.map(recording => ({
+      ...recordings.map((recording) => ({
         id: `recording-${recording.id}`,
-        type: 'recording' as const,
+        type: "recording" as const,
         title: recording.title,
         description: recording.description,
-        author: { id: 'system', name: 'Instructor' },
+        author: { id: "system", name: "Instructor" },
         createdAt: recording.createdAt.toISOString(),
         metadata: {
           recordingId: recording.id,
@@ -688,9 +717,9 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         },
       })),
 
-      ...announcements.map(announcement => ({
+      ...announcements.map((announcement) => ({
         id: `announcement-${announcement.id}`,
-        type: 'announcement' as const,
+        type: "announcement" as const,
         title: announcement.title,
         description: announcement.content,
         author: {
@@ -704,9 +733,9 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         },
       })),
 
-      ...streamPosts.map(post => ({
+      ...streamPosts.map((post) => ({
         id: `post-${post.id}`,
-        type: 'announcement' as const,
+        type: "announcement" as const,
         title: post.title,
         description: post.content,
         author: {
@@ -720,12 +749,12 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         },
       })),
 
-      ...liveClasses.map(live => ({
+      ...liveClasses.map((live) => ({
         id: `live-${live.id}`,
-        type: 'live' as const,
+        type: "live" as const,
         title: live.title,
         description: live.description || "Join our live session!",
-        author: { id: 'system', name: 'Instructor' },
+        author: { id: "system", name: "Instructor" },
         createdAt: live.createdAt.toISOString(),
         metadata: {
           liveClassId: live.id,
@@ -738,7 +767,10 @@ export const getStreamActivities = async (req: Request, res: Response) => {
     ];
 
     // Sort all activities by creation date (newest first)
-    activities.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    activities.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 
     res.json({ activities });
   } catch (error) {
@@ -756,12 +788,12 @@ export const deleteAssignment = async (req: Request, res: Response) => {
       where: { id: assignmentId },
       include: {
         submissions: {
-          select: { id: true }
+          select: { id: true },
         },
         assignmentQuizQuestions: {
-          select: { id: true }
-        }
-      }
+          select: { id: true },
+        },
+      },
     });
 
     if (!assignment) {
@@ -770,7 +802,7 @@ export const deleteAssignment = async (req: Request, res: Response) => {
 
     // Delete the assignment (cascade will handle related records)
     await prismadb.assignment.delete({
-      where: { id: assignmentId }
+      where: { id: assignmentId },
     });
 
     res.json({
@@ -779,8 +811,8 @@ export const deleteAssignment = async (req: Request, res: Response) => {
         id: assignment.id,
         title: assignment.title,
         submissionsCount: assignment.submissions.length,
-        quizQuestionsCount: assignment.assignmentQuizQuestions.length
-      }
+        quizQuestionsCount: assignment.assignmentQuizQuestions.length,
+      },
     });
   } catch (error) {
     console.error("Delete assignment error:", error);
@@ -794,7 +826,7 @@ export const deleteMaterial = async (req: Request, res: Response) => {
 
     // Check if material exists
     const material = await prismadb.classMaterial.findUnique({
-      where: { id: materialId }
+      where: { id: materialId },
     });
 
     if (!material) {
@@ -803,15 +835,15 @@ export const deleteMaterial = async (req: Request, res: Response) => {
 
     // Delete the material
     await prismadb.classMaterial.delete({
-      where: { id: materialId }
+      where: { id: materialId },
     });
 
     res.json({
       message: "Material deleted successfully",
       deletedMaterial: {
         id: material.id,
-        title: material.title
-      }
+        title: material.title,
+      },
     });
   } catch (error) {
     console.error("Delete material error:", error);
@@ -825,7 +857,7 @@ export const deleteRecording = async (req: Request, res: Response) => {
 
     // Check if recording exists
     const recording = await prismadb.classRecording.findUnique({
-      where: { id: recordingId }
+      where: { id: recordingId },
     });
 
     if (!recording) {
@@ -834,15 +866,15 @@ export const deleteRecording = async (req: Request, res: Response) => {
 
     // Delete the recording
     await prismadb.classRecording.delete({
-      where: { id: recordingId }
+      where: { id: recordingId },
     });
 
     res.json({
       message: "Recording deleted successfully",
       deletedRecording: {
         id: recording.id,
-        title: recording.title
-      }
+        title: recording.title,
+      },
     });
   } catch (error) {
     console.error("Delete recording error:", error);
@@ -855,7 +887,7 @@ export const deleteLiveClass = async (req: Request, res: Response) => {
     const { liveClassId } = req.params;
 
     const liveClass = await prismadb.liveClass.findUnique({
-      where: { id: liveClassId }
+      where: { id: liveClassId },
     });
 
     if (!liveClass) {
@@ -863,15 +895,15 @@ export const deleteLiveClass = async (req: Request, res: Response) => {
     }
 
     await prismadb.liveClass.delete({
-      where: { id: liveClassId }
+      where: { id: liveClassId },
     });
 
     res.json({
       message: "Live class deleted successfully",
       deletedLiveClass: {
         id: liveClass.id,
-        title: liveClass.title
-      }
+        title: liveClass.title,
+      },
     });
   } catch (error) {
     console.error("Delete live class error:", error);
@@ -893,19 +925,19 @@ export const joinLiveClass = async (req: Request, res: Response) => {
       where: {
         liveClassId_userId: {
           liveClassId: id,
-          userId: user.id
-        }
+          userId: user.id,
+        },
       },
       update: { joinedAt: new Date() },
       create: {
         liveClassId: id,
-        userId: user.id
-      }
+        userId: user.id,
+      },
     });
 
     // Get live class link for redirection
     const liveClass = await prismadb.liveClass.findUnique({
-      where: { id }
+      where: { id },
     });
 
     if (!liveClass) {
@@ -931,16 +963,16 @@ export const getLiveClassAttendance = async (req: Request, res: Response) => {
             id: true,
             name: true,
             email: true,
-            image: true
-          }
-        }
+            image: true,
+          },
+        },
       },
-      orderBy: { joinedAt: "desc" }
+      orderBy: { joinedAt: "desc" },
     });
 
     const liveClass = await prismadb.liveClass.findUnique({
       where: { id },
-      select: { title: true, startTime: true }
+      select: { title: true, startTime: true },
     });
 
     res.json({ attendance, liveClass });
@@ -957,15 +989,15 @@ export const getCohortLiveClasses = async (req: Request, res: Response) => {
     const liveClasses = await prismadb.liveClass.findMany({
       where: {
         cohortCourse: {
-          cohortId: cohortId
-        }
+          cohortId: cohortId,
+        },
       },
       include: {
         _count: {
-          select: { attendance: true }
-        }
+          select: { attendance: true },
+        },
       },
-      orderBy: { startTime: "desc" }
+      orderBy: { startTime: "desc" },
     });
 
     res.json({ liveClasses });
