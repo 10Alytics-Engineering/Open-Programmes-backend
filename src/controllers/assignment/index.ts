@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
+import { generateUniqueAssignmentSlug } from "../../utils/slugify";
 import { User, AssignmentType } from "@prisma/client";
 import { NebiantUser } from "../../middleware";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
@@ -9,8 +10,10 @@ export const getAssignment = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
 
-    const assignment = await prismadb.assignment.findUnique({
-      where: { id: assignmentId },
+    const assignment = await prismadb.assignment.findFirst({
+      where: {
+        OR: [{ id: assignmentId }, { slug: assignmentId }],
+      },
       include: {
         attachments: true,
         assignmentQuizQuestions: {
@@ -105,8 +108,10 @@ export const submitAssignment = async (req: Request, res: Response) => {
     const studentId = user.id;
 
     // Check if assignment exists
-    const assignment = await prismadb.assignment.findUnique({
-      where: { id: assignmentId },
+    const assignment = await prismadb.assignment.findFirst({
+      where: {
+        OR: [{ id: assignmentId }, { slug: assignmentId }],
+      },
       include: {
         assignmentQuizQuestions: {
           include: {
@@ -332,8 +337,10 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
     }
 
     // Get assignment to validate points
-    const assignment = await prismadb.assignment.findUnique({
-      where: { id: assignmentId },
+    const assignment = await prismadb.assignment.findFirst({
+      where: {
+        OR: [{ id: assignmentId }, { slug: assignmentId }],
+      },
       select: { points: true }
     });
 
@@ -490,6 +497,7 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
         dueDate: dueDate ? new Date(dueDate) : null,
         points: parseInt(totalPoints) || 100,
         type: "QUIZ",
+        slug: await generateUniqueAssignmentSlug(title, prismadb),
         classroomTopicId: classroomTopicId || null,
         cohortCourseId: finalCohortCourseId, // Use the finalCohortCourseId
         assignmentQuizQuestions: {

@@ -868,6 +868,7 @@ enum AssignmentType {
 
 model Assignment {
   id           String         @id @default(cuid())
+  slug         String?        @unique
   title        String
   description  String?        @db.Text
   instructions String?        @db.Text

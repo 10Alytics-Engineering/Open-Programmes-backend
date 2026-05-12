@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCohortLiveClasses = exports.getLiveClassAttendance = exports.joinLiveClass = exports.deleteLiveClass = exports.deleteRecording = exports.deleteMaterial = exports.deleteAssignment = exports.getStreamActivities = exports.createStreamPost = exports.getStreamPosts = exports.addSubItem = exports.deleteTopic = exports.updateTopic = exports.createTopic = exports.getClassroomTopics = exports.getClassroomData = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("../authentication/mail");
+const slugify_1 = require("../../utils/slugify");
 const liveClassNotifications_1 = require("../../utils/liveClassNotifications");
 const getClassroomData = async (req, res) => {
     try {
@@ -288,6 +289,7 @@ const addSubItem = async (req, res) => {
                         ...data,
                         classroomTopicId: topicId || null,
                         cohortCourseId: targetCohortCourseId,
+                        slug: await (0, slugify_1.generateUniqueAssignmentSlug)(data.title, prismadb_1.prismadb),
                     },
                 });
                 break;
@@ -582,7 +584,7 @@ const getStreamActivities = async (req, res) => {
                 author: { id: 'system', name: 'Instructor' },
                 createdAt: assignment.createdAt.toISOString(),
                 metadata: {
-                    assignmentId: assignment.id,
+                    assignmentId: assignment.slug || assignment.id,
                     dueDate: assignment.dueDate?.toISOString(),
                     points: assignment.points,
                     topicTitle: assignment.classroomTopic?.title, // Include topic if exists
