@@ -1,14 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getAssignmentQuizResults = exports.createQuizAssignment = exports.bulkGradeSubmissions = exports.gradeSubmission = exports.getAssignmentSubmissions = exports.submitAssignment = exports.getAssignmentSubmission = exports.getAssignment = void 0;
+exports.getAssignmentQuizResults = exports.getAssignmentQuizSubmissions = exports.updateAssignment = exports.createQuizAssignment = exports.bulkGradeSubmissions = exports.gradeQuizSubmission = exports.gradeSubmission = exports.getAssignmentSubmissions = exports.submitAssignment = exports.getAssignmentSubmission = exports.getAssignment = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const slugify_1 = require("../../utils/slugify");
 const mail_1 = require("../authentication/mail");
 // Updated getAssignment to include assignment quiz questions
 const getAssignment = async (req, res) => {
     try {
         const { assignmentId } = req.params;
-        const assignment = await prismadb_1.prismadb.assignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
             include: {
                 attachments: true,
                 assignmentQuizQuestions: {
@@ -69,10 +72,18 @@ const getAssignmentSubmission = async (req, res) => {
         if (!studentId) {
             return res.status(400).json({ error: "Student ID is required" });
         }
+        const targetAssignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
+        });
+        if (!targetAssignment) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
         const submission = await prismadb_1.prismadb.assignmentSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
-                    assignmentId,
+                    assignmentId: targetAssignment.id,
                     studentId: studentId,
                 },
             },
@@ -97,8 +108,10 @@ const submitAssignment = async (req, res) => {
         const user = req.user;
         const studentId = user.id;
         // Check if assignment exists
-        const assignment = await prismadb_1.prismadb.assignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
             include: {
                 assignmentQuizQuestions: {
                     include: {
@@ -114,29 +127,28 @@ const submitAssignment = async (req, res) => {
         if (assignment.type === "QUIZ" && quizAnswers) {
             return await handleAssignmentQuizSubmission(assignment, quizAnswers, studentId, res);
         }
-        // Handle regular assignment submission (existing code)
+        if (assignment.isLocked) {
+            return res.status(403).json({ error: "Submissions for this assignment are locked." });
+        }
+        // Handle regular assignment submission
         const existingSubmission = await prismadb_1.prismadb.assignmentSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
-                    assignmentId,
-                    studentId,
+                    assignmentId: assignment.id,
+                    studentId: studentId,
                 },
             },
         });
         if (existingSubmission) {
             return res.status(400).json({ error: "Assignment already submitted" });
         }
-        // Check if assignment is past due date
-        if (assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
-            return res.status(400).json({ error: "Assignment submission is overdue" });
-        }
         // Create submission with Cloudinary URL
         const submission = await prismadb_1.prismadb.assignmentSubmission.create({
             data: {
+                assignmentId: assignment.id,
+                studentId,
                 content: content || null,
                 fileUrl: fileUrl || null,
-                assignmentId,
-                studentId,
                 submittedAt: new Date(),
             },
             include: {
@@ -151,7 +163,7 @@ const submitAssignment = async (req, res) => {
             },
         });
         // Log the submission for tracking
-        console.log(`Assignment submitted: ${assignmentId} by student: ${studentId}`);
+        console.log(`Assignment submitted: ${assignment.id} by student: ${studentId}`);
         res.json({
             submission,
             message: "Assignment submitted successfully",
@@ -167,8 +179,16 @@ exports.submitAssignment = submitAssignment;
 const getAssignmentSubmissions = async (req, res) => {
     try {
         const { assignmentId } = req.params;
+        const targetAssignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
+        });
+        if (!targetAssignment) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
         const submissions = await prismadb_1.prismadb.assignmentSubmission.findMany({
-            where: { assignmentId },
+            where: { assignmentId: targetAssignment.id },
             include: {
                 student: {
                     select: {
@@ -270,6 +290,27 @@ const gradeSubmission = async (req, res) => {
     }
 };
 exports.gradeSubmission = gradeSubmission;
+const gradeQuizSubmission = async (req, res) => {
+    try {
+        const { submissionId } = req.params;
+        const { grade, feedback, gradedById } = req.body;
+        const submission = await prismadb_1.prismadb.assignmentQuizSubmission.update({
+            where: { id: submissionId },
+            data: {
+                totalScore: parseInt(grade),
+                feedback: feedback || null,
+                gradedById,
+                gradedAt: new Date(),
+            }
+        });
+        res.json({ submission });
+    }
+    catch (error) {
+        console.error("Grade quiz error:", error);
+        res.status(500).json({ error: "Failed to grade quiz" });
+    }
+};
+exports.gradeQuizSubmission = gradeQuizSubmission;
 // Bulk grade multiple submissions
 const bulkGradeSubmissions = async (req, res) => {
     try {
@@ -279,8 +320,10 @@ const bulkGradeSubmissions = async (req, res) => {
             return res.status(400).json({ error: "No grades provided" });
         }
         // Get assignment to validate points
-        const assignment = await prismadb_1.prismadb.assignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
             select: { points: true }
         });
         if (!assignment) {
@@ -328,32 +371,39 @@ exports.bulkGradeSubmissions = bulkGradeSubmissions;
 //create quiz assignment
 const createQuizAssignment = async (req, res) => {
     try {
-        const { title, description, instructions, dueDate, points, classroomTopicId, questions } = req.body;
+        const { title, description, instructions, dueDate, points, classroomTopicId, cohortCourseId: bodyCohortCourseId, questions } = req.body;
         // Validate required fields
-        if (!title || !classroomTopicId) {
+        if (!title) {
             return res.status(400).json({
-                error: "Title and topic ID are required"
+                error: "Title is required"
             });
         }
-        // Get the topic to get the cohortCourseId (same as in addSubItem)
-        const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
-            where: { id: classroomTopicId },
-            select: {
-                id: true,
-                cohortCourseId: true,
-                cohortCourse: {
-                    select: {
-                        id: true,
-                        cohortId: true,
+        let finalCohortCourseId = bodyCohortCourseId;
+        if (classroomTopicId) {
+            // Get the topic to get the cohortCourseId (same as in addSubItem)
+            const topic = await prismadb_1.prismadb.classroomTopic.findUnique({
+                where: { id: classroomTopicId },
+                select: {
+                    id: true,
+                    cohortCourseId: true,
+                    cohortCourse: {
+                        select: {
+                            id: true,
+                            cohortId: true,
+                        },
                     },
                 },
-            },
-        });
-        if (!topic) {
-            return res.status(404).json({ error: "Topic not found" });
+            });
+            if (!topic) {
+                return res.status(404).json({ error: "Topic not found" });
+            }
+            if (!topic.cohortCourseId) {
+                return res.status(400).json({ error: "Topic is not associated with a valid cohort course" });
+            }
+            finalCohortCourseId = topic.cohortCourseId;
         }
-        if (!topic.cohortCourseId) {
-            return res.status(400).json({ error: "Topic is not associated with a valid cohort course" });
+        if (!finalCohortCourseId) {
+            return res.status(400).json({ error: "Either classroomTopicId or cohortCourseId must be provided" });
         }
         // Validate questions
         if (!questions || !Array.isArray(questions) || questions.length === 0) {
@@ -399,8 +449,9 @@ const createQuizAssignment = async (req, res) => {
                 dueDate: dueDate ? new Date(dueDate) : null,
                 points: parseInt(totalPoints) || 100,
                 type: "QUIZ",
-                classroomTopicId: classroomTopicId,
-                cohortCourseId: topic.cohortCourseId, // Use the cohortCourseId from the topic
+                slug: await (0, slugify_1.generateUniqueAssignmentSlug)(title, prismadb_1.prismadb),
+                classroomTopicId: classroomTopicId || null,
+                cohortCourseId: finalCohortCourseId, // Use the finalCohortCourseId
                 assignmentQuizQuestions: {
                     create: questions.map((q, index) => ({
                         question: q.question.trim(),
@@ -431,10 +482,10 @@ const createQuizAssignment = async (req, res) => {
                 },
             },
         });
-        // Send Notification to all students in the cohort
+        // Send Notifications to all students in the cohort
         try {
             const students = await prismadb_1.prismadb.userCohort.findMany({
-                where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
+                where: { cohortId: assignment.cohortCourse.cohortId, isActive: true },
                 include: { user: { select: { email: true } } }
             });
             const emails = students.map(s => s.user.email).filter(Boolean);
@@ -470,8 +521,27 @@ const createQuizAssignment = async (req, res) => {
     }
 };
 exports.createQuizAssignment = createQuizAssignment;
+const updateAssignment = async (req, res) => {
+    try {
+        const { assignmentId } = req.params;
+        const data = req.body;
+        const assignment = await prismadb_1.prismadb.assignment.update({
+            where: { id: assignmentId },
+            data: data,
+        });
+        res.json({ assignment, message: "Assignment updated successfully" });
+    }
+    catch (error) {
+        console.error("Update assignment error:", error);
+        res.status(500).json({ error: "Failed to update assignment" });
+    }
+};
+exports.updateAssignment = updateAssignment;
 // Helper function for quiz submission
 const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId, res) => {
+    if (assignment.isLocked) {
+        return res.status(403).json({ error: "Quiz submissions are locked." });
+    }
     // Check if already submitted
     const existingSubmission = await prismadb_1.prismadb.assignmentQuizSubmission.findUnique({
         where: {
@@ -519,7 +589,11 @@ const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId
         include: {
             assignmentQuizAnswers: {
                 include: {
-                    assignmentQuizQuestion: true,
+                    assignmentQuizQuestion: {
+                        include: {
+                            assignmentQuizOptions: true
+                        }
+                    },
                     selectedAssignmentQuizOption: true
                 }
             }
@@ -542,15 +616,60 @@ const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId
         message: "Quiz submitted successfully"
     });
 };
+// Get all quiz submissions for an assignment (Instructor view)
+const getAssignmentQuizSubmissions = async (req, res) => {
+    try {
+        const { assignmentId } = req.params;
+        const quizSubmissions = await prismadb_1.prismadb.assignmentQuizSubmission.findMany({
+            where: { assignmentId },
+            include: {
+                assignment: true,
+                student: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        image: true,
+                    },
+                },
+                assignmentQuizAnswers: {
+                    include: {
+                        assignmentQuizQuestion: {
+                            include: {
+                                assignmentQuizOptions: true
+                            }
+                        },
+                        selectedAssignmentQuizOption: true
+                    }
+                }
+            },
+            orderBy: { submittedAt: "desc" },
+        });
+        res.json({ submissions: quizSubmissions });
+    }
+    catch (error) {
+        console.error("Get quiz submissions error:", error);
+        res.status(500).json({ error: "Failed to fetch quiz submissions" });
+    }
+};
+exports.getAssignmentQuizSubmissions = getAssignmentQuizSubmissions;
 // Get quiz results for a student
 const getAssignmentQuizResults = async (req, res) => {
     try {
         const { assignmentId } = req.params;
         const { studentId } = req.query;
+        const targetAssignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
+        });
+        if (!targetAssignment) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
         const assignmentQuizSubmission = await prismadb_1.prismadb.assignmentQuizSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
-                    assignmentId,
+                    assignmentId: targetAssignment.id,
                     studentId: studentId,
                 },
             },

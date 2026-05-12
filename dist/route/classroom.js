@@ -6,6 +6,7 @@ const middleware_1 = require("../middleware");
 exports.default = (router) => {
     router.get("/classroom/batch/topics", middleware_1.isLoggedIn, batchClassroom_1.getTopicsForCohorts);
     router.get("/classroom/:cohortId", middleware_1.isLoggedIn, classroom_1.getClassroomData);
+    router.get("/classroom/topics", middleware_1.isLoggedIn, classroom_1.getClassroomTopics);
     router.get("/classroom/:cohortId/topics", middleware_1.isLoggedIn, classroom_1.getClassroomTopics);
     router.get("/stream/:cohortId", middleware_1.isLoggedIn, classroom_1.getStreamPosts);
     router.get("/stream/:cohortId/activities", middleware_1.isLoggedIn, classroom_1.getStreamActivities);
@@ -14,6 +15,9 @@ exports.default = (router) => {
     router.patch("/classroom/topics/:topicId", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.updateTopic);
     router.delete("/classroom/topics/:topicId", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.deleteTopic);
     router.post("/classroom/items", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.addSubItem);
+    router.post("/classroom/live-class/:id/join", middleware_1.isLoggedIn, classroom_1.joinLiveClass);
+    router.get("/classroom/live-class/:id/attendance", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.getLiveClassAttendance);
+    router.get("/classroom/:cohortId/live-classes", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.getCohortLiveClasses);
     // Batch operations
     router.post("/classroom/batch/items", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, batchClassroom_1.addBatchItem);
     router.post("/classroom/batch/topics", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, batchClassroom_1.createBatchTopics);

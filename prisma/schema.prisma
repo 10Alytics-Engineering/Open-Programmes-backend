@@ -361,7 +361,7 @@ model Course {
 }
 
 model CoursePricingPlan {
-  id                   String   @id @default(cuid())
+  id                   String @id @default(cuid())
   courseId             String
   planType             String
   amountPerInstallment Float
@@ -639,9 +639,9 @@ model sessions {
 }
 
 model Facilitator {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  email       String   @unique
+  email       String  @unique
   phoneNumber String
   imageUrl    String?
   bio         String?
@@ -866,6 +866,41 @@ model ClassRecording {
   cohortCourse     CohortCourse    @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
 }
 
+model LiveClass {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  liveLink    String
+  startTime   DateTime
+  endTime     DateTime
+
+  notified30m   Boolean @default(false)
+  notifiedStart Boolean @default(false)
+
+  cohortCourseId String
+  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+
+  classroomTopicId String?
+  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
+
+  attendance LiveClassAttendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LiveClassAttendance {
+  id          String    @id @default(cuid())
+  liveClassId String
+  liveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([liveClassId, userId])
+}
+
 model StreamPost {
   id             String       @id @default(cuid())
   title          String
@@ -901,7 +936,7 @@ model ScholarshipApplication {
 }
 
 model WebinarAiAutomation {
-  id                  String   @id @default(cuid())
+  id                  String  @id @default(cuid())
   full_name           String
   email               String
   phone               String
@@ -912,7 +947,7 @@ model WebinarAiAutomation {
 }
 
 model WebinarGenerativeAiData {
-  id                  String   @id @default(cuid())
+  id                  String  @id @default(cuid())
   full_name           String
   email               String
   phone               String
@@ -920,35 +955,6 @@ model WebinarGenerativeAiData {
   terms_accepted      Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-}
-
-model LiveClass {
-  id                  String                @id
-  title               String
-  description         String?
-  liveLink            String
-  startTime           DateTime
-  endTime             DateTime
-  notified30m         Boolean               @default(false)
-  notifiedStart       Boolean               @default(false)
-  cohortCourseId      String
-  classroomTopicId    String?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime
-  classroom_topics    ClassroomTopic?       @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  CohortCourse        CohortCourse          @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  LiveClassAttendance LiveClassAttendance[]
-}
-
-model LiveClassAttendance {
-  id          String    @id
-  liveClassId String
-  userId      String
-  joinedAt    DateTime  @default(now())
-  LiveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
-  User        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([liveClassId, userId])
 }
 
 enum UserRole {

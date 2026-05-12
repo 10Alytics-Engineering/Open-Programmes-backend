@@ -86,7 +86,7 @@ export const isAuthorized = (
             const user = req.user as NebiantUser;
             const requestedUserId = req.params.userId || req.body.userId;
 
-            if (user?.id === requestedUserId || user?.role === "ADMIN") {
+            if (user?.id === requestedUserId || user?.role === "ADMIN" || user?.role === "COURSE_ADMIN") {
                 next();
             } else {
                 return res
