@@ -72,10 +72,18 @@ const getAssignmentSubmission = async (req, res) => {
         if (!studentId) {
             return res.status(400).json({ error: "Student ID is required" });
         }
+        const targetAssignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
+        });
+        if (!targetAssignment) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
         const submission = await prismadb_1.prismadb.assignmentSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
-                    assignmentId,
+                    assignmentId: targetAssignment.id,
                     studentId: studentId,
                 },
             },
@@ -126,8 +134,8 @@ const submitAssignment = async (req, res) => {
         const existingSubmission = await prismadb_1.prismadb.assignmentSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
-                    assignmentId,
-                    studentId,
+                    assignmentId: assignment.id,
+                    studentId: studentId,
                 },
             },
         });
@@ -137,10 +145,10 @@ const submitAssignment = async (req, res) => {
         // Create submission with Cloudinary URL
         const submission = await prismadb_1.prismadb.assignmentSubmission.create({
             data: {
+                assignmentId: assignment.id,
+                studentId,
                 content: content || null,
                 fileUrl: fileUrl || null,
-                assignmentId,
-                studentId,
                 submittedAt: new Date(),
             },
             include: {
@@ -155,7 +163,7 @@ const submitAssignment = async (req, res) => {
             },
         });
         // Log the submission for tracking
-        console.log(`Assignment submitted: ${assignmentId} by student: ${studentId}`);
+        console.log(`Assignment submitted: ${assignment.id} by student: ${studentId}`);
         res.json({
             submission,
             message: "Assignment submitted successfully",
@@ -171,8 +179,16 @@ exports.submitAssignment = submitAssignment;
 const getAssignmentSubmissions = async (req, res) => {
     try {
         const { assignmentId } = req.params;
+        const targetAssignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
+        });
+        if (!targetAssignment) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
         const submissions = await prismadb_1.prismadb.assignmentSubmission.findMany({
-            where: { assignmentId },
+            where: { assignmentId: targetAssignment.id },
             include: {
                 student: {
                     select: {
@@ -573,7 +589,11 @@ const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId
         include: {
             assignmentQuizAnswers: {
                 include: {
-                    assignmentQuizQuestion: true,
+                    assignmentQuizQuestion: {
+                        include: {
+                            assignmentQuizOptions: true
+                        }
+                    },
                     selectedAssignmentQuizOption: true
                 }
             }
@@ -638,10 +658,18 @@ const getAssignmentQuizResults = async (req, res) => {
     try {
         const { assignmentId } = req.params;
         const { studentId } = req.query;
+        const targetAssignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
+        });
+        if (!targetAssignment) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
         const assignmentQuizSubmission = await prismadb_1.prismadb.assignmentQuizSubmission.findUnique({
             where: {
                 assignmentId_studentId: {
-                    assignmentId,
+                    assignmentId: targetAssignment.id,
                     studentId: studentId,
                 },
             },
