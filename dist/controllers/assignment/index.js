@@ -2,13 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAssignmentQuizResults = exports.getAssignmentQuizSubmissions = exports.updateAssignment = exports.createQuizAssignment = exports.bulkGradeSubmissions = exports.gradeQuizSubmission = exports.gradeSubmission = exports.getAssignmentSubmissions = exports.submitAssignment = exports.getAssignmentSubmission = exports.getAssignment = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const slugify_1 = require("../../utils/slugify");
 const mail_1 = require("../authentication/mail");
 // Updated getAssignment to include assignment quiz questions
 const getAssignment = async (req, res) => {
     try {
         const { assignmentId } = req.params;
-        const assignment = await prismadb_1.prismadb.assignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
             include: {
                 attachments: true,
                 assignmentQuizQuestions: {
@@ -97,8 +100,10 @@ const submitAssignment = async (req, res) => {
         const user = req.user;
         const studentId = user.id;
         // Check if assignment exists
-        const assignment = await prismadb_1.prismadb.assignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
             include: {
                 assignmentQuizQuestions: {
                     include: {
@@ -299,8 +304,10 @@ const bulkGradeSubmissions = async (req, res) => {
             return res.status(400).json({ error: "No grades provided" });
         }
         // Get assignment to validate points
-        const assignment = await prismadb_1.prismadb.assignment.findUnique({
-            where: { id: assignmentId },
+        const assignment = await prismadb_1.prismadb.assignment.findFirst({
+            where: {
+                OR: [{ id: assignmentId }, { slug: assignmentId }],
+            },
             select: { points: true }
         });
         if (!assignment) {
@@ -426,6 +433,7 @@ const createQuizAssignment = async (req, res) => {
                 dueDate: dueDate ? new Date(dueDate) : null,
                 points: parseInt(totalPoints) || 100,
                 type: "QUIZ",
+                slug: await (0, slugify_1.generateUniqueAssignmentSlug)(title, prismadb_1.prismadb),
                 classroomTopicId: classroomTopicId || null,
                 cohortCourseId: finalCohortCourseId, // Use the finalCohortCourseId
                 assignmentQuizQuestions: {

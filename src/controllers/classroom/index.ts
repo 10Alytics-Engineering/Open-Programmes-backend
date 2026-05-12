@@ -3,6 +3,7 @@ import { prismadb } from "../../lib/prismadb";
 import { 
   sendClassroomNotificationEmail 
 } from "../authentication/mail";
+import { generateUniqueAssignmentSlug } from "../../utils/slugify";
 import { notifyCohortMembers } from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
 
@@ -314,6 +315,7 @@ export const addSubItem = async (req: Request, res: Response) => {
             ...data,
             classroomTopicId: topicId || null,
             cohortCourseId: targetCohortCourseId,
+            slug: await generateUniqueAssignmentSlug(data.title, prismadb),
           },
         });
         break;
@@ -651,7 +653,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         author: { id: 'system', name: 'Instructor' },
         createdAt: assignment.createdAt.toISOString(),
         metadata: {
-          assignmentId: assignment.id,
+          assignmentId: assignment.slug || assignment.id,
           dueDate: assignment.dueDate?.toISOString(),
           points: assignment.points,
           topicTitle: assignment.classroomTopic?.title, // Include topic if exists
