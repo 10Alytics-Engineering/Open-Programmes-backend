@@ -1,15 +1,954 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// prisma/schema.prisma
 datasource db {
   provider     = "postgresql"
   url          = env("DATABASE_URL")
   relationMode = "foreignKeys"
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model VerificationToken {
+  id      String   @id @default(cuid())
+  email   String
+  token   String   @unique
+  expires DateTime
+
+  @@unique([email, token])
+}
+
+model PasswordResetToken {
+  id      String   @id @default(cuid())
+  email   String
+  token   String   @unique
+  expires DateTime
+
+  @@unique([email, token])
+}
+
+model PaymentInstallment {
+  id                String        @id @default(cuid())
+  paymentStatusId   String
+  amount            Float
+  dueDate           DateTime
+  paid              Boolean       @default(false)
+  installmentNumber Int
+  lastReminderSent  DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  paymentStatus     PaymentStatus @relation(fields: [paymentStatusId], references: [id], onDelete: Cascade)
+}
+
+model PaymentStatus {
+  id                   String                @id @default(cuid())
+  status               PaymentStatusType
+  courseId             String
+  paymentType          String?
+  paymentPlan          String?
+  cohortId             String?
+  userId               String
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  secondPaymentDueDate DateTime?
+  desiredStartDate     DateTime?
+  changeRequests       ChangeRequest[]
+  paymentInstallments  PaymentInstallment[]
+  cohort               Cohort?               @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  course               Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions         PaymentTransaction[]
+  paystackTransactions PaystackTransaction[]
+
+  @@unique([userId, courseId])
+}
+
+model User {
+  id                                                                 String                     @id @default(cuid())
+  name                                                               String
+  email                                                              String?                    @unique
+  emailVerified                                                      DateTime?
+  image                                                              String?
+  password                                                           String?
+  role                                                               UserRole                   @default(USER)
+  access_token                                                       String?
+  phone_number                                                       String?                    @unique
+  unlock_free_course_on_data_science                                 Boolean                    @default(false)
+  ongoing_courses                                                    String[]
+  completed_courses                                                  String[]
+  inactive                                                           Boolean                    @default(false)
+  createdAt                                                          DateTime                   @default(now())
+  updatedAt                                                          DateTime                   @updatedAt
+  accountPaymentStatus                                               String?                    @default("UNPAID")
+  announcements                                                      Announcement[]
+  AssignmentQuizSubmission_AssignmentQuizSubmission_gradedByIdToUser AssignmentQuizSubmission[] @relation("AssignmentQuizSubmission_gradedByIdToUser")
+  assignmentQuizSubmissions                                          AssignmentQuizSubmission[]
+  gradedSubmissions                                                  AssignmentSubmission[]     @relation("GradedBy")
+  assignmentSubmissions                                              AssignmentSubmission[]
+  processedChangeRequests                                            ChangeRequest[]            @relation("ProcessedBy")
+  changeRequests                                                     ChangeRequest[]            @relation("UserChangeRequests")
+  comments                                                           Comment[]
+  quiz_leaderboard                                                   Leaderboard[]
+  LiveClassAttendance                                                LiveClassAttendance[]
+  paymentStatus                                                      PaymentStatus[]
+  course_purchased                                                   Purchase[]
+  scholarshipApplications                                            ScholarshipApplication[]
+  cohorts                                                            UserCohort[]
+  completed_videos                                                   UserProgress[]
+  quiz_answers                                                       UserQuizAnswer[]
+  accounts                                                           Account[]
+  streamPost                                                         StreamPost[]
+}
+
+model ChangeRequest {
+  id              String         @id @default(cuid())
+  type            RequestType
+  userId          String
+  currentCourseId String?
+  desiredCourseId String?
+  currentCohortId String?
+  desiredCohortId String?
+  reason          String
+  status          RequestStatus  @default(PENDING)
+  adminReason     String?
+  paymentStatusId String?
+  processedById   String?
+  processedAt     DateTime?
+  paymentDueDate  DateTime?
+  paymentLink     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  currentCohort   Cohort?        @relation("CurrentCohort", fields: [currentCohortId], references: [id])
+  currentCourse   Course?        @relation("CurrentCourse", fields: [currentCourseId], references: [id])
+  desiredCohort   Cohort?        @relation("DesiredCohort", fields: [desiredCohortId], references: [id])
+  desiredCourse   Course?        @relation("DesiredCourse", fields: [desiredCourseId], references: [id])
+  paymentStatus   PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
+  processedBy     User?          @relation("ProcessedBy", fields: [processedById], references: [id])
+  user            User           @relation("UserChangeRequests", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model UserCohort {
+  id                   String    @id @default(cuid())
+  courseId             String
+  cohortId             String
+  userId               String
+  isPaymentActive      Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  isActive             Boolean   @default(true)
+  archivedAt           DateTime?
+  previousEnrollmentId String?
+  cohort               Cohort    @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cohortId, courseId])
+}
+
+model Cohort {
+  id                    String          @id @default(cuid())
+  name                  String
+  startDate             DateTime        @default(now())
+  endDate               DateTime?
+  courseId              String
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  currentChangeRequests ChangeRequest[] @relation("CurrentCohort")
+  desiredChangeRequests ChangeRequest[] @relation("DesiredCohort")
+  course                Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  cohortCourses         CohortCourse[]
+  paymentStatuses       PaymentStatus[]
+  users                 UserCohort[]
+}
+
+model CohortCourse {
+  id                            String                  @id @default(cuid())
+  cohortId                      String
+  courseId                      String
+  title                         String
+  description                   String?
+  price                         String?
+  imageUrl                      String?
+  course_duration               String?
+  course_instructor_name        String?
+  course_instructor_image       String?
+  course_instructor_title       String?
+  course_instructor_description String?
+  brochureUrl                   String?
+  onboardingBrochureUrl         String?
+  course_preview_video          String?
+  createdAt                     DateTime                @default(now())
+  updatedAt                     DateTime                @updatedAt
+  announcements                 Announcement[]
+  assignments                   Assignment[]
+  classMaterial                 ClassMaterial[]
+  classRecording                ClassRecording[]
+  cohortAttachments             CohortAttachment[]
+  cohort                        Cohort                  @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  course                        Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  cohortModules                 CohortCourseModule[]
+  cohortTimeTable               CohortCourseTimeTable[]
+  cohortWeeks                   CohortCourseWeek[]
+  cohortVideos                  CohortProjectVideo[]
+  cohortQuizzes                 CohortQuiz[]
+  LiveClass                     LiveClass[]
+  classroomTopic                ClassroomTopic[]
+  streamPost                    StreamPost[]
+}
+
+model CohortCourseTimeTable {
+  id             String        @id @default(cuid())
+  name           String
+  category       EventCategory
+  date           DateTime
+  cohortCourseId String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  cohortCourse   CohortCourse  @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+}
+
+model CohortCourseWeek {
+  id             String               @id @default(cuid())
+  title          String
+  iconUrl        String?
+  cohortCourseId String
+  isPublished    Boolean              @default(false)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  attachments    CohortAttachment[]
+  cohortModules  CohortCourseModule[]
+  cohortCourse   CohortCourse         @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+}
+
+model CohortCourseModule {
+  id                  String               @id @default(cuid())
+  title               String
+  description         String?
+  iconUrl             String?
+  cohortCourseWeekId  String
+  cohortCourseId      String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  assignments         Assignment[]
+  cohortCourse        CohortCourse         @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  cohortCourseWeek    CohortCourseWeek     @relation(fields: [cohortCourseWeekId], references: [id], onDelete: Cascade)
+  cohortProjectVideos CohortProjectVideo[]
+  cohortQuizzes       CohortQuiz[]
+}
+
+model CohortProjectVideo {
+  id                   String             @id @default(cuid())
+  title                String
+  videoUrl             String?
+  thumbnailUrl         String?
+  duration             String?
+  cohortCourseModuleId String
+  cohortCourseId       String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  cohortCourse         CohortCourse       @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  cohortCourseModule   CohortCourseModule @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
+}
+
+model CohortAttachment {
+  id                 String           @id @default(cuid())
+  name               String
+  url                String?
+  cohortCourseWeekId String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  cohortCourseId     String?
+  CohortCourse       CohortCourse?    @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  cohortCourseWeek   CohortCourseWeek @relation(fields: [cohortCourseWeekId], references: [id], onDelete: Cascade)
+}
+
+model CohortQuiz {
+  id                   String             @id @default(cuid())
+  question             String
+  cohortCourseModuleId String
+  cohortCourseId       String?
+  originalQuizId       String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  cohortCourse         CohortCourse?      @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  cohortCourseModule   CohortCourseModule @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
+  cohortQuizAnswers    CohortQuizAnswer[]
+}
+
+model CohortQuizAnswer {
+  id               String     @id @default(cuid())
+  answer           String
+  isCorrect        Boolean
+  cohortQuizId     String
+  originalAnswerId String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  cohortQuiz       CohortQuiz @relation(fields: [cohortQuizId], references: [id], onDelete: Cascade)
+}
+
+model Purchase {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Course {
+  id                                 String               @id @default(cuid())
+  title                              String
+  description                        String?
+  price                              String?
+  discount                           String?
+  imageUrl                           String?
+  slug                               String?
+  course_duration                    String?
+  course_instructor_name             String?
+  course_instructor_image            String?
+  course_instructor_title            String?
+  course_instructor_description      String?
+  course_instructor_ratings          String?
+  course_instructor_courses          String?
+  course_instructor_lessons          String?
+  course_instructor_hrs              String?
+  course_instructor_students_trained String?
+  brochureUrl                        String?
+  course_preview_video               String?
+  catalog_header_image               String?
+  createdAt                          DateTime             @default(now())
+  updatedAt                          DateTime             @updatedAt
+  syllabus                           String?
+  catalog_header_tags                CatalogHeaderTags[]
+  currentChangeRequests              ChangeRequest[]      @relation("CurrentCourse")
+  desiredChangeRequests              ChangeRequest[]      @relation("DesiredCourse")
+  cohorts                            Cohort[]
+  cohortCourses                      CohortCourse[]
+  pricingPlans                       CoursePricingPlan[]
+  course_weeks                       CourseWeek[]
+  learning_Outcomes                  LearningOutcome[]
+  paymentStatuses                    PaymentStatus[]
+  prerequisites                      Prerequisite[]
+  course_videos                      ProjectVideo[]
+  purchases                          Purchase[]
+  skills_you_will_learn              SkillsYouWillLearn[]
+  tags                               Tag[]
+  timetable                          TimeTable[]
+  facilitators                       Facilitator[]        @relation("CourseToFacilitator")
+}
+
+model CoursePricingPlan {
+  id                   String   @id @default(cuid())
+  courseId             String
+  planType             String
+  amountPerInstallment Float
+  installmentsCount    Int
+  discountPrice        Float?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  course               Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, planType])
+}
+
+model CourseWeek {
+  id            String       @id @default(cuid())
+  title         String
+  iconUrl       String?
+  courseId      String
+  isPublished   Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  attachments   Attachment[]
+  course        Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseModules Module[]
+}
+
+model Attachment {
+  id           String     @id @default(cuid())
+  name         String
+  url          String?
+  courseWeekId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  courseWeek   CourseWeek @relation(fields: [courseWeekId], references: [id], onDelete: Cascade)
+}
+
+model Module {
+  id            String         @id @default(cuid())
+  title         String
+  description   String?
+  iconUrl       String?
+  courseWeekId  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  CourseWeek    CourseWeek     @relation(fields: [courseWeekId], references: [id], onDelete: Cascade)
+  projectVideos ProjectVideo[]
+  quizzes       Quiz[]
+}
+
+model ProjectVideo {
+  id           String   @id @default(cuid())
+  title        String
+  videoUrl     String?
+  thumbnailUrl String?
+  duration     String?
+  moduleId     String
+  courseId     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  videoType    String?  @default("VIMEO")
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseModule Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+}
+
+model UserProgress {
+  id                 String    @id @default(cuid())
+  videoId            String
+  courseId           String
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  isCompleted         Boolean   @default(false)
+  progressPercentage  Float     @default(0)
+  lastPositionSeconds Int       @default(0)
+  lastWatched         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, videoId, courseId])
+}
+
+model Quiz {
+  id           String        @id @default(cuid())
+  question     String
+  moduleId     String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  leaderboards Leaderboard[]
+  courseModule Module        @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  answers      QuizAnswer[]
+}
+
+model QuizAnswer {
+  id          String           @id @default(cuid())
+  name        String
+  quizId      String
+  isCorrect   Boolean          @default(false)
+  quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizAnswers UserQuizAnswer[]
+}
+
+model UserQuizAnswer {
+  id           String     @id @default(cuid())
+  userId       String
+  quizAnswerId String
+  quizAnswer   QuizAnswer @relation(fields: [quizAnswerId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, quizAnswerId])
+}
+
+model Leaderboard {
+  id        String   @id @default(cuid())
+  userId    String
+  quizId    String
+  points    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, quizId])
+}
+
+model TimeTable {
+  id        String        @id @default(cuid())
+  name      String
+  category  EventCategory
+  date      DateTime?
+  courseId  String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  course    Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model PaystackTransaction {
+  id               String         @id @default(cuid())
+  transactionRef   String         @unique
+  userId           String
+  courseId         String
+  paymentType      String?
+  paymentPlan      String?
+  paymentStatusId  String?
+  amount           String
+  status           String
+  paymentDate      DateTime?
+  authorizationUrl String?
+  metadata         String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PaymentTransaction {
+  id               String         @id @default(cuid())
+  transactionRef   String?        @unique
+  paymentGateway   PaymentSource
+  userId           String
+  courseId         String
+  paymentType      String?
+  paymentPlan      String?
+  paymentStatusId  String?
+  amount           String
+  status           String
+  paymentDate      DateTime?
+  authorizationUrl String?
+  metadata         String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CatalogHeaderTags {
+  id       String  @id @default(cuid())
+  title    String
+  imageUrl String?
+  courseId String
+  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model LearningOutcome {
+  id       String @id @default(cuid())
+  content  String
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model Prerequisite {
+  id       String @id @default(cuid())
+  content  String
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model Tag {
+  id       String @id @default(cuid())
+  content  String
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model SkillsYouWillLearn {
+  id       String @id @default(cuid())
+  iconUrl  String
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+model Blog {
+  id        String      @id @default(cuid())
+  title     String
+  content   String
+  mins_read String?     @default("2 mins")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  images    BlogImage[]
+}
+
+model BlogImage {
+  id        String   @id @default(cuid())
+  url       String?
+  blogId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  blog      Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+}
+
+model FreeCourseApplication {
+  id             String   @id @default(cuid())
+  name           String
+  email          String
+  phone          String
+  course_applied String   @default("Data Science")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model MasterClassRegistration {
+  id         String   @id @default(cuid())
+  name       String
+  email      String
+  phone      String
+  gender     String
+  location   String
+  heard_from String
+  help_with  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model sessions {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  sessionLink String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([startTime])
+  @@index([endTime])
+  @@map("sessions")
+}
+
+model Facilitator {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  phoneNumber String
+  imageUrl    String?
+  bio         String?
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  courses     Course[] @relation("CourseToFacilitator")
+}
+
+model Links {
+  id            Int      @id @default(autoincrement())
+  communityLink String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("links")
+}
+
+model programLeads {
+  id          Int       @id @default(autoincrement())
+  programType String
+  firstName   String
+  lastName    String
+  email       String
+  gender      String
+  phoneNumber String
+  hearAbout   String?
+  otherSource String?
+  createdAt   DateTime? @default(now())
+  updatedAt   DateTime? @updatedAt
+}
+
+model Assignment {
+  id                        String                     @id @default(cuid())
+  title                     String
+  description               String?
+  instructions              String?
+  dueDate                   DateTime?
+  points                    Int?
+  type                      AssignmentType             @default(REGULAR)
+  cohortCourseId            String
+  cohortCourseModuleId      String?
+  classroomTopicId          String?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  isLocked                  Boolean                    @default(false)
+  slug                      String?                    @unique
+  classroomTopic            ClassroomTopic?            @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
+  cohortCourse              CohortCourse               @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  cohortCourseModule        CohortCourseModule?        @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
+  attachments               AssignmentAttachment[]
+  assignmentQuizQuestions   AssignmentQuizQuestion[]
+  assignmentQuizSubmissions AssignmentQuizSubmission[]
+  submissions               AssignmentSubmission[]
+}
+
+model AssignmentQuizQuestion {
+  id                    String                 @id @default(cuid())
+  question              String
+  order                 Int                    @default(0)
+  points                Int                    @default(1)
+  assignmentId          String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  assignmentQuizAnswers AssignmentQuizAnswer[]
+  assignmentQuizOptions AssignmentQuizOption[]
+  assignment            Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+}
+
+model AssignmentQuizOption {
+  id                       String                 @id @default(cuid())
+  text                     String
+  isCorrect                Boolean                @default(false)
+  order                    Int                    @default(0)
+  assignmentQuizQuestionId String
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  assignmentQuizAnswers    AssignmentQuizAnswer[]
+  assignmentQuizQuestion   AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
+}
+
+model AssignmentQuizSubmission {
+  id                                             String                 @id @default(cuid())
+  assignmentId                                   String
+  studentId                                      String
+  totalScore                                     Int
+  maxScore                                       Int
+  submittedAt                                    DateTime               @default(now())
+  createdAt                                      DateTime               @default(now())
+  updatedAt                                      DateTime               @updatedAt
+  feedback                                       String?
+  gradedAt                                       DateTime?
+  gradedById                                     String?
+  assignmentQuizAnswers                          AssignmentQuizAnswer[]
+  assignment                                     Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  User_AssignmentQuizSubmission_gradedByIdToUser User?                  @relation("AssignmentQuizSubmission_gradedByIdToUser", fields: [gradedById], references: [id])
+  student                                        User                   @relation(fields: [studentId], references: [id])
+
+  @@unique([assignmentId, studentId])
+}
+
+model AssignmentQuizAnswer {
+  id                             String                   @id @default(cuid())
+  assignmentQuizSubmissionId     String
+  assignmentQuizQuestionId       String
+  selectedAssignmentQuizOptionId String
+  isCorrect                      Boolean
+  pointsEarned                   Int
+  createdAt                      DateTime                 @default(now())
+  updatedAt                      DateTime                 @updatedAt
+  assignmentQuizQuestion         AssignmentQuizQuestion   @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
+  assignmentQuizSubmission       AssignmentQuizSubmission @relation(fields: [assignmentQuizSubmissionId], references: [id], onDelete: Cascade)
+  selectedAssignmentQuizOption   AssignmentQuizOption     @relation(fields: [selectedAssignmentQuizOptionId], references: [id], onDelete: Cascade)
+}
+
+model AssignmentAttachment {
+  id           String     @id @default(cuid())
+  name         String
+  url          String
+  assignmentId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+}
+
+model AssignmentSubmission {
+  id           String     @id @default(cuid())
+  content      String?
+  fileUrl      String?
+  submittedAt  DateTime   @default(now())
+  grade        Int?
+  feedback     String?
+  gradedAt     DateTime?
+  gradedById   String?
+  assignmentId String
+  studentId    String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  gradedBy     User?      @relation("GradedBy", fields: [gradedById], references: [id])
+  student      User       @relation(fields: [studentId], references: [id])
+  comments     Comment[]
+
+  @@unique([assignmentId, studentId])
+}
+
+model Announcement {
+  id             String       @id @default(cuid())
+  title          String
+  content        String
+  isPinned       Boolean      @default(false)
+  cohortCourseId String
+  authorId       String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  author         User         @relation(fields: [authorId], references: [id])
+  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  comments       Comment[]
+}
+
+model Comment {
+  id             String                @id @default(cuid())
+  content        String
+  authorId       String
+  announcementId String?
+  submissionId   String?
+  streamPostId   String?
+  parentId       String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  announcement   Announcement?         @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  author         User                  @relation(fields: [authorId], references: [id])
+  parent         Comment?              @relation("CommentReplies", fields: [parentId], references: [id])
+  replies        Comment[]             @relation("CommentReplies")
+  streamPost     StreamPost?           @relation(fields: [streamPostId], references: [id], onDelete: Cascade)
+  submission     AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+model ClassroomTopic {
+  id              String           @id @default(cuid())
+  title           String
+  description     String?
+  isPinned        Boolean          @default(false)
+  order           Int              @default(0)
+  cohortCourseId  String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  assignments     Assignment[]
+  classMaterials  ClassMaterial[]
+  classRecordings ClassRecording[]
+  LiveClass       LiveClass[]
+  cohortCourse    CohortCourse     @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+
+  @@index([cohortCourseId, isPinned, order])
+  @@map("classroom_topics")
+}
+
+model ClassMaterial {
+  id               String          @id @default(cuid())
+  title            String
+  description      String?
+  fileUrl          String
+  fileType         String          @default("pdf")
+  cohortCourseId   String
+  classroomTopicId String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
+  cohortCourse     CohortCourse    @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+}
+
+model ClassRecording {
+  id               String          @id @default(cuid())
+  title            String
+  description      String?
+  recordingUrl     String
+  cohortCourseId   String
+  classroomTopicId String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
+  cohortCourse     CohortCourse    @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+}
+
+model StreamPost {
+  id             String       @id @default(cuid())
+  title          String
+  content        String
+  isPinned       Boolean      @default(false)
+  authorId       String
+  cohortCourseId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  comments       Comment[]
+  author         User         @relation(fields: [authorId], references: [id])
+  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+
+  @@map("stream_posts")
+}
+
+model ScholarshipApplication {
+  id            String   @id @default(cuid())
+  fullName      String
+  email         String
+  phone_number  String
+  country       String
+  gender        String
+  program       String
+  cohort        String
+  discountCode  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  userId        String?
+  password      String?
+  paymentStatus String   @default("PENDING")
+  user          User?    @relation(fields: [userId], references: [id])
+}
+
+model WebinarAiAutomation {
+  id                  String   @id @default(cuid())
+  full_name           String
+  email               String
+  phone               String
+  skill_interested_in String?
+  terms_accepted      Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model WebinarGenerativeAiData {
+  id                  String   @id @default(cuid())
+  full_name           String
+  email               String
+  phone               String
+  skill_interested_in String?
+  terms_accepted      Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model LiveClass {
+  id                  String                @id
+  title               String
+  description         String?
+  liveLink            String
+  startTime           DateTime
+  endTime             DateTime
+  notified30m         Boolean               @default(false)
+  notifiedStart       Boolean               @default(false)
+  cohortCourseId      String
+  classroomTopicId    String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  classroom_topics    ClassroomTopic?       @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
+  CohortCourse        CohortCourse          @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
+  LiveClassAttendance LiveClassAttendance[]
+}
+
+model LiveClassAttendance {
+  id          String    @id
+  liveClassId String
+  userId      String
+  joinedAt    DateTime  @default(now())
+  LiveClass   LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  User        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([liveClassId, userId])
 }
 
 enum UserRole {
@@ -59,1105 +998,7 @@ enum PaymentSource {
   PAYSTACK
 }
 
-model Account {
-  id                String  @id @default(cuid())
-  userId            String  @map("user_id")
-  type              String
-  provider          String
-  providerAccountId String  @map("provider_account_id")
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@map("accounts")
-}
-
-model VerificationToken {
-  id      String   @id @default(cuid())
-  email   String
-  token   String   @unique
-  expires DateTime
-
-  @@unique([email, token])
-}
-
-model PasswordResetToken {
-  id      String   @id @default(cuid())
-  email   String
-  token   String   @unique
-  expires DateTime
-
-  @@unique([email, token])
-}
-
-model PaymentInstallment {
-  id                String        @id @default(cuid())
-  paymentStatusId   String
-  paymentStatus     PaymentStatus @relation(fields: [paymentStatusId], references: [id], onDelete: Cascade)
-  amount            Float
-  dueDate           DateTime
-  paid              Boolean       @default(false)
-  installmentNumber Int
-  lastReminderSent  DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-}
-
-model PaymentStatus {
-  id                   String                @id @default(cuid())
-  status               PaymentStatusType
-  courseId             String
-  paymentType          String?
-  paymentPlan          String?
-  course               Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  cohortId             String?
-  cohort               Cohort?               @relation(fields: [cohortId], references: [id], onDelete: Cascade)
-  userId               String
-  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  paymentInstallments  PaymentInstallment[]
-  transactions         PaymentTransaction[]
-  paystackTransactions PaystackTransaction[]
-  secondPaymentDueDate DateTime?
-  desiredStartDate     DateTime?
-  
-  changeRequests       ChangeRequest[]
-
-  @@unique([userId, courseId])
-}
-
-model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          UserRole  @default(USER)
-  accounts      Account[]
-  access_token  String?
-  accountPaymentStatus String?   @default("UNPAID")
-
-  phone_number String? @unique
-
-  unlock_free_course_on_data_science Boolean @default(false)
-
-  completed_videos  UserProgress[]
-  ongoing_courses   String[] //return Ids
-  completed_courses String[] //return Ids
-
-  course_purchased     Purchase[]
-
-  cohorts UserCohort[] // return userId, cohortId, cohort
-
-  quiz_leaderboard Leaderboard[] // return an object[] of leaderboard for each quizId
-  quiz_answers     UserQuizAnswer[]
-
-  //Make adjustments based on courseId
-  paymentStatus PaymentStatus[]
-  inactive      Boolean         @default(false)
- 
-  changeRequests     ChangeRequest[] @relation("UserChangeRequests")
-  processedChangeRequests  ChangeRequest[] @relation("ProcessedBy")
-
-  // New connections for assignments and discussions
-  streamPost  StreamPost[]
-  assignmentSubmissions AssignmentSubmission[]
-  assignmentQuizSubmissions AssignmentQuizSubmission[]
-  announcements         Announcement[]
-  comments              Comment[]
-  gradedSubmissions     AssignmentSubmission[] @relation("GradedBy")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  scholarshipApplications ScholarshipApplication[]
-}
-
-model ChangeRequest {
-  id                String        @id @default(cuid())
-  type              RequestType
-  userId            String
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade, name: "UserChangeRequests")
-  
-  // For course change
-  currentCourseId   String?
-  currentCourse     Course?       @relation(fields: [currentCourseId], references: [id], name: "CurrentCourse", onDelete: SetNull)
-  desiredCourseId   String?
-  desiredCourse     Course?       @relation(fields: [desiredCourseId], references: [id], name: "DesiredCourse", onDelete: SetNull)
-  
-  // For deferment
-  currentCohortId   String?
-  currentCohort     Cohort?       @relation(fields: [currentCohortId], references: [id], name: "CurrentCohort", onDelete: SetNull)
-  desiredCohortId   String?
-  desiredCohort     Cohort?       @relation(fields: [desiredCohortId], references: [id], name: "DesiredCohort", onDelete: SetNull)
-  
-  reason            String
-  status            RequestStatus @default(PENDING)
-  adminReason       String?
-  paymentStatusId   String?
-  paymentStatus     PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
-  processedById     String?
-  processedBy       User?         @relation(fields: [processedById], references: [id], name: "ProcessedBy")
-  processedAt       DateTime?
-  paymentDueDate    DateTime?
-  paymentLink       String?
-  
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-
-  @@index([userId])
-  @@index([status])
-  @@index([type])
-  @@index([createdAt])
-}
-
-model UserCohort {
-  id String @id @default(cuid())
-
-  courseId String
-
-  cohortId String
-  cohort   Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  isPaymentActive Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  isActive      Boolean   @default(true)
-  archivedAt    DateTime?
-  previousEnrollmentId String?
-
-  @@unique([userId, cohortId, courseId])
-}
-
-model Cohort {
-  id   String @id @default(cuid())
-  name String
-
-  startDate DateTime  @default(now())
-  endDate   DateTime?
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  users           UserCohort[] // return userId, user and cohortId
-  cohortCourses   CohortCourse[]
-  paymentStatuses PaymentStatus[]
-  
-  // ADDED: Relations for ChangeRequest
-  currentChangeRequests ChangeRequest[] @relation("CurrentCohort")
-  desiredChangeRequests ChangeRequest[] @relation("DesiredCohort")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortCourse {
-  id       String @id @default(cuid())
-  cohortId String
-  cohort   Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  title       String
-  description String? @db.Text
-  price       String?
-  imageUrl    String?
-
-  course_duration               String?
-  course_instructor_name        String?
-  course_instructor_image       String?
-  course_instructor_title       String?
-  course_instructor_description String? @db.Text
-  brochureUrl                   String?
-  onboardingBrochureUrl String?
-  course_preview_video          String?
-
-  cohortTimeTable   CohortCourseTimeTable[]
-  cohortWeeks       CohortCourseWeek[]
-  cohortModules     CohortCourseModule[]
-  cohortVideos      CohortProjectVideo[]
-  cohortAttachments CohortAttachment[]
-  cohortQuizzes     CohortQuiz[]
-
-  // New connections
-  classroomTopic ClassroomTopic[]
-  streamPost  StreamPost[]
-  assignments   Assignment[]
-  announcements Announcement[]
-  classMaterial ClassMaterial[]
-  classRecording ClassRecording[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortCourseTimeTable {
-  id String @id @default(cuid())
-
-  name     String
-  category EventCategory
-  date     DateTime
-
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortCourseWeek {
-  id String @id @default(cuid())
-
-  title   String
-  iconUrl String?
-
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-
-  attachments   CohortAttachment[]
-  cohortModules CohortCourseModule[]
-  isPublished   Boolean              @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortCourseModule {
-  id String @id @default(cuid())
-
-  title       String
-  description String? @db.Text
-  iconUrl     String?
-
-  cohortCourseWeekId String
-  cohortCourseWeek   CohortCourseWeek @relation(fields: [cohortCourseWeekId], references: [id], onDelete: Cascade)
-
-  cohortProjectVideos CohortProjectVideo[]
-  cohortQuizzes       CohortQuiz[]
-
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-
-  // New connection for assignments
-  assignments Assignment[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortProjectVideo {
-  id String @id @default(cuid())
-
-  title        String
-  videoUrl     String?
-  thumbnailUrl String?
-  duration     String?
-
-  cohortCourseModuleId String
-  cohortCourseModule   CohortCourseModule @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
-
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortAttachment {
-  id String @id @default(cuid())
-
-  name String
-  url  String?
-
-  cohortCourseWeekId String
-  cohortCourseWeek   CohortCourseWeek @relation(fields: [cohortCourseWeekId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  CohortCourse   CohortCourse? @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  cohortCourseId String?
-}
-
-model CohortQuiz {
-  id String @id @default(cuid())
-
-  question String
-
-  cohortCourseModuleId String
-  cohortCourseModule   CohortCourseModule @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
-
-  cohortCourseId String?
-  cohortCourse   CohortCourse? @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-
-  cohortQuizAnswers CohortQuizAnswer[]
-
-  originalQuizId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CohortQuizAnswer {
-  id String @id @default(cuid())
-
-  answer    String
-  isCorrect Boolean
-
-  cohortQuizId String
-  cohortQuiz   CohortQuiz @relation(fields: [cohortQuizId], references: [id], onDelete: Cascade)
-
-  originalAnswerId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Purchase {
-  id String @id @default(cuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Course {
-  id String @id @default(cuid())
-
-  title       String
-  description String? @db.Text
-  price       String?
-  discount    String?
-  imageUrl    String?
-
-  slug String?
-
-  course_duration                    String?
-  course_instructor_name             String?
-  course_instructor_image            String?
-  course_instructor_title            String?
-  course_instructor_description      String? @db.Text
-  course_instructor_ratings          String?
-  course_instructor_courses          String?
-  course_instructor_lessons          String?
-  course_instructor_hrs              String?
-  course_instructor_students_trained String?
-
-  brochureUrl          String?
-  course_preview_video String?
-
-  skills_you_will_learn SkillsYouWillLearn[]
-  learning_Outcomes     LearningOutcome[]
-  prerequisites         Prerequisite[]
-  tags                  Tag[]
-  catalog_header_tags   CatalogHeaderTags[]
-  catalog_header_image  String?
-
-  course_weeks  CourseWeek[]
-  course_videos ProjectVideo[]
-  purchases     Purchase[]
-
-  timetable TimeTable[]
-
-  cohorts              Cohort[]
-  cohortCourses        CohortCourse[]
-  paymentStatuses      PaymentStatus[]
-  facilitators Facilitator[]
-
-  currentChangeRequests ChangeRequest[] @relation("CurrentCourse")
-  desiredChangeRequests ChangeRequest[] @relation("DesiredCourse")
-
-  syllabus        String? @db.Text
-
-  pricingPlans    CoursePricingPlan[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model CoursePricingPlan {
-  id                   String   @id @default(cuid())
-  courseId             String
-  course               Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  planType             String   // e.g., "FULL_PAYMENT", "TWO_INSTALLMENTS", "THREE_INSTALLMENTS", etc.
-  amountPerInstallment Float    // The price per installment
-  installmentsCount    Int      // 1, 2, 3, 4, 5
-  discountPrice        Float?   // The "fake" original price to show as discount
-  
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  @@unique([courseId, planType])
-}
-
-
-model CourseWeek {
-  id String @id @default(cuid())
-
-  title   String
-  iconUrl String?
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  attachments   Attachment[]
-  courseModules Module[]
-  isPublished   Boolean      @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Attachment {
-  id String @id @default(cuid())
-
-  name String
-  url  String?
-
-  courseWeekId String
-  courseWeek   CourseWeek @relation(fields: [courseWeekId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Module {
-  id String @id @default(cuid())
-
-  title       String
-  description String? @db.Text
-  iconUrl     String?
-
-  CourseWeek   CourseWeek @relation(fields: [courseWeekId], references: [id], onDelete: Cascade)
-  courseWeekId String
-
-  projectVideos ProjectVideo[]
-
-  quizzes Quiz[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model ProjectVideo {
-  id String @id @default(cuid())
-
-  title        String
-  videoUrl     String?
-  thumbnailUrl String?
-  duration     String?
-  videoType    String? @default("VIMEO") // VIMEO, YOUTUBE, UPLOAD
-
-  moduleId     String
-  courseModule Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model UserProgress {
-  id String @id @default(cuid())
-
-  videoId  String
-  courseId String
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  isCompleted        Boolean   @default(false)
-  progressPercentage Float     @default(0) // Track progress percentage
-  lastWatched        DateTime? // Track when user last watched
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, videoId, courseId])
-}
-
-model Quiz {
-  id String @id @default(cuid())
-
-  question String
-  answers  QuizAnswer[]
-
-  moduleId     String
-  courseModule Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-
-  leaderboards Leaderboard[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model QuizAnswer {
-  id String @id @default(cuid())
-
-  name String
-
-  quizId String
-  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
-
-  isCorrect Boolean @default(false)
-
-  quizAnswers UserQuizAnswer[]
-}
-
-model UserQuizAnswer {
-  id String @id @default(cuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  quizAnswerId String
-  quizAnswer   QuizAnswer @relation(fields: [quizAnswerId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, quizAnswerId])
-}
-
-model Leaderboard {
-  id String @id @default(cuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  quizId String
-  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
-
-  points Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, quizId])
-}
-
-model TimeTable {
-  id String @id @default(cuid())
-
-  name     String
-  category EventCategory
-  date     DateTime?
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model PaystackTransaction {
-  id               String         @id @default(cuid())
-  transactionRef   String         @unique
-  userId           String
-  courseId         String
-  paymentType      String?  
-  paymentPlan      String?
-  paymentStatusId  String?
-  paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
-  amount           String
-  status           String
-  paymentDate      DateTime?
-  authorizationUrl String?
-  metadata         String?        @db.Text
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-
-  @@index([userId])
-  @@index([courseId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-model PaymentTransaction {
-  id               String         @id @default(cuid())
-  transactionRef   String?         @unique
-  paymentGateway   PaymentSource
-  userId           String
-  courseId         String
-  paymentType      String?  
-  paymentPlan      String?
-  paymentStatusId  String?
-  paymentStatus    PaymentStatus? @relation(fields: [paymentStatusId], references: [id])
-  amount           String
-  status           String
-  paymentDate      DateTime?
-  authorizationUrl String?
-  metadata         String?        @db.Text
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-
-  @@index([userId])
-  @@index([courseId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-
-model CatalogHeaderTags {
-  id       String  @id @default(cuid())
-  title    String
-  imageUrl String?
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model LearningOutcome {
-  id      String @id @default(cuid())
-  content String @db.Text
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model Prerequisite {
-  id      String @id @default(cuid())
-  content String @db.Text
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model Tag {
-  id      String @id @default(cuid())
-  content String
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model SkillsYouWillLearn {
-  id      String @id @default(cuid())
-  iconUrl String
-
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-}
-
-model Blog {
-  id        String      @id @default(cuid())
-  title     String
-  content   String      @db.Text
-  images    BlogImage[]
-  mins_read String?     @default("2 mins")
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-}
-
-model BlogImage {
-  id  String  @id @default(cuid())
-  url String?
-
-  blogId String
-  blog   Blog   @relation(fields: [blogId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model FreeCourseApplication {
-  id String @id @default(cuid())
-
-  name  String
-  email String
-  phone String
-
-  course_applied String @default("Data Science")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model MasterClassRegistration {
-  id String @id @default(cuid())
-
-  name       String
-  email      String
-  phone      String
-  gender     String
-  location   String
-  heard_from String
-  help_with  String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model sessions {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  startTime   DateTime
-  endTime     DateTime
-  sessionLink String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([startTime])
-  @@index([endTime])
-  // Explicitly mapping to "sessions" table
-  @@map("sessions")
-}
-
-model Facilitator {
-  id          String   @id @default(cuid())
-  name        String
-  email       String   @unique
-  phoneNumber String
-  imageUrl    String?
-  bio         String?
-  title       String?
-  
-  courses     Course[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model Links {
-  id            Int      @id @default(autoincrement())
-  communityLink String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@map("links")
-}
-
-model programLeads {
-  id            Int       @id @default(autoincrement())
-  programType   String
-  firstName     String
-  lastName      String
-  email         String
-  gender        String
-  phoneNumber   String
-  hearAbout     String?
-  otherSource   String?
-  createdAt     DateTime? @default(now())
-  updatedAt     DateTime? @updatedAt
-}
-
-// Add to your existing schema - All new models start with "AssignmentQuiz"
 enum AssignmentType {
   REGULAR
   QUIZ
-}
-
-model Assignment {
-  id          String   @id @default(cuid())
-  title       String
-  description String?  @db.Text
-  instructions String? @db.Text
-  dueDate     DateTime?
-  points      Int?
-  type        AssignmentType @default(REGULAR)
-  
-  // Quiz specific fields
-  assignmentQuizQuestions AssignmentQuizQuestion[]
-  assignmentQuizSubmissions AssignmentQuizSubmission[]  // ADD THIS LINE
-  
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  cohortCourseModuleId String?
-  cohortCourseModule   CohortCourseModule? @relation(fields: [cohortCourseModuleId], references: [id], onDelete: Cascade)
-  
-  attachments AssignmentAttachment[]
-  submissions AssignmentSubmission[]
-  
-  classroomTopicId String?
-  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model AssignmentQuizQuestion {
-  id            String   @id @default(cuid())
-  question      String
-  order         Int      @default(0)
-  points        Int      @default(1)
-  
-  assignmentId  String
-  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  
-  assignmentQuizOptions AssignmentQuizOption[]
-  assignmentQuizAnswers AssignmentQuizAnswer[]  // ADD THIS LINE
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model AssignmentQuizOption {
-  id              String   @id @default(cuid())
-  text            String
-  isCorrect       Boolean  @default(false)
-  order           Int      @default(0)
-  
-  assignmentQuizQuestionId  String
-  assignmentQuizQuestion    AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
-  
-  assignmentQuizAnswers AssignmentQuizAnswer[]  // ADD THIS LINE
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model AssignmentQuizSubmission {
-  id              String   @id @default(cuid())
-  assignmentId    String
-  assignment      Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  
-  studentId       String
-  student         User     @relation(fields: [studentId], references: [id])
-  
-  assignmentQuizAnswers AssignmentQuizAnswer[]
-  totalScore      Int
-  maxScore        Int
-  submittedAt     DateTime @default(now())
-  
-  @@unique([assignmentId, studentId])
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model AssignmentQuizAnswer {
-  id               String   @id @default(cuid())
-  assignmentQuizSubmissionId String
-  assignmentQuizSubmission   AssignmentQuizSubmission @relation(fields: [assignmentQuizSubmissionId], references: [id], onDelete: Cascade)
-  
-  assignmentQuizQuestionId       String
-  assignmentQuizQuestion         AssignmentQuizQuestion @relation(fields: [assignmentQuizQuestionId], references: [id], onDelete: Cascade)
-  
-  selectedAssignmentQuizOptionId String
-  selectedAssignmentQuizOption   AssignmentQuizOption @relation(fields: [selectedAssignmentQuizOptionId], references: [id], onDelete: Cascade)
-  
-  isCorrect        Boolean
-  pointsEarned     Int
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-
-model AssignmentAttachment {
-  id           String     @id @default(cuid())
-  name         String
-  url          String
-  assignmentId String
-  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model AssignmentSubmission {
-  id           String     @id @default(cuid())
-  content      String?    @db.Text  // For text submissions
-  fileUrl      String?    // For file submissions
-  submittedAt  DateTime   @default(now())
-  
-  // Grading
-  grade        Int?       // e.g., 85/100
-  feedback     String?    @db.Text
-  gradedAt     DateTime?
-  gradedById   String?
-  gradedBy     User?      @relation(fields: [gradedById], references: [id], name: "GradedBy")
-  
-  // Relations
-  assignmentId String
-  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  studentId    String
-  student      User       @relation(fields: [studentId], references: [id])
-  
-  // Comments on submissions
-  comments     Comment[]
-  
-  @@unique([assignmentId, studentId]) // One submission per student per assignment
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Announcement {
-  id             String   @id @default(cuid())
-  title          String
-  content        String   @db.Text
-  isPinned       Boolean  @default(false)
-  
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  authorId       String
-  author         User     @relation(fields: [authorId], references: [id])
-  
-  comments       Comment[]
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Comment {
-  id             String      @id @default(cuid())
-  content        String      @db.Text
-  authorId       String
-  author         User        @relation(fields: [authorId], references: [id])
-  
-  // Can comment on announcements, assignment submissions, or stream posts
-  announcementId String?
-  announcement   Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
-  
-  submissionId   String?
-  submission     AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  
-  streamPostId   String?
-  streamPost     StreamPost? @relation(fields: [streamPostId], references: [id], onDelete: Cascade)
-  
-  // For nested comments/replies
-  parentId       String?
-  parent         Comment?    @relation("CommentReplies", fields: [parentId], references: [id])
-  replies        Comment[]   @relation("CommentReplies")
-      
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model ClassroomTopic {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?  @db.Text
-  isPinned        Boolean  @default(false)
-  order           Int      @default(0)
-  
-  cohortCourseId  String
-  cohortCourse    CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  // Subs: assignments, materials, recordings with CASCADE delete
-  assignments     Assignment[]
-  classMaterials  ClassMaterial[]
-  classRecordings ClassRecording[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@index([cohortCourseId, isPinned, order])
-  @@map("classroom_topics")
-}
-
-model ClassMaterial {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  fileUrl     String
-  fileType    String   @default("pdf")
-  
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  classroomTopicId String?
-  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model ClassRecording {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
-  recordingUrl String
-  
-  cohortCourseId String
-  cohortCourse   CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-
-  classroomTopicId String?
-  classroomTopic   ClassroomTopic? @relation(fields: [classroomTopicId], references: [id], onDelete: Cascade)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model StreamPost {
-  id              String   @id @default(cuid())
-  title           String
-  content         String   @db.Text
-  isPinned        Boolean  @default(false)
-  authorId        String
-  author          User     @relation(fields: [authorId], references: [id])
-  
-  cohortCourseId  String
-  cohortCourse    CohortCourse @relation(fields: [cohortCourseId], references: [id], onDelete: Cascade)
-  
-  comments        Comment[]
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@map("stream_posts")
-}
-
-model ScholarshipApplication {
-  id            String   @id @default(cuid())
-  fullName      String
-  email         String
-  phone_number  String
-  country       String
-  gender        String
-  program       String
-  cohort        String
-  discountCode  String?
-  password      String?
-  paymentStatus String   @default("PENDING")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id])
-}
-
-model WebinarAiAutomation {
-  id                  String   @id @default(cuid())
-  full_name           String
-  email               String
-  phone               String
-  skill_interested_in String?
-  terms_accepted      Boolean  @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model WebinarGenerativeAiData {
-  id                  String   @id @default(cuid())
-  full_name           String
-  email               String
-  phone               String
-  skill_interested_in String?
-  terms_accepted      Boolean  @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
