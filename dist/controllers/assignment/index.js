@@ -589,7 +589,11 @@ const handleAssignmentQuizSubmission = async (assignment, quizAnswers, studentId
         include: {
             assignmentQuizAnswers: {
                 include: {
-                    assignmentQuizQuestion: true,
+                    assignmentQuizQuestion: {
+                        include: {
+                            assignmentQuizOptions: true
+                        }
+                    },
                     selectedAssignmentQuizOption: true
                 }
             }
