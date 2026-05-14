@@ -4,7 +4,8 @@ import { sendMail } from "./nodemailer";
 export const sendLiveClassEmail = async (
   recipient: { email: string; name: string; userId: string },
   liveClass: any,
-  type: 'creation' | 'reminder' | 'started'
+  type: 'creation' | 'reminder' | 'started' | 'cancellation',
+  reason?: string
 ) => {
   const joinLink = `${process.env.NEXT_PUBLIC_APP_URL}/join-live?classId=${liveClass.id}&email=${recipient.email}`;
 
@@ -24,7 +25,18 @@ export const sendLiveClassEmail = async (
       subject = `Live Now: ${liveClass.title}`;
       message = `Your live class <strong>${liveClass.title}</strong> has started now! Click the join link below to join immediately.`;
       break;
+    case 'cancellation':
+      subject = `Live Class Cancelled: ${liveClass.title}`;
+      message = `We're sorry to inform you that the live class <strong>${liveClass.title}</strong>, scheduled for <strong>${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}</strong>, has been cancelled.${
+        reason ? `<br><br><strong>Reason:</strong> ${reason}` : ''
+      }`;
+      break;
   }
+
+  const isCancellation = type === 'cancellation';
+  const headerBg = isCancellation ? '#DC2626' : '#6742FA';
+  const btnBg = isCancellation ? '#DC2626' : '#6742FA';
+  const borderColor = isCancellation ? '#DC2626' : '#6742FA';
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || 'programrelations@nebiant.com',
@@ -38,11 +50,12 @@ export const sendLiveClassEmail = async (
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background-color: #f4f7ff; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-            .header { background: #6742FA; color: white; padding: 30px; text-align: center; }
+            .header { background: ${headerBg}; color: white; padding: 30px; text-align: center; }
             .content { padding: 40px 30px; }
-            .btn { display: inline-block; padding: 14px 28px; background: #6742FA; color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 25px; box-shadow: 0 4px 6px rgba(103, 66, 250, 0.2); }
+            .btn { display: inline-block; padding: 14px 28px; background: ${btnBg}; color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 25px; }
             .footer { font-size: 12px; color: #999; margin: 20px 0; text-align: center; }
-            .info-box { background: #f8f9fa; border-left: 4px solid #6742FA; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .info-box { background: #f8f9fa; border-left: 4px solid ${borderColor}; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .cancelled-badge { display: inline-block; background: #FEE2E2; color: #DC2626; font-weight: bold; font-size: 12px; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
           </style>
         </head>
         <body>
@@ -61,16 +74,18 @@ export const sendLiveClassEmail = async (
             </div>
             <div class="content">
               <p>Hi ${recipient.name || 'Student'},</p>
+              ${isCancellation ? '<span class="cancelled-badge">❌ Class Cancelled</span>' : ''}
               <p style="font-size: 16px;">${message}</p>
               
               <div class="info-box">
                 <strong>Topic:</strong> ${liveClass.title}<br>
-                <strong>Start Time:</strong> ${new Date(liveClass.startTime).toLocaleString()}
+                <strong>Scheduled Time:</strong> ${new Date(liveClass.startTime).toLocaleString()}
               </div>
 
+              ${!isCancellation ? `
               <div style="text-align: center;">
                 <a href="${joinLink}" class="btn">Join Class Now</a>
-              </div>
+              </div>` : ''}
             </div>
             <div class="footer">
               <p>You're receiving this because you're enrolled in a 10Alytics Business program.</p>
@@ -86,6 +101,44 @@ export const sendLiveClassEmail = async (
     await sendMail(mailOptions);
   } catch (err) {
     console.error(`Failed to send ${type} email to ${recipient.email}:`, err);
+  }
+};
+
+export const notifyCohortMembersOfCancellation = async (
+  liveClass: any, // full liveClass object with cohortCourse included
+  reason?: string
+) => {
+  try {
+    const users = await prismadb.userCohort.findMany({
+      where: {
+        cohortId: liveClass.cohortCourse.cohortId,
+        isActive: true,
+        user: { inactive: false },
+      },
+      include: { user: true },
+    });
+
+    console.log(`[LIVE_CANCEL_NOTIFY] Notifying ${users.length} users of cancellation of "${liveClass.title}"`);
+
+    const batchSize = 10;
+    for (let i = 0; i < users.length; i += batchSize) {
+      const batch = users.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map((uc) => {
+          if (uc.user.email) {
+            return sendLiveClassEmail(
+              { email: uc.user.email, name: uc.user.name, userId: uc.user.id },
+              liveClass,
+              'cancellation',
+              reason
+            );
+          }
+          return Promise.resolve();
+        })
+      );
+    }
+  } catch (error) {
+    console.error(`[LIVE_CANCEL_NOTIFY_ERROR] Error notifying cohort of cancellation:`, error);
   }
 };
 

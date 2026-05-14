@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
 import { generateUniqueAssignmentSlug } from "../../utils/slugify";
-import { notifyCohortMembers } from "../../utils/liveClassNotifications";
+import { notifyCohortMembers, notifyCohortMembersOfCancellation } from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
 
 export const getClassroomData = async (req: Request, res: Response) => {
@@ -885,21 +885,32 @@ export const deleteRecording = async (req: Request, res: Response) => {
 export const deleteLiveClass = async (req: Request, res: Response) => {
   try {
     const { liveClassId } = req.params;
+    const { reason } = req.body; // optional cancellation reason from instructor
 
     const liveClass = await prismadb.liveClass.findUnique({
       where: { id: liveClassId },
+      include: {
+        cohortCourse: {
+          include: { cohort: true },
+        },
+      },
     });
 
     if (!liveClass) {
       return res.status(404).json({ error: "Live class not found" });
     }
 
+    // Notify all cohort members of the cancellation BEFORE deleting
+    notifyCohortMembersOfCancellation(liveClass, reason).catch((err) =>
+      console.error("[LIVE_DELETE] Failed to send cancellation emails:", err)
+    );
+
     await prismadb.liveClass.delete({
       where: { id: liveClassId },
     });
 
     res.json({
-      message: "Live class deleted successfully",
+      message: "Live class deleted and students notified",
       deletedLiveClass: {
         id: liveClass.id,
         title: liveClass.title,
