@@ -37,23 +37,33 @@ export async function login(req: Request, res: Response) {
 
     if (!existingUser?.password) {
       console.log(`[LOGIN_ERROR]: User ${email} has no password in DB.`);
-      return res.status(401).json({ message: "This account was created via social login. Please sign in with Google or reset your password." });
+      return res.status(401).json({
+        message:
+          "This account was created via social login. Please sign in with Google or reset your password.",
+      });
     }
 
     // Defensive check against non-string passwords
-    if (typeof existingUser.password !== 'string') {
-      console.error(`[LOGIN_CRITICAL]: User ${email} password is not a string! Type: ${typeof existingUser.password}`, existingUser.password);
-      return res.status(500).json({ message: "Internal account error. Please reset your password." });
+    if (typeof existingUser.password !== "string") {
+      console.error(
+        `[LOGIN_CRITICAL]: User ${email} password is not a string! Type: ${typeof existingUser.password}`,
+        existingUser.password,
+      );
+      return res.status(500).json({
+        message: "Internal account error. Please reset your password.",
+      });
     }
 
-    if (typeof password !== 'string') {
-      console.error(`[LOGIN_ERROR]: Provided password is not a string! Type: ${typeof password}`);
+    if (typeof password !== "string") {
+      console.error(
+        `[LOGIN_ERROR]: Provided password is not a string! Type: ${typeof password}`,
+      );
       return res.status(400).json({ message: "Invalid password format" });
     }
 
     const comparePassword = await bcrypt.compare(
       password,
-      existingUser.password
+      existingUser.password,
     );
 
     if (!comparePassword) {
@@ -88,7 +98,7 @@ export async function login(req: Request, res: Response) {
         role: existingUser.role,
       },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30d" }
+      { expiresIn: "30d" },
     );
 
     const refresh_token = jwt.sign(
@@ -98,7 +108,7 @@ export async function login(req: Request, res: Response) {
         role: existingUser?.role,
       },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30d" }
+      { expiresIn: "30d" },
     );
 
     const updatedExistingUser = await prismadb.user.update({
@@ -141,7 +151,9 @@ export async function googleAuth(req: Request, res: Response) {
     } = req.body;
 
     if (!email || !googleId) {
-      return res.status(400).json({ message: "Invalid Google credentials: Email and ID are required" });
+      return res.status(400).json({
+        message: "Invalid Google credentials: Email and ID are required",
+      });
     }
 
     // Secure verification
@@ -155,33 +167,47 @@ export async function googleAuth(req: Request, res: Response) {
         const payload = ticket.getPayload();
 
         if (!payload || payload.email?.toLowerCase() !== email.toLowerCase()) {
-          console.error("[GOOGLE_AUTH_MISTMATCH]: Payload email does not match requested email");
-          return res.status(401).json({ message: "Email mismatch in Google session" });
+          console.error(
+            "[GOOGLE_AUTH_MISTMATCH]: Payload email does not match requested email",
+          );
+          return res
+            .status(401)
+            .json({ message: "Email mismatch in Google session" });
         }
       } catch (err: any) {
         console.error("[GOOGLE_AUTH_VERIFY_ERROR]:", err.message);
-        return res.status(401).json({ message: "Google ID token verification failed" });
+        return res
+          .status(401)
+          .json({ message: "Google ID token verification failed" });
       }
     } else if (accessToken) {
       // 2. Verify Access Token (Custom Button Flow)
       try {
-        const axios = (await import('axios')).default;
+        const axios = (await import("axios")).default;
         // Verify with Google's tokeninfo endpoint
-        const verification = await axios.get(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${accessToken}`);
+        const verification = await axios.get(
+          `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${accessToken}`,
+        );
         const data = verification.data;
 
         if (data.email?.toLowerCase() !== email.toLowerCase()) {
-          return res.status(401).json({ message: "Email mismatch in Google session" });
+          return res
+            .status(401)
+            .json({ message: "Email mismatch in Google session" });
         }
         if (data.sub !== googleId) {
           return res.status(401).json({ message: "Google ID mismatch" });
         }
       } catch (err: any) {
         console.error("[GOOGLE_AUTH_ACCESS_TOKEN_ERROR]:", err.message);
-        return res.status(401).json({ message: "Google access token verification failed" });
+        return res
+          .status(401)
+          .json({ message: "Google access token verification failed" });
       }
     } else {
-      console.warn("Google authentication requested without ID token or Access Token. This is insecure.");
+      console.warn(
+        "Google authentication requested without ID token or Access Token. This is insecure.",
+      );
     }
 
     const normalizedEmail = email.toLowerCase();
@@ -240,20 +266,22 @@ export async function googleAuth(req: Request, res: Response) {
           providerAccountId: googleId,
         },
       });
-      console.log(`[GOOGLE_AUTH]: Linked Google account to existing user: ${normalizedEmail}`);
+      console.log(
+        `[GOOGLE_AUTH]: Linked Google account to existing user: ${normalizedEmail}`,
+      );
     }
 
     // Generate tokens
     const access_token = jwt.sign(
       { email: user.email, id: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30d" }
+      { expiresIn: "30d" },
     );
 
     const refresh_token = jwt.sign(
       { email: user.email, id: user.id, role: user.role },
       process.env.JWT_SECRET as string,
-      { expiresIn: "30d" }
+      { expiresIn: "30d" },
     );
 
     // Update user with new access token
@@ -271,7 +299,10 @@ export async function googleAuth(req: Request, res: Response) {
     });
   } catch (error: any) {
     console.error("[GOOGLE_AUTH_CRASH]:", error);
-    res.status(500).json({ message: "Internal Server Error during Google Auth", detail: error.message });
+    res.status(500).json({
+      message: "Internal Server Error during Google Auth",
+      detail: error.message,
+    });
   }
 }
 
@@ -363,7 +394,7 @@ export async function register(req: Request, res: Response) {
     if (existingUsers.length > 0) {
       const isEmailTaken = existingUsers.some((user) => user.email === email);
       const isPhoneTaken = existingUsers.some(
-        (user) => user.phone_number === phone_number
+        (user) => user.phone_number === phone_number,
       );
 
       if (isEmailTaken && isPhoneTaken) {
@@ -485,12 +516,12 @@ export async function resendEmailVerification(req: Request, res: Response) {
     }
 
     const verificationToken = await generateVerificationToken(
-      existingUser.email
+      existingUser.email,
     );
 
     await sendVerificationEmail(
       verificationToken?.email,
-      verificationToken?.token
+      verificationToken?.token,
     );
 
     return res
@@ -521,7 +552,7 @@ export async function forgotPassword(req: Request, res: Response) {
     }
 
     const generatedToken = await generatePasswordResetToken(
-      existingUser?.email
+      existingUser?.email,
     );
 
     await sendPasswordResetEmail(generatedToken.email, generatedToken.token);
@@ -632,7 +663,7 @@ export async function refreshAccessToken(req: Request, res: Response) {
         role: existingUser.role,
       },
       process.env.JWT_SECRET as string,
-      { expiresIn: "1h" }
+      { expiresIn: "1h" },
     );
 
     await prismadb.user.update({

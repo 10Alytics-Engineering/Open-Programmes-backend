@@ -16,6 +16,19 @@ const updateCourseVideoProgress = async (req, res) => {
         if (!courseId || !videoId) {
             return res.status(400).json({ message: "Missing required fields" });
         }
+        const existingProgress = await prismadb_1.prismadb.userProgress.findUnique({
+            where: {
+                userId_videoId_courseId: {
+                    userId: user.id,
+                    videoId,
+                    courseId,
+                },
+            },
+        });
+        const shouldBeCompleted = existingProgress?.isCompleted || progressPercentage >= 70;
+        const finalProgressPercentage = shouldBeCompleted
+            ? Math.max(existingProgress?.progressPercentage || 0, progressPercentage)
+            : progressPercentage;
         // Using your existing schema without progressPercentage
         const progressRecord = await prismadb_1.prismadb.userProgress.upsert({
             where: {
@@ -35,10 +48,10 @@ const updateCourseVideoProgress = async (req, res) => {
                 isCompleted: progressPercentage >= 70, // Mark as completed when progress is updated
             },
             update: {
-                progressPercentage,
+                progressPercentage: finalProgressPercentage,
                 lastPositionSeconds,
                 lastWatched: new Date(),
-                isCompleted: progressPercentage >= 70,
+                isCompleted: shouldBeCompleted,
             },
         });
         res.status(200).json(progressRecord);
