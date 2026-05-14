@@ -34,9 +34,6 @@ export const sendLiveClassEmail = async (
   }
 
   const isCancellation = type === 'cancellation';
-  const headerBg = isCancellation ? '#DC2626' : '#6742FA';
-  const btnBg = isCancellation ? '#DC2626' : '#6742FA';
-  const borderColor = isCancellation ? '#DC2626' : '#6742FA';
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || 'programrelations@nebiant.com',
@@ -50,11 +47,11 @@ export const sendLiveClassEmail = async (
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background-color: #f4f7ff; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-            .header { background: ${headerBg}; color: white; padding: 30px; text-align: center; }
+            .header { background: #6742FA; color: white; padding: 30px; text-align: center; }
             .content { padding: 40px 30px; }
-            .btn { display: inline-block; padding: 14px 28px; background: ${btnBg}; color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 25px; }
+            .btn { display: inline-block; padding: 14px 28px; background: #6742FA; color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 25px; }
             .footer { font-size: 12px; color: #999; margin: 20px 0; text-align: center; }
-            .info-box { background: #f8f9fa; border-left: 4px solid ${borderColor}; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .info-box { background: #f8f9fa; border-left: 4px solid #6742FA; padding: 15px; margin: 20px 0; border-radius: 4px; }
             .cancelled-badge { display: inline-block; background: #FEE2E2; color: #DC2626; font-weight: bold; font-size: 12px; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
           </style>
         </head>
