@@ -789,17 +789,25 @@ exports.deleteRecording = deleteRecording;
 const deleteLiveClass = async (req, res) => {
     try {
         const { liveClassId } = req.params;
+        const { reason } = req.body; // optional cancellation reason from instructor
         const liveClass = await prismadb_1.prismadb.liveClass.findUnique({
             where: { id: liveClassId },
+            include: {
+                cohortCourse: {
+                    include: { cohort: true },
+                },
+            },
         });
         if (!liveClass) {
             return res.status(404).json({ error: "Live class not found" });
         }
+        // Notify all cohort members of the cancellation BEFORE deleting
+        (0, liveClassNotifications_1.notifyCohortMembersOfCancellation)(liveClass, reason).catch((err) => console.error("[LIVE_DELETE] Failed to send cancellation emails:", err));
         await prismadb_1.prismadb.liveClass.delete({
             where: { id: liveClassId },
         });
         res.json({
-            message: "Live class deleted successfully",
+            message: "Live class deleted and students notified",
             deletedLiveClass: {
                 id: liveClass.id,
                 title: liveClass.title,
