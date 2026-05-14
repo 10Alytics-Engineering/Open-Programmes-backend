@@ -10,7 +10,7 @@ const sendLiveClassEmail = async (recipient, liveClass, type, reason) => {
     switch (type) {
         case 'creation':
             subject = `Live Class Scheduled: ${liveClass.title}`;
-            message = `A new live class has been scheduled for your cohort: <strong>${liveClass.title}</strong>.<br><br>Date & Time: ${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}`;
+            message = `A new live class has been scheduled for your cohort: <strong>${liveClass.title}</strong>.<br><br>Date & Time: ${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)`;
             break;
         case 'reminder':
             subject = `Reminder: Live Class in 30 minutes - ${liveClass.title}`;
@@ -22,7 +22,7 @@ const sendLiveClassEmail = async (recipient, liveClass, type, reason) => {
             break;
         case 'cancellation':
             subject = `Live Class Cancelled: ${liveClass.title}`;
-            message = `We're sorry to inform you that the live class <strong>${liveClass.title}</strong>, scheduled for <strong>${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}</strong>, has been cancelled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ''}`;
+            message = `We're sorry to inform you that the live class <strong>${liveClass.title}</strong>, scheduled for <strong>${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)</strong>, has been cancelled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ''}`;
             break;
     }
     const isCancellation = type === 'cancellation';
@@ -55,7 +55,7 @@ const sendLiveClassEmail = async (recipient, liveClass, type, reason) => {
                     <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
                   </td>
                   <td style="vertical-align: middle;">
-                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business Live</h1>
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
                   </td>
                 </tr>
               </table>
@@ -67,7 +67,7 @@ const sendLiveClassEmail = async (recipient, liveClass, type, reason) => {
               
               <div class="info-box">
                 <strong>Topic:</strong> ${liveClass.title}<br>
-                <strong>Scheduled Time:</strong> ${new Date(liveClass.startTime).toLocaleString()}
+                <strong>Scheduled Time:</strong> ${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)
               </div>
 
               ${!isCancellation ? `

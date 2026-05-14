@@ -27,9 +27,8 @@ export const sendLiveClassEmail = async (
       break;
     case 'cancellation':
       subject = `Live Class Cancelled: ${liveClass.title}`;
-      message = `We're sorry to inform you that the live class <strong>${liveClass.title}</strong>, scheduled for <strong>${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)</strong>, has been cancelled.${
-        reason ? `<br><br><strong>Reason:</strong> ${reason}` : ''
-      }`;
+      message = `We're sorry to inform you that the live class <strong>${liveClass.title}</strong>, scheduled for <strong>${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)</strong>, has been cancelled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ''
+        }`;
       break;
   }
 
@@ -64,7 +63,7 @@ export const sendLiveClassEmail = async (
                     <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
                   </td>
                   <td style="vertical-align: middle;">
-                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business Live</h1>
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
                   </td>
                 </tr>
               </table>
