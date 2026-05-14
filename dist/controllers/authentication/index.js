@@ -76,14 +76,18 @@ async function login(req, res) {
         }
         if (!existingUser?.password) {
             console.log(`[LOGIN_ERROR]: User ${email} has no password in DB.`);
-            return res.status(401).json({ message: "This account was created via social login. Please sign in with Google or reset your password." });
+            return res.status(401).json({
+                message: "This account was created via social login. Please sign in with Google or reset your password.",
+            });
         }
         // Defensive check against non-string passwords
-        if (typeof existingUser.password !== 'string') {
+        if (typeof existingUser.password !== "string") {
             console.error(`[LOGIN_CRITICAL]: User ${email} password is not a string! Type: ${typeof existingUser.password}`, existingUser.password);
-            return res.status(500).json({ message: "Internal account error. Please reset your password." });
+            return res.status(500).json({
+                message: "Internal account error. Please reset your password.",
+            });
         }
-        if (typeof password !== 'string') {
+        if (typeof password !== "string") {
             console.error(`[LOGIN_ERROR]: Provided password is not a string! Type: ${typeof password}`);
             return res.status(400).json({ message: "Invalid password format" });
         }
@@ -144,7 +148,9 @@ async function googleAuth(req, res) {
         accessToken, // Access Token (for custom button flow)
          } = req.body;
         if (!email || !googleId) {
-            return res.status(400).json({ message: "Invalid Google credentials: Email and ID are required" });
+            return res.status(400).json({
+                message: "Invalid Google credentials: Email and ID are required",
+            });
         }
         // Secure verification
         if (token) {
@@ -157,23 +163,29 @@ async function googleAuth(req, res) {
                 const payload = ticket.getPayload();
                 if (!payload || payload.email?.toLowerCase() !== email.toLowerCase()) {
                     console.error("[GOOGLE_AUTH_MISTMATCH]: Payload email does not match requested email");
-                    return res.status(401).json({ message: "Email mismatch in Google session" });
+                    return res
+                        .status(401)
+                        .json({ message: "Email mismatch in Google session" });
                 }
             }
             catch (err) {
                 console.error("[GOOGLE_AUTH_VERIFY_ERROR]:", err.message);
-                return res.status(401).json({ message: "Google ID token verification failed" });
+                return res
+                    .status(401)
+                    .json({ message: "Google ID token verification failed" });
             }
         }
         else if (accessToken) {
             // 2. Verify Access Token (Custom Button Flow)
             try {
-                const axios = (await Promise.resolve().then(() => __importStar(require('axios')))).default;
+                const axios = (await Promise.resolve().then(() => __importStar(require("axios")))).default;
                 // Verify with Google's tokeninfo endpoint
                 const verification = await axios.get(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${accessToken}`);
                 const data = verification.data;
                 if (data.email?.toLowerCase() !== email.toLowerCase()) {
-                    return res.status(401).json({ message: "Email mismatch in Google session" });
+                    return res
+                        .status(401)
+                        .json({ message: "Email mismatch in Google session" });
                 }
                 if (data.sub !== googleId) {
                     return res.status(401).json({ message: "Google ID mismatch" });
@@ -181,7 +193,9 @@ async function googleAuth(req, res) {
             }
             catch (err) {
                 console.error("[GOOGLE_AUTH_ACCESS_TOKEN_ERROR]:", err.message);
-                return res.status(401).json({ message: "Google access token verification failed" });
+                return res
+                    .status(401)
+                    .json({ message: "Google access token verification failed" });
             }
         }
         else {
@@ -258,7 +272,10 @@ async function googleAuth(req, res) {
     }
     catch (error) {
         console.error("[GOOGLE_AUTH_CRASH]:", error);
-        res.status(500).json({ message: "Internal Server Error during Google Auth", detail: error.message });
+        res.status(500).json({
+            message: "Internal Server Error during Google Auth",
+            detail: error.message,
+        });
     }
 }
 async function account(req, res) {
