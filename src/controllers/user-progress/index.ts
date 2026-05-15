@@ -7,16 +7,36 @@ const handleError = (error: any, res: Response) => {
   res.status(500).json({ message: "Internal server error" });
 };
 
-export const updateCourseVideoProgress = async (req: Request, res: Response) => {
+export const updateCourseVideoProgress = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const user = req.user as NebiantUser;
     const { courseId } = req.params;
-    const { videoId } = req.body;
+    const { videoId, progressPercentage, lastPositionSeconds } = req.body;
 
     if (!user?.id) return res.status(401).json({ message: "Unauthorized" });
     if (!courseId || !videoId) {
       return res.status(400).json({ message: "Missing required fields" });
     }
+
+    const existingProgress = await prismadb.userProgress.findUnique({
+      where: {
+        userId_videoId_courseId: {
+          userId: user.id,
+          videoId,
+          courseId,
+        },
+      },
+    });
+
+    const shouldBeCompleted =
+      existingProgress?.isCompleted || progressPercentage >= 70;
+
+    const finalProgressPercentage = shouldBeCompleted
+      ? Math.max(existingProgress?.progressPercentage || 0, progressPercentage)
+      : progressPercentage;
 
     // Using your existing schema without progressPercentage
     const progressRecord = await prismadb.userProgress.upsert({
@@ -24,18 +44,25 @@ export const updateCourseVideoProgress = async (req: Request, res: Response) => 
         userId_videoId_courseId: {
           userId: user.id,
           videoId,
-          courseId
-        }
+          courseId,
+        },
       },
       create: {
         userId: user.id,
         courseId,
         videoId,
-        isCompleted: true // Mark as completed when progress is updated
+        progressPercentage,
+        lastPositionSeconds,
+        lastWatched: new Date(),
+
+        isCompleted: progressPercentage >= 70, // Mark as completed when progress is updated
       },
       update: {
-        isCompleted: true
-      }
+        progressPercentage: finalProgressPercentage,
+        lastPositionSeconds,
+        lastWatched: new Date(),
+        isCompleted: shouldBeCompleted,
+      },
     });
 
     res.status(200).json(progressRecord);
@@ -60,10 +87,10 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
       include: {
         quiz: {
           include: {
-            courseModule: true
-          }
-        }
-      }
+            courseModule: true,
+          },
+        },
+      },
     });
 
     if (!answer) return res.status(404).json({ message: "Answer not found" });
@@ -72,8 +99,8 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
     const existingAnswer = await prismadb.userQuizAnswer.findFirst({
       where: {
         userId: user.id,
-        quizAnswerId
-      }
+        quizAnswerId,
+      },
     });
 
     if (existingAnswer) {
@@ -84,8 +111,8 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
     const userAnswer = await prismadb.userQuizAnswer.create({
       data: {
         userId: user.id,
-        quizAnswerId
-      }
+        quizAnswerId,
+      },
     });
 
     // Update leaderboard if correct
@@ -94,23 +121,23 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
         where: {
           userId_quizId: {
             userId: user.id,
-            quizId: answer.quiz.id
-          }
+            quizId: answer.quiz.id,
+          },
         },
         create: {
           userId: user.id,
           quizId: answer.quiz.id,
-          points: 1
+          points: 1,
         },
         update: {
-          points: { increment: 1 }
-        }
+          points: { increment: 1 },
+        },
       });
     }
 
     res.status(200).json({
       isCorrect: answer.isCorrect,
-      userAnswer
+      userAnswer,
     });
   } catch (error) {
     handleError(error, res);
@@ -123,29 +150,33 @@ export const getCourseProgress = async (req: Request, res: Response) => {
     const { courseId } = req.params;
 
     if (!user?.id) return res.status(401).json({ message: "Unauthorized" });
-    if (!courseId) return res.status(400).json({ message: "Course ID required" });
+    if (!courseId)
+      return res.status(400).json({ message: "Course ID required" });
 
     // Get all videos in course
     const videos = await prismadb.projectVideo.findMany({
       where: { courseId },
-      select: { id: true }
+      select: { id: true },
     });
 
     // Get all quizzes in course - fixed query to match your schema
     const quizzes = await prismadb.quiz.findMany({
       where: {
-        moduleId: { // Using moduleId directly
-          in: await prismadb.module.findMany({
-            where: {
-              CourseWeek: {
-                courseId
-              }
-            },
-            select: { id: true }
-          }).then(modules => modules.map(m => m.id))
-        }
+        moduleId: {
+          // Using moduleId directly
+          in: await prismadb.module
+            .findMany({
+              where: {
+                CourseWeek: {
+                  courseId,
+                },
+              },
+              select: { id: true },
+            })
+            .then((modules) => modules.map((m) => m.id)),
+        },
       },
-      select: { id: true }
+      select: { id: true },
     });
 
     // Get completed videos
@@ -153,9 +184,9 @@ export const getCourseProgress = async (req: Request, res: Response) => {
       where: {
         userId: user.id,
         courseId,
-        videoId: { in: videos.map(v => v.id) },
-        isCompleted: true
-      }
+        videoId: { in: videos.map((v) => v.id) },
+        isCompleted: true,
+      },
     });
 
     // Get completed quizzes
@@ -163,10 +194,10 @@ export const getCourseProgress = async (req: Request, res: Response) => {
       where: {
         userId: user.id,
         quizAnswer: {
-          quizId: { in: quizzes.map(q => q.id) }
-        }
+          quizId: { in: quizzes.map((q) => q.id) },
+        },
       },
-      distinct: ['quizAnswerId']
+      distinct: ["quizAnswerId"],
     });
 
     const videoCompletion = completedVideos.length;
@@ -178,16 +209,84 @@ export const getCourseProgress = async (req: Request, res: Response) => {
       videoProgress: {
         completed: videoCompletion,
         total: totalVideos,
-        percentage: totalVideos > 0 ? Math.round((videoCompletion / totalVideos) * 100) : 0
+        percentage:
+          totalVideos > 0
+            ? Math.round((videoCompletion / totalVideos) * 100)
+            : 0,
       },
       quizProgress: {
         completed: quizCompletion,
         total: totalQuizzes,
-        percentage: totalQuizzes > 0 ? Math.round((quizCompletion / totalQuizzes) * 100) : 0
+        percentage:
+          totalQuizzes > 0
+            ? Math.round((quizCompletion / totalQuizzes) * 100)
+            : 0,
       },
-      overallProgress: totalVideos + totalQuizzes > 0
-        ? Math.round(((videoCompletion + quizCompletion) / (totalVideos + totalQuizzes)) * 100)
-        : 0
+      overallProgress:
+        totalVideos + totalQuizzes > 0
+          ? Math.round(
+              ((videoCompletion + quizCompletion) /
+                (totalVideos + totalQuizzes)) *
+                100,
+            )
+          : 0,
+    });
+  } catch (error) {
+    handleError(error, res);
+  }
+};
+
+export const getUserCourseProgress = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as NebiantUser;
+    const { courseId } = req.params;
+
+    if (!user?.id) return res.status(401).json({ message: "Unauthorized" });
+    if (!courseId)
+      return res.status(400).json({ message: "Course ID required" });
+
+    // Get all videos in course
+    const completedVideos = await prismadb.userProgress.count({
+      where: {
+        userId: user.id,
+        courseId,
+        isCompleted: true,
+      },
+    });
+
+    const course = await prismadb.course.findUnique({
+      where: { id: courseId },
+      include: {
+        course_weeks: {
+          include: {
+            courseModules: {
+              include: {
+                projectVideos: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const totalVideos =
+      course?.course_weeks.reduce((weekTotal, week) => {
+        return (
+          weekTotal +
+          week.courseModules.reduce((moduleTotal, module) => {
+            return moduleTotal + module.projectVideos.length;
+          }, 0)
+        );
+      }, 0) || 0;
+
+    const progressPercentage =
+      totalVideos > 0 ? Math.round((completedVideos / totalVideos) * 100) : 0;
+
+    return res.json({
+      courseId,
+      totalVideos,
+      completedVideos,
+      progressPercentage,
     });
   } catch (error) {
     handleError(error, res);

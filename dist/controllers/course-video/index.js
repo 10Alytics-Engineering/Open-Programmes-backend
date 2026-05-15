@@ -33,8 +33,8 @@ const getCourseVideos = async (req, res) => {
                 courseId,
             },
             orderBy: {
-                createdAt: "asc"
-            }
+                createdAt: "asc",
+            },
         });
         return res
             .status(200)
@@ -134,6 +134,12 @@ const createCourseVideo = async (req, res) => {
                 videoType: true,
             },
         });
+        if (!courseVideo.id) {
+            return res.status(422).json({
+                status: "Failed to add course vidoe",
+                message: "An error occured while saving course video",
+            });
+        }
         return res.status(201).json({
             status: "Course video created",
             message: null,
@@ -161,38 +167,38 @@ const updateCourseVideo = async (req, res) => {
         if (!videoId) {
             return res.status(400).json({ message: "VideoId is required" });
         }
-        const existingCourse = await prismadb_1.prismadb.course.findUnique({
-            where: {
-                id: courseId,
-            },
-        });
+        const [existingCourse, existingModule, existingVideo] = await Promise.all([
+            prismadb_1.prismadb.course.findUnique({
+                where: {
+                    id: courseId,
+                },
+            }),
+            prismadb_1.prismadb.module.findFirst({
+                where: {
+                    id: moduleId,
+                    courseWeekId: weekId,
+                },
+            }),
+            prismadb_1.prismadb.projectVideo.findFirst({
+                where: {
+                    id: videoId,
+                    moduleId,
+                    courseId,
+                },
+            }),
+        ]);
         if (!existingCourse) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const existingModule = await prismadb_1.prismadb.module.findUnique({
-            where: {
-                id: moduleId,
-                courseWeekId: weekId,
-            },
-        });
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const existingVideo = await prismadb_1.prismadb.projectVideo.findUnique({
-            where: {
-                id: videoId,
-                moduleId,
-                courseId,
-            },
-        });
         if (!existingVideo) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        await prismadb_1.prismadb.projectVideo.update({
+        const updatedVideo = await prismadb_1.prismadb.projectVideo.update({
             where: {
                 id: videoId,
-                moduleId,
-                courseId,
             },
             data: {
                 ...body,
@@ -280,11 +286,11 @@ const getCourseVideosByCourseId = async (req, res) => {
                 courseId,
             },
             orderBy: {
-                createdAt: "asc"
+                createdAt: "asc",
             },
             select: {
                 id: true,
-            }
+            },
         });
         return res
             .status(200)

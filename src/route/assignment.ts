@@ -7,7 +7,10 @@ import {
   gradeSubmission, 
   bulkGradeSubmissions,
   createQuizAssignment,
-  getAssignmentQuizResults
+  getAssignmentQuizResults,
+  getAssignmentQuizSubmissions,
+  gradeQuizSubmission,
+  updateAssignment
 } from "../controllers/assignment";
 import { isLoggedIn, isCourseAdmin } from "../middleware";
 
@@ -49,8 +52,27 @@ export default (router: express.Router) => {
     createQuizAssignment
   );
   router.get(
+    "/assignments/:assignmentId/quiz-submissions",
+    isLoggedIn,
+    isCourseAdmin,
+    getAssignmentQuizSubmissions
+  );
+  router.post(
+    "/assignments/quiz-submissions/:submissionId/grade",
+    isLoggedIn,
+    isCourseAdmin,
+    gradeQuizSubmission
+  );
+  router.get(
     "/assignments/:assignmentId/quiz-results",
     isLoggedIn,
     getAssignmentQuizResults
+  );
+
+  router.patch(
+    "/assignments/:assignmentId",
+    isLoggedIn,
+    isCourseAdmin,
+    updateAssignment
   );
 };

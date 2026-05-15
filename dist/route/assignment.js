@@ -10,6 +10,9 @@ exports.default = (router) => {
     router.post("/assignments/submissions/:submissionId/grade", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, assignment_1.gradeSubmission);
     router.post("/assignments/:assignmentId/bulk-grade", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, assignment_1.bulkGradeSubmissions);
     router.post("/assignments/create-quiz", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, assignment_1.createQuizAssignment);
+    router.get("/assignments/:assignmentId/quiz-submissions", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, assignment_1.getAssignmentQuizSubmissions);
+    router.post("/assignments/quiz-submissions/:submissionId/grade", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, assignment_1.gradeQuizSubmission);
     router.get("/assignments/:assignmentId/quiz-results", middleware_1.isLoggedIn, assignment_1.getAssignmentQuizResults);
+    router.patch("/assignments/:assignmentId", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, assignment_1.updateAssignment);
 };
 //# sourceMappingURL=assignment.js.map

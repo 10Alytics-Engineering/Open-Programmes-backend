@@ -1,28 +1,26 @@
 import express from "express";
 import { isLoggedIn } from "../middleware";
-import { 
+import {
   updateCourseVideoProgress,
   submitQuizAnswer,
-  getCourseProgress
+  getCourseProgress,
+  getUserCourseProgress,
 } from "../controllers/user-progress";
-
 
 export default (router: express.Router) => {
   router.post(
     "/courses/:courseId/update-video-progress",
     isLoggedIn,
-    updateCourseVideoProgress
+    updateCourseVideoProgress,
   );
-  
-  router.post(
-    "/quizzes/submit-answer",
-    isLoggedIn,
-    submitQuizAnswer
-  );
-  
+
+  router.post("/quizzes/submit-answer", isLoggedIn, submitQuizAnswer);
+
+  router.get("/courses/:courseId/progress", isLoggedIn, getCourseProgress);
+
   router.get(
-    "/courses/:courseId/progress",
+    "/courses/:courseId/user-progress",
     isLoggedIn,
-    getCourseProgress
+    getUserCourseProgress,
   );
 };
