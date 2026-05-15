@@ -447,10 +447,6 @@ export const createStreamPost = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    console.log(
-      `[STREAM_POST] Creating post for cohort ${cohortId} by user ${user.email}`,
-    );
-
     // Find the cohort course for this cohort
     const cohortCourse = await prismadb.cohortCourse.findFirst({
       where: { cohortId: cohortId },
@@ -458,9 +454,6 @@ export const createStreamPost = async (req: Request, res: Response) => {
     });
 
     if (!cohortCourse) {
-      console.error(
-        `[STREAM_POST] Cohort course not found for cohortId: ${cohortId}`,
-      );
       return res.status(404).json({ error: "Cohort course not found" });
     }
 
@@ -476,8 +469,6 @@ export const createStreamPost = async (req: Request, res: Response) => {
         comments: true,
       },
     });
-
-    console.log(`[STREAM_POST] Created post ${post.id}`);
 
     // Send Notification to all students in the cohort
     try {
@@ -699,6 +690,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         metadata: {
           materialId: material.id,
           fileUrl: material.fileUrl,
+          imageUrl: material.imageUrl,
           topicTitle: material.classroomTopic?.title, // Include topic if exists
         },
       })),
