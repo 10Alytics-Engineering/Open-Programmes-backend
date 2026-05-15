@@ -180,11 +180,12 @@ const getUser = async (req, res) => {
             include: {
                 completed_videos: true,
                 course_purchased: {
-                    select: {
-                        id: true,
-                        userId: true,
-                        courseId: true,
-                        course: true,
+                    include: {
+                        course: {
+                            include: {
+                                facilitators: true,
+                            },
+                        },
                     },
                 },
                 cohorts: {

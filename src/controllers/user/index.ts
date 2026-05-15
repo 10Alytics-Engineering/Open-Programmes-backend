@@ -219,11 +219,12 @@ export const getUser = async (req: Request, res: Response) => {
       include: {
         completed_videos: true,
         course_purchased: {
-          select: {
-            id: true,
-            userId: true,
-            courseId: true,
-            course: true,
+          include: {
+            course: {
+              include: {
+                facilitators: true,
+              },
+            },
           },
         },
         cohorts: {
