@@ -34,6 +34,7 @@ import scholarship from "./scholarship";
 import salesDashboard from "./sales-dashboard";
 import webinar from "./webinar";
 import liveClass from "./live-class";
+import upload from "./upload";
 
 const router = express.Router();
 
@@ -73,7 +74,7 @@ export default (): express.Router => {
   salesDashboard(router);
   webinar(router);
   liveClass(router);
-
+  upload(router);
 
   return router;
 };
