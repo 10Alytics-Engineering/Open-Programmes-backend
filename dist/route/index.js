@@ -39,6 +39,7 @@ const scholarship_1 = __importDefault(require("./scholarship"));
 const sales_dashboard_1 = __importDefault(require("./sales-dashboard"));
 const webinar_1 = __importDefault(require("./webinar"));
 const live_class_1 = __importDefault(require("./live-class"));
+const upload_1 = __importDefault(require("./upload"));
 const router = express_1.default.Router();
 exports.default = () => {
     (0, authentication_1.default)(router);
@@ -76,6 +77,7 @@ exports.default = () => {
     (0, sales_dashboard_1.default)(router);
     (0, webinar_1.default)(router);
     (0, live_class_1.default)(router);
+    (0, upload_1.default)(router);
     return router;
 };
 //# sourceMappingURL=index.js.map
