@@ -232,6 +232,8 @@ export const getUser = async (req: Request, res: Response) => {
             cohortId: true,
             userId: true,
             isPaymentActive: true,
+            isActive: true,
+            archivedAt: true,
             cohort: {
               select: {
                 id: true,
@@ -386,6 +388,8 @@ export const updateUser = async (req: Request, res: Response) => {
             cohortId: true,
             userId: true,
             isPaymentActive: true,
+            isActive: true,
+            archivedAt: true,
             cohort: {
               select: {
                 id: true,
@@ -470,6 +474,8 @@ export const updateUserImage = async (req: Request, res: Response) => {
             cohortId: true,
             userId: true,
             isPaymentActive: true,
+            isActive: true,
+            archivedAt: true,
             cohort: {
               select: {
                 id: true,
@@ -880,8 +886,8 @@ export const updateUserCohort = async (req: Request, res: Response) => {
     await prismadb.userCohort.update({
       where: { id: currentCohortEnrollment.id },
       data: {
-        //  isActive: false,
-        // archivedAt: new Date()
+        isActive: false,
+        archivedAt: new Date(),
         isPaymentActive: false,
       },
     });
@@ -893,7 +899,8 @@ export const updateUserCohort = async (req: Request, res: Response) => {
         cohortId: newCohortId,
         courseId: newCohort.courseId,
         isPaymentActive: currentCohortEnrollment.isPaymentActive,
-        // previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
+        isActive: true,
+        previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
       },
     });
 
