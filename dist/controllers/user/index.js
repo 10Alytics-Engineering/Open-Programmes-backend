@@ -193,6 +193,8 @@ const getUser = async (req, res) => {
                         cohortId: true,
                         userId: true,
                         isPaymentActive: true,
+                        isActive: true,
+                        archivedAt: true,
                         cohort: {
                             select: {
                                 id: true,
@@ -337,6 +339,8 @@ const updateUser = async (req, res) => {
                         cohortId: true,
                         userId: true,
                         isPaymentActive: true,
+                        isActive: true,
+                        archivedAt: true,
                         cohort: {
                             select: {
                                 id: true,
@@ -416,6 +420,8 @@ const updateUserImage = async (req, res) => {
                         cohortId: true,
                         userId: true,
                         isPaymentActive: true,
+                        isActive: true,
+                        archivedAt: true,
                         cohort: {
                             select: {
                                 id: true,
@@ -769,8 +775,8 @@ const updateUserCohort = async (req, res) => {
         await prismadb_1.prismadb.userCohort.update({
             where: { id: currentCohortEnrollment.id },
             data: {
-                //  isActive: false,
-                // archivedAt: new Date()
+                isActive: false,
+                archivedAt: new Date(),
                 isPaymentActive: false,
             },
         });
@@ -781,7 +787,8 @@ const updateUserCohort = async (req, res) => {
                 cohortId: newCohortId,
                 courseId: newCohort.courseId,
                 isPaymentActive: currentCohortEnrollment.isPaymentActive,
-                // previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
+                isActive: true,
+                previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
             },
         });
         return res.status(200).json({

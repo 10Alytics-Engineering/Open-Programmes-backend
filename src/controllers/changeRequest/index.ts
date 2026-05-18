@@ -500,7 +500,8 @@ async function processCohortChange(userId: string, currentCohortId: string, desi
       },
       data: {
         isActive: false,
-        archivedAt: new Date()
+        archivedAt: new Date(),
+        isPaymentActive: false
       }
     }),
 

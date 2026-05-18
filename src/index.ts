@@ -28,6 +28,8 @@ const corsOptions = {
     process.env.NEXT_LOCAL_APP_URL || "",
     process.env.NEXT_LOCAL_ADMIN_APP_URL || "",
     process.env.NEXT_TEST_APP_URL || "",
+    "http://localhost:3001",
+    "http://localhost:3002",
     "https://paystack.com",
   ].filter(Boolean),
 };

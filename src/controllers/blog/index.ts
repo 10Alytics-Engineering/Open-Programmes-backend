@@ -41,7 +41,7 @@ export const getBlog = async (req: Request, res: Response) => {
       .status(200)
       .json({
         status: "success",
-        message: existingBlog ? "Nonexistent Blog!" : null,
+        message: existingBlog ? null : "Nonexistent Blog!",
         data: existingBlog,
       });
   } catch (error) {
