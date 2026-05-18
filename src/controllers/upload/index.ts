@@ -40,8 +40,11 @@ export const uploadDocument = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    // Use BACKEND_URL or fallback to req.protocol + req.get("host")
-    const baseUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`;
+    // Use X-Forwarded-Host or Host header to construct the URL dynamically
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const baseUrl = `${protocol}://${host}`;
+    
     const fileUrl = `${baseUrl}/uploads/documents/${req.file.filename}`;
 
     res.status(200).json({
