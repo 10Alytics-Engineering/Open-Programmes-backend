@@ -53,25 +53,40 @@ const getUsers = async (req, res) => {
         const totalUsers = await prismadb_1.prismadb.user.count({
             where: whereClause,
         });
+        // Fetch all courses and their project videos count once (very fast, selecting only IDs)
+        const coursesSelect = await prismadb_1.prismadb.course.findMany({
+            select: {
+                id: true,
+                course_weeks: {
+                    select: {
+                        courseModules: {
+                            select: {
+                                projectVideos: {
+                                    select: {
+                                        id: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        const courseVideosCountMap = new Map();
+        for (const c of coursesSelect) {
+            const total = c.course_weeks.reduce((weekAcc, week) => {
+                return (weekAcc +
+                    week.courseModules.reduce((moduleAcc, module) => moduleAcc + module.projectVideos.length, 0));
+            }, 0);
+            courseVideosCountMap.set(c.id, total);
+        }
         // Get paginated users
         const users = await prismadb_1.prismadb.user.findMany({
             where: whereClause,
             include: {
                 course_purchased: {
                     include: {
-                        course: {
-                            include: {
-                                course_weeks: {
-                                    include: {
-                                        courseModules: {
-                                            include: {
-                                                projectVideos: true,
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
+                        course: true,
                     },
                 },
                 cohorts: {
@@ -79,7 +94,11 @@ const getUsers = async (req, res) => {
                         cohort: true,
                     },
                 },
-                completed_videos: true,
+                completed_videos: {
+                    select: {
+                        id: true,
+                    },
+                },
             },
             orderBy,
             skip,
@@ -87,13 +106,9 @@ const getUsers = async (req, res) => {
         });
         // Enhance users with progress data
         const usersWithProgress = users.map((user) => {
-            // Calculate total videos across all courses
+            // Calculate total videos across all courses using our map
             const totalVideos = user.course_purchased.reduce((acc, purchase) => {
-                return (acc +
-                    (purchase.course?.course_weeks?.reduce((weekAcc, week) => {
-                        return (weekAcc +
-                            week.courseModules.reduce((moduleAcc, module) => moduleAcc + module.projectVideos.length, 0));
-                    }, 0) || 0));
+                return acc + (courseVideosCountMap.get(purchase.courseId) || 0);
             }, 0);
             // Count completed videos
             const videosCompleted = user.completed_videos?.length || 0;
