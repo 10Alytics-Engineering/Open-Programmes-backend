@@ -52,21 +52,17 @@ const createBlog = async (req, res) => {
     if (!title || !content) {
         return res.status(400).json({ message: "Title and Content is required" });
     }
-    if (!images || !images.length) {
-        return res.status(400).json({ message: "Image is required" });
-    }
     try {
         const blog = await prismadb_1.prismadb.blog.create({
             data: {
                 title,
                 content,
                 mins_read,
-                images: {
-                    createMany: {
-                        //@ts-ignore
-                        data: [...images.map((image) => image)],
-                    },
-                },
+                images: images && images.length ? {
+                    create: images.map((image) => ({
+                        url: image.url,
+                    })),
+                } : undefined,
             },
         });
         res.status(200).json({
@@ -113,12 +109,11 @@ const updateBlog = async (req, res) => {
                 title,
                 content,
                 mins_read,
-                images: {
-                    createMany: {
-                        //@ts-ignore
-                        data: [...images.map((image) => image)],
-                    },
-                },
+                images: images && images.length ? {
+                    create: images.map((image) => ({
+                        url: image.url,
+                    })),
+                } : undefined,
             },
             include: {
                 images: true
