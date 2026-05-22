@@ -105,11 +105,19 @@ const getStudentEngagement = async (req, res) => {
                 lastActivity,
             };
         });
-        res.status(200).json(engagementData);
+        res.status(200).json({
+            status: "success",
+            message: null,
+            data: engagementData,
+        });
     }
     catch (error) {
         console.error("Error fetching student engagement:", error);
-        res.status(500).json({ message: "Internal server error" });
+        res.status(500).json({
+            status: "error",
+            message: "Internal server error",
+            data: null
+        });
     }
 };
 exports.getStudentEngagement = getStudentEngagement;
@@ -326,11 +334,19 @@ const getCourseVideos = async (req, res) => {
             weekTitle: video.courseModule.CourseWeek.title,
             createdAt: video.createdAt
         }));
-        res.status(200).json(formattedVideos);
+        res.status(200).json({
+            status: "success",
+            message: null,
+            data: formattedVideos,
+        });
     }
     catch (error) {
         console.error("Error fetching course videos:", error);
-        res.status(500).json({ message: "Internal server error" });
+        res.status(500).json({
+            status: "error",
+            message: "Internal server error",
+            data: null
+        });
     }
 };
 exports.getCourseVideos = getCourseVideos;
@@ -390,11 +406,19 @@ const getUserCourseVideos = async (req, res) => {
                 lastWatched: progress.updatedAt
             };
         }).filter(video => video !== null);
-        res.status(200).json(formattedVideos);
+        res.status(200).json({
+            status: "success",
+            message: null,
+            data: formattedVideos,
+        });
     }
     catch (error) {
         console.error("Error fetching user's course videos:", error);
-        res.status(500).json({ message: "Internal server error" });
+        res.status(500).json({
+            status: "error",
+            message: "Internal server error",
+            data: null
+        });
     }
 };
 exports.getUserCourseVideos = getUserCourseVideos;
