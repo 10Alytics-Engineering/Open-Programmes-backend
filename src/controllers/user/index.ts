@@ -115,7 +115,7 @@ export const getUsers = async (req: Request, res: Response) => {
               weekAcc +
               week.courseModules.reduce(
                 (moduleAcc, module) => moduleAcc + module.projectVideos.length,
-                0
+                0,
               )
             );
           }, 0) || 0)
@@ -128,11 +128,11 @@ export const getUsers = async (req: Request, res: Response) => {
       // Calculate expected progress based on account age
       const accountAgeDays = Math.floor(
         (new Date().getTime() - new Date(user.createdAt).getTime()) /
-        (1000 * 60 * 60 * 24)
+          (1000 * 60 * 60 * 24),
       );
       const expectedProgress = Math.min(
         Math.floor(accountAgeDays / 7) * 10,
-        100
+        100,
       );
 
       return {
@@ -253,7 +253,7 @@ export const getUser = async (req: Request, res: Response) => {
           include: {
             course: true,
             paymentInstallments: true,
-          }
+          },
         },
         quiz_leaderboard: {
           select: {
@@ -598,12 +598,12 @@ export const deleteUser = async (req: Request, res: Response) => {
       {
         maxWait: 15000, // 15 seconds
         timeout: 60000, // 60 seconds
-      }
+      },
     );
 
     // Example of how to call the function
     await sendAccountDeletionEmail({
-      email: existingUser.email,
+      email: existingUser.email || "",
       name: existingUser.name,
     });
 
@@ -849,7 +849,7 @@ export const updateUserCohort = async (req: Request, res: Response) => {
 
     // Check if current cohort exists and user is enrolled
     const currentCohortEnrollment = user.cohorts.find(
-      (c) => c.cohortId === currentCohortId
+      (c) => c.cohortId === currentCohortId,
     );
 
     if (!currentCohortEnrollment) {
@@ -979,7 +979,7 @@ export const getUserCourseProgress = async (req: Request, res: Response) => {
 
     // Get the course purchase
     const coursePurchase = user.course_purchased.find(
-      (p) => p.courseId === courseId
+      (p) => p.courseId === courseId,
     );
     if (!coursePurchase) {
       return res
@@ -999,14 +999,14 @@ export const getUserCourseProgress = async (req: Request, res: Response) => {
           weekAcc +
           week.courseModules.reduce(
             (moduleAcc, module) => moduleAcc + module.projectVideos.length,
-            0
+            0,
           )
         );
       }, 0) || 0;
 
     // Calculate completed videos
     const completedVideos = user.completed_videos.filter(
-      (v) => v.isCompleted
+      (v) => v.isCompleted,
     ).length;
 
     // Calculate progress percentage
@@ -1022,12 +1022,12 @@ export const getUserCourseProgress = async (req: Request, res: Response) => {
       const cohortStartDate = new Date(cohort.startDate);
       const now = new Date();
       const daysSinceStart = Math.floor(
-        (now.getTime() - cohortStartDate.getTime()) / (1000 * 60 * 60 * 24)
+        (now.getTime() - cohortStartDate.getTime()) / (1000 * 60 * 60 * 24),
       );
 
       expectedWeek = Math.min(
         Math.floor(daysSinceStart / 7) + 1, // +1 because first week is week 1
-        cohortCourse.cohortWeeks.length
+        cohortCourse.cohortWeeks.length,
       );
 
       // Calculate expected progress based on weeks
@@ -1035,7 +1035,7 @@ export const getUserCourseProgress = async (req: Request, res: Response) => {
         const videosPerWeek = totalVideos / cohortCourse.cohortWeeks.length;
         expectedProgress = Math.min(
           Math.round(((expectedWeek * videosPerWeek) / totalVideos) * 100),
-          100
+          100,
         );
       }
 
@@ -1045,12 +1045,12 @@ export const getUserCourseProgress = async (req: Request, res: Response) => {
         let actualWeek = 0;
         for (const week of cohortCourse.cohortWeeks) {
           const weekVideos = week.cohortModules.flatMap(
-            (m) => m.cohortProjectVideos
+            (m) => m.cohortProjectVideos,
           );
           const completedWeekVideos = weekVideos.filter((v) =>
             user.completed_videos.some(
-              (cv) => cv.videoId === v.id && cv.isCompleted
-            )
+              (cv) => cv.videoId === v.id && cv.isCompleted,
+            ),
           ).length;
 
           if (completedWeekVideos >= weekVideos.length * 0.8) {
@@ -1073,23 +1073,23 @@ export const getUserCourseProgress = async (req: Request, res: Response) => {
           totalVideos: module.projectVideos.length,
           completedVideos: module.projectVideos.filter((video) =>
             user.completed_videos.some(
-              (cv) => cv.videoId === video.id && cv.isCompleted
-            )
+              (cv) => cv.videoId === video.id && cv.isCompleted,
+            ),
           ).length,
           iconUrl: module.iconUrl,
           status:
             module.projectVideos.length > 0
               ? user.completed_videos.filter((cv) =>
-                module.projectVideos.some(
-                  (v) => v.id === cv.videoId && cv.isCompleted
-                )
-              ).length /
-                module.projectVideos.length >=
+                  module.projectVideos.some(
+                    (v) => v.id === cv.videoId && cv.isCompleted,
+                  ),
+                ).length /
+                  module.projectVideos.length >=
                 0.8
                 ? "Completed"
                 : "Ongoing"
               : "N/A",
-        }))
+        })),
       ) || [];
 
     return res.status(200).json({
