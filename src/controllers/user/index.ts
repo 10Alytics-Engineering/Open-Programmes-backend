@@ -1073,7 +1073,7 @@ export const removeUserCourse = async (req: Request, res: Response) => {
 export const updateUserCohort = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const { cohortId, courseId } = req.body;
+    const { cohortId, courseId, reason } = req.body;
 
     if (!userId || !cohortId || !courseId) {
       return res.status(400).json({
@@ -1081,7 +1081,7 @@ export const updateUserCohort = async (req: Request, res: Response) => {
       });
     }
 
-    const [currentEnrollment, newCohort] = await Promise.all([
+    const [currentEnrollment, newCohort, user] = await Promise.all([
       prismadb.userCohort.findFirst({
         where: {
           userId,
@@ -1107,7 +1107,20 @@ export const updateUserCohort = async (req: Request, res: Response) => {
           courseId: true,
         },
       }),
+
+      prismadb.user.findUnique({
+        where: { id: userId },
+        select: {
+          name: true,
+          email: true,
+          id: true,
+        },
+      }),
     ]);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     if (!currentEnrollment) {
       return res.status(404).json({
@@ -1166,11 +1179,41 @@ export const updateUserCohort = async (req: Request, res: Response) => {
         },
       });
 
+      await tx.notification.create({
+        data: {
+          userId,
+          type: "COHORT_SWITCHED",
+          title: "Cohort Updated",
+          message: `Your cohort has been switched to ${newCohort.name}`,
+          details: JSON.stringify({
+            oldCohortId: currentEnrollment.cohortId,
+            newCohortId: cohortId,
+            courseId,
+            reason,
+          }),
+        },
+      });
+
       return {
         previousCohort: archivedEnrollment,
         newCohort: newEnrollment,
       };
     });
+
+    if (user.email) {
+      const html = `
+        <h2>Cohort Update</h2>
+        <p>Hi ${user.name || "there"},</p>
+        <p>Your cohort has been switched to <strong>${newCohort.name}</strong>.</p>
+        ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
+        <p>Please log in to your account to see the details.</p>
+      `;
+      await sendMail({
+        to: user.email,
+        subject: "Your Cohort Has Been Updated",
+        html,
+      });
+    }
 
     return res.status(200).json({
       status: "success",
