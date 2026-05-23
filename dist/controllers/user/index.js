@@ -14,7 +14,7 @@ const handleServerError = (error, res) => {
 };
 const getUsers = async (req, res) => {
     try {
-        const { page = 1, limit = 20, search = "", role = "", course = "", cohort = "", sortBy = "createdAt", sortOrder = "asc", } = req.query;
+        const { page = 1, limit = 20, search = "", role = "", course = "", cohort = "", cohortSearch = "", sortBy = "createdAt", sortOrder = "asc", } = req.query;
         const pageNumber = parseInt(page);
         const limitNumber = parseInt(limit);
         const skip = (pageNumber - 1) * limitNumber;
@@ -46,6 +46,29 @@ const getUsers = async (req, res) => {
                     cohortId: cohort,
                 },
             };
+        }
+        else if (cohortSearch) {
+            whereClause.cohorts = {
+                some: {
+                    isActive: true,
+                    ...(course && {
+                        courseId: course,
+                    }),
+                    cohort: {
+                        is: {
+                            name: {
+                                contains: cohortSearch,
+                                mode: "insensitive",
+                            },
+                        },
+                    },
+                },
+            };
+            if (!course) {
+                whereClause.course_purchased = {
+                    some: {},
+                };
+            }
         }
         // Build orderBy clause
         const orderBy = {};
@@ -98,6 +121,9 @@ const getUsers = async (req, res) => {
                 completed_videos: {
                     select: {
                         id: true,
+                        isCompleted: true,
+                        courseId: true,
+                        userId: true,
                     },
                 },
             },
@@ -189,10 +215,14 @@ const getUser = async (req, res) => {
     try {
         const { userId } = req.params;
         if (!userId) {
-            return res.status(400).json({ message: "UserId is required" });
+            return res.status(400).json({
+                message: "UserId is required",
+            });
         }
         const user = await prismadb_1.prismadb.user.findUnique({
-            where: { id: userId },
+            where: {
+                id: userId,
+            },
             include: {
                 completed_videos: true,
                 course_purchased: {
@@ -200,6 +230,29 @@ const getUser = async (req, res) => {
                         course: {
                             include: {
                                 facilitators: true,
+                                course_videos: {
+                                    select: {
+                                        id: true,
+                                        title: true,
+                                    },
+                                },
+                                course_weeks: {
+                                    include: {
+                                        courseModules: {
+                                            include: {
+                                                quizzes: {
+                                                    include: {
+                                                        answers: {
+                                                            select: {
+                                                                id: true,
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
                             },
                         },
                     },
@@ -226,14 +279,26 @@ const getUser = async (req, res) => {
                 },
                 quiz_answers: {
                     include: {
-                        quizAnswer: true,
+                        quizAnswer: {
+                            include: {
+                                quiz: true,
+                            },
+                        },
                     },
                 },
                 paymentStatus: {
                     include: {
                         course: true,
                         paymentInstallments: true,
-                    }
+                        transactions: {
+                            select: {
+                                courseId: true,
+                                amount: true,
+                                status: true,
+                                paymentDate: true,
+                            },
+                        },
+                    },
                 },
                 quiz_leaderboard: {
                     select: {
@@ -245,18 +310,110 @@ const getUser = async (req, res) => {
             },
         });
         if (!user) {
-            return res.status(404).json({ message: "Nonexistent User!" });
+            return res.status(404).json({
+                message: "Nonexistent User!",
+            });
         }
-        // Prepare user data for frontend (security first)
+        // ENRICH COURSE DATA
+        const enrichedCourses = user.course_purchased.map((purchase) => {
+            const course = purchase.course;
+            // =========================
+            // VIDEO STATS
+            // =========================
+            const totalVideos = course.course_videos?.length || 0;
+            const completedVideoRecords = user.completed_videos?.filter((video) => video?.courseId === course?.id && video.isCompleted) || [];
+            const completedVideos = completedVideoRecords.length || 0;
+            const videoProgressPercentage = completedVideos
+                ? Math.round((completedVideos / totalVideos) * 100)
+                : 0;
+            // =========================
+            // QUIZ STATS
+            // =========================
+            const allQuizzes = course.course_weeks?.flatMap((week) => week.courseModules?.flatMap((module) => module.quizzes));
+            const totalQuizzes = allQuizzes?.length || 0;
+            const answeredQuizIds = new Set(user.quiz_answers?.map((item) => item.quizAnswer.quizId));
+            const completedQuizzes = allQuizzes?.filter((quiz) => answeredQuizIds.has(quiz?.id))
+                .length || 0;
+            const quizProgressPercentage = totalQuizzes > 0
+                ? Math.round((completedQuizzes / totalQuizzes) * 100)
+                : 0;
+            // =========================
+            // LAST ACTIVITY
+            // =========================
+            const quizActivities = user.quiz_answers
+                .filter((quiz) => quiz.updatedAt)
+                .map((quiz) => quiz.updatedAt) || [];
+            const courseVideoActivities = user.completed_videos
+                .filter((video) => video.courseId === course.id && video.updatedAt)
+                .map((video) => video.updatedAt) || [];
+            const latestActivity = courseVideoActivities.length > 0 || quizActivities.length > 0
+                ? new Date(Math.max(...quizActivities.map((date) => new Date(date).getTime()), ...courseVideoActivities.map((date) => new Date(date).getTime())))
+                : null;
+            // =========================
+            // PAYMENT
+            // =========================
+            const paymentStatus = user.paymentStatus.find((payment) => payment?.courseId === course?.id);
+            const paymentInstallments = paymentStatus?.paymentInstallments || [];
+            let amountPaid = 0, totalAmount = 0, installmentsPaid = 0, allInstallments = 0;
+            if (!paymentStatus?.paymentPlan?.includes("FULL")) {
+                paymentInstallments.forEach((installment) => {
+                    if (installment.paid) {
+                        amountPaid += Number(installment.amount || 0);
+                        installmentsPaid += 1;
+                    }
+                    totalAmount += Number(installment.amount || 0);
+                    allInstallments += 1;
+                });
+            }
+            else {
+                paymentStatus.transactions.forEach((transaction) => {
+                    if (transaction.status === "success") {
+                        amountPaid += Number(transaction.amount || 0);
+                    }
+                    totalAmount += Number(transaction.amount || 0);
+                });
+            }
+            let finalStatusOfPayment = paymentStatus?.status;
+            if (allInstallments && installmentsPaid < allInstallments) {
+                finalStatusOfPayment = `${installmentsPaid}/${allInstallments} Success`;
+            }
+            const nextInstallment = paymentInstallments.find((installment) => !installment.paid) ||
+                null;
+            return {
+                ...purchase,
+                courseStats: {
+                    // VIDEO
+                    totalVideos,
+                    completedVideos,
+                    videoProgressPercentage,
+                    // QUIZ
+                    totalQuizzes,
+                    completedQuizzes,
+                    quizProgressPercentage,
+                    // ACTIVITY
+                    lastActivityAt: latestActivity,
+                    // PAYMENT
+                    paymentStatus: finalStatusOfPayment || "UNKNOWN",
+                    paymentPlan: paymentStatus?.paymentPlan || "FULL",
+                    amountPaid,
+                    totalAmount,
+                    nextInstallmentDueDate: nextInstallment?.dueDate || null,
+                    installments: paymentInstallments,
+                },
+            };
+        });
         const userResponse = {
             ...user,
             hasPassword: !!user.password,
+            course_purchased: enrichedCourses,
         };
-        // @ts-ignore - delete the field for safety
+        // @ts-ignore
         delete userResponse.password;
-        return res
-            .status(200)
-            .json({ status: "success", message: null, data: userResponse });
+        return res.status(200).json({
+            status: "success",
+            message: null,
+            data: userResponse,
+        });
     }
     catch (error) {
         handleServerError(error, res);
@@ -552,7 +709,7 @@ const deleteUser = async (req, res) => {
         });
         // Example of how to call the function
         await (0, mail_1.sendAccountDeletionEmail)({
-            email: existingUser.email,
+            email: existingUser.email || "",
             name: existingUser.name,
         });
         return res.status(200).json({
@@ -598,7 +755,7 @@ exports.updateUserRole = updateUserRole;
 const addUserCourse = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { courseId } = req.body;
+        const { courseId, cohortId } = req.body;
         if (!userId || !courseId) {
             return res
                 .status(400)
@@ -626,15 +783,24 @@ const addUserCourse = async (req, res) => {
         if (existingPurchase) {
             return res.status(400).json({ message: "User already has this course" });
         }
+        let courseCohortId = cohortId;
         // Finding the latest cohort for this course
-        const latestCohort = await prismadb_1.prismadb.cohort.findFirst({
-            where: {
-                courseId,
-            },
-            orderBy: {
-                createdAt: "desc",
-            },
-        });
+        if (!cohortId) {
+            const latestCohort = await prismadb_1.prismadb.cohort.findFirst({
+                where: {
+                    courseId,
+                },
+                orderBy: {
+                    createdAt: "desc",
+                },
+            });
+            courseCohortId = latestCohort?.id;
+        }
+        if (!courseCohortId) {
+            return res
+                .status(400)
+                .json({ message: "This course does not have a cohort" });
+        }
         // Add the course to user
         const purchase = await prismadb_1.prismadb.purchase.create({
             data: {
@@ -651,25 +817,20 @@ const addUserCourse = async (req, res) => {
                 },
             },
         });
-        // if the cohort exists, the user is added to that cohort
-        if (latestCohort) {
-            await prismadb_1.prismadb.userCohort.create({
-                data: {
-                    userId,
-                    cohortId: latestCohort.id,
-                    courseId,
-                    isPaymentActive: true,
-                },
-            });
-        }
+        await prismadb_1.prismadb.userCohort.create({
+            data: {
+                userId,
+                cohortId: courseCohortId,
+                courseId,
+                isPaymentActive: true,
+            },
+        });
         return res.status(200).json({
             status: "success",
-            message: latestCohort
-                ? "Course added and user enrolled in latest cohort"
-                : "Course added (no cohorts available for this course)",
+            message: "Course added and user enrolled in cohort",
             data: {
                 purchase,
-                cohort: latestCohort || null,
+                cohort: { id: courseCohortId },
             },
         });
     }
@@ -747,73 +908,137 @@ exports.removeUserCourse = removeUserCourse;
 const updateUserCohort = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { currentCohortId, newCohortId } = req.body;
-        if (!userId || !currentCohortId || !newCohortId) {
+        const { cohortId, courseId, reason } = req.body;
+        if (!userId || !cohortId || !courseId) {
             return res.status(400).json({
-                message: "UserId, currentCohortId and newCohortId are required",
+                message: "UserId, cohortId and courseId are required",
             });
         }
-        // Check if user exists
-        const user = await prismadb_1.prismadb.user.findUnique({
-            where: { id: userId },
-            include: {
-                cohorts: {
-                    where: { cohortId: currentCohortId },
-                    include: { cohort: true },
+        const [currentEnrollment, newCohort, user] = await Promise.all([
+            prismadb_1.prismadb.userCohort.findFirst({
+                where: {
+                    userId,
+                    isActive: true,
+                    courseId,
                 },
-            },
-        });
+                include: {
+                    cohort: {
+                        select: {
+                            id: true,
+                            name: true,
+                            courseId: true,
+                        },
+                    },
+                },
+            }),
+            prismadb_1.prismadb.cohort.findUnique({
+                where: { id: cohortId },
+                select: {
+                    id: true,
+                    name: true,
+                    courseId: true,
+                },
+            }),
+            prismadb_1.prismadb.user.findUnique({
+                where: { id: userId },
+                select: {
+                    name: true,
+                    email: true,
+                    id: true,
+                },
+            }),
+        ]);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-        // Check if current cohort exists and user is enrolled
-        const currentCohortEnrollment = user.cohorts.find((c) => c.cohortId === currentCohortId);
-        if (!currentCohortEnrollment) {
+        if (!currentEnrollment) {
             return res.status(404).json({
                 message: "User is not enrolled in the specified current cohort",
             });
         }
-        // Check if new cohort exists
-        const newCohort = await prismadb_1.prismadb.cohort.findUnique({
-            where: { id: newCohortId },
-            include: { course: true },
-        });
-        if (!newCohort) {
-            return res.status(404).json({ message: "New cohort not found" });
+        if (currentEnrollment.cohortId === cohortId) {
+            return res.status(400).json({
+                message: "New cohort must be different from current cohort",
+            });
         }
-        // Verify new cohort is for the same course
-        if (newCohort.courseId !== currentCohortEnrollment.cohort.courseId) {
+        if (!newCohort) {
+            return res.status(404).json({
+                message: "New cohort not found",
+            });
+        }
+        if (newCohort.courseId !== currentEnrollment.cohort.courseId) {
             return res.status(400).json({
                 message: "New cohort must be for the same course",
             });
         }
-        // Archive current enrollment (don't delete to preserve data)
-        await prismadb_1.prismadb.userCohort.update({
-            where: { id: currentCohortEnrollment.id },
-            data: {
-                isActive: false,
-                archivedAt: new Date(),
-                isPaymentActive: false,
-            },
+        const result = await prismadb_1.prismadb.$transaction(async (tx) => {
+            const archivedEnrollment = await tx.userCohort.updateMany({
+                where: { courseId, userId },
+                data: {
+                    isActive: false,
+                    archivedAt: new Date(),
+                    isPaymentActive: false,
+                },
+            });
+            const newEnrollment = await tx.userCohort.upsert({
+                where: {
+                    userId_cohortId_courseId: {
+                        userId,
+                        cohortId,
+                        courseId,
+                    },
+                },
+                create: {
+                    userId,
+                    cohortId,
+                    courseId,
+                    isPaymentActive: currentEnrollment.isPaymentActive,
+                    isActive: true,
+                    previousEnrollmentId: currentEnrollment.id,
+                },
+                update: {
+                    isPaymentActive: currentEnrollment.isPaymentActive,
+                    isActive: true,
+                    previousEnrollmentId: currentEnrollment.id,
+                },
+            });
+            await tx.notification.create({
+                data: {
+                    userId,
+                    type: "COHORT_SWITCHED",
+                    title: "Cohort Updated",
+                    message: `Your cohort has been switched to ${newCohort.name}`,
+                    details: JSON.stringify({
+                        oldCohortId: currentEnrollment.cohortId,
+                        newCohortId: cohortId,
+                        courseId,
+                        reason,
+                    }),
+                },
+            });
+            return {
+                previousCohort: archivedEnrollment,
+                newCohort: newEnrollment,
+            };
         });
-        // Create new enrollment
-        const newEnrollment = await prismadb_1.prismadb.userCohort.create({
-            data: {
-                userId,
-                cohortId: newCohortId,
-                courseId: newCohort.courseId,
-                isPaymentActive: currentCohortEnrollment.isPaymentActive,
-                isActive: true,
-                previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
-            },
-        });
+        if (user.email) {
+            const html = `
+        <h2>Cohort Update</h2>
+        <p>Hi ${user.name || "there"},</p>
+        <p>Your cohort has been switched to <strong>${newCohort.name}</strong>.</p>
+        ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
+        <p>Please log in to your account to see the details.</p>
+      `;
+            await (0, nodemailer_1.sendMail)({
+                to: user.email,
+                subject: "Your Cohort Has Been Updated",
+                html,
+            });
+        }
         return res.status(200).json({
             status: "success",
             message: "User cohort updated successfully",
-            data: {
-                previousCohort: currentCohortEnrollment,
-                newCohort: newEnrollment,
-            },
+            data: result,
         });
     }
     catch (error) {
@@ -821,7 +1046,6 @@ const updateUserCohort = async (req, res) => {
     }
 };
 exports.updateUserCohort = updateUserCohort;
-// Add this to your user controller file
 const getUserCourseProgress = async (req, res) => {
     try {
         const { userId, courseId } = req.params;
