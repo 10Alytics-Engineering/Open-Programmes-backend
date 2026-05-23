@@ -31,17 +31,11 @@ const registerInactiveUsersReminderJob = () => {
                         {
                             OR: [
                                 {
-                                    completed_videos: {
-                                        none: {},
-                                    },
+                                    lastLoginDate: null,
                                 },
                                 {
-                                    completed_videos: {
-                                        every: {
-                                            updatedAt: {
-                                                lt: sevenDaysAgo,
-                                            },
-                                        },
+                                    lastLoginDate: {
+                                        lt: sevenDaysAgo,
                                     },
                                 },
                             ],
