@@ -38,11 +38,11 @@ async function main() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const test = await prisma.userProgress.findMany({
+  const test = await prisma.paymentTransaction.findMany({
     where: {
       userId: {
         in: [
-          "cmoacacaz00026odzalnsheau",
+          "cmows6g0o007oz4i0875ifdm5",
           // "cmp3z4y2h000cbhe58boegtiv",
           // "cmows6g0o007oz4i0875ifdm5",
         ],
