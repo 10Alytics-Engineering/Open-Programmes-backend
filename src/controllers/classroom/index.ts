@@ -2,7 +2,10 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
 import { generateUniqueAssignmentSlug } from "../../utils/slugify";
-import { notifyCohortMembers } from "../../utils/liveClassNotifications";
+import {
+  notifyCohortMembers,
+  notifyCohortMembersOfCancellation,
+} from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
 
 export const getClassroomData = async (req: Request, res: Response) => {
@@ -127,8 +130,69 @@ export const getClassroomTopics = async (req: Request, res: Response) => {
       }),
     ]);
 
+    const user = req.user as NebiantUser;
+    const userId = user?.id;
+    const isAdmin = user?.role === "ADMIN" || user?.role === "COURSE_ADMIN";
+
+    // Fetch user progress and submissions for unlocking logic
+    const [userProgress, submissions] = await Promise.all([
+      prismadb.userProgress.findMany({
+        where: { userId },
+      }),
+      prismadb.assignmentSubmission.findMany({
+        where: { studentId: userId },
+      }),
+    ]);
+
+    const completedVideoIds = new Set(
+      userProgress.filter((p) => p.isCompleted).map((p) => p.videoId),
+    );
+    const submittedAssignmentIds = new Set(
+      submissions.map((s) => s.assignmentId),
+    );
+
+    // Process topics to add isCompleted and isLocked status
+    let previousTopicCompleted = true; // The first topic is always unlocked
+
+    const processedTopics = topics.map((topic) => {
+      const processedAssignments = topic.assignments.map((a) => ({
+        ...a,
+        isCompleted: submittedAssignmentIds.has(a.id),
+      }));
+
+      const processedRecordings = topic.classRecordings.map((r) => ({
+        ...r,
+        isCompleted: completedVideoIds.has(r.id),
+      }));
+
+      const allVideosCompleted =
+        processedRecordings.length === 0 ||
+        processedRecordings.every((r) => r.isCompleted);
+
+      const allAssignmentsSubmitted =
+        processedAssignments.length === 0 ||
+        processedAssignments.every((a) => a.isCompleted);
+
+      const isCompleted = allVideosCompleted && allAssignmentsSubmitted;
+
+      // A topic is locked if the previous topic was NOT completed
+      // Except for the first topic which is always unlocked
+      const isLocked = !previousTopicCompleted;
+
+      // Update previousTopicCompleted for the next iteration
+      previousTopicCompleted = isCompleted;
+
+      return {
+        ...topic,
+        assignments: processedAssignments,
+        classRecordings: processedRecordings,
+        isCompleted,
+        isLocked: isAdmin ? false : isLocked,
+      };
+    });
+
     res.json({
-      topics,
+      topics: processedTopics,
       unassignedItems: {
         assignments: unassignedAssignments,
         materials: unassignedMaterials,
@@ -447,10 +511,6 @@ export const createStreamPost = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    console.log(
-      `[STREAM_POST] Creating post for cohort ${cohortId} by user ${user.email}`,
-    );
-
     // Find the cohort course for this cohort
     const cohortCourse = await prismadb.cohortCourse.findFirst({
       where: { cohortId: cohortId },
@@ -458,9 +518,6 @@ export const createStreamPost = async (req: Request, res: Response) => {
     });
 
     if (!cohortCourse) {
-      console.error(
-        `[STREAM_POST] Cohort course not found for cohortId: ${cohortId}`,
-      );
       return res.status(404).json({ error: "Cohort course not found" });
     }
 
@@ -476,8 +533,6 @@ export const createStreamPost = async (req: Request, res: Response) => {
         comments: true,
       },
     });
-
-    console.log(`[STREAM_POST] Created post ${post.id}`);
 
     // Send Notification to all students in the cohort
     try {
@@ -699,6 +754,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         metadata: {
           materialId: material.id,
           fileUrl: material.fileUrl,
+          // imageUrl: material.fileUrl || "",
           topicTitle: material.classroomTopic?.title, // Include topic if exists
         },
       })),
@@ -885,21 +941,32 @@ export const deleteRecording = async (req: Request, res: Response) => {
 export const deleteLiveClass = async (req: Request, res: Response) => {
   try {
     const { liveClassId } = req.params;
+    const { reason } = req.body; // optional cancellation reason from instructor
 
     const liveClass = await prismadb.liveClass.findUnique({
       where: { id: liveClassId },
+      include: {
+        cohortCourse: {
+          include: { cohort: true },
+        },
+      },
     });
 
     if (!liveClass) {
       return res.status(404).json({ error: "Live class not found" });
     }
 
+    // Notify all cohort members of the cancellation BEFORE deleting
+    notifyCohortMembersOfCancellation(liveClass, reason).catch((err) =>
+      console.error("[LIVE_DELETE] Failed to send cancellation emails:", err),
+    );
+
     await prismadb.liveClass.delete({
       where: { id: liveClassId },
     });
 
     res.json({
-      message: "Live class deleted successfully",
+      message: "Live class deleted and students notified",
       deletedLiveClass: {
         id: liveClass.id,
         title: liveClass.title,

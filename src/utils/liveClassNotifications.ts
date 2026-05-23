@@ -4,7 +4,8 @@ import { sendMail } from "./nodemailer";
 export const sendLiveClassEmail = async (
   recipient: { email: string; name: string; userId: string },
   liveClass: any,
-  type: 'creation' | 'reminder' | 'started'
+  type: 'creation' | 'reminder' | 'started' | 'cancellation',
+  reason?: string
 ) => {
   const joinLink = `${process.env.NEXT_PUBLIC_APP_URL}/join-live?classId=${liveClass.id}&email=${recipient.email}`;
 
@@ -14,7 +15,7 @@ export const sendLiveClassEmail = async (
   switch (type) {
     case 'creation':
       subject = `Live Class Scheduled: ${liveClass.title}`;
-      message = `A new live class has been scheduled for your cohort: <strong>${liveClass.title}</strong>.<br><br>Date & Time: ${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}`;
+      message = `A new live class has been scheduled for your cohort: <strong>${liveClass.title}</strong>.<br><br>Date & Time: ${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)`;
       break;
     case 'reminder':
       subject = `Reminder: Live Class in 30 minutes - ${liveClass.title}`;
@@ -24,7 +25,14 @@ export const sendLiveClassEmail = async (
       subject = `Live Now: ${liveClass.title}`;
       message = `Your live class <strong>${liveClass.title}</strong> has started now! Click the join link below to join immediately.`;
       break;
+    case 'cancellation':
+      subject = `Live Class Cancelled: ${liveClass.title}`;
+      message = `We're sorry to inform you that the live class <strong>${liveClass.title}</strong>, scheduled for <strong>${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)</strong>, has been cancelled.${reason ? `<br><br><strong>Reason:</strong> ${reason}` : ''
+        }`;
+      break;
   }
+
+  const isCancellation = type === 'cancellation';
 
   const mailOptions = {
     from: process.env.EMAIL_FROM || 'programrelations@nebiant.com',
@@ -40,9 +48,10 @@ export const sendLiveClassEmail = async (
             .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
             .header { background: #6742FA; color: white; padding: 30px; text-align: center; }
             .content { padding: 40px 30px; }
-            .btn { display: inline-block; padding: 14px 28px; background: #6742FA; color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 25px; box-shadow: 0 4px 6px rgba(103, 66, 250, 0.2); }
+            .btn { display: inline-block; padding: 14px 28px; background: #6742FA; color: white !important; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 25px; }
             .footer { font-size: 12px; color: #999; margin: 20px 0; text-align: center; }
             .info-box { background: #f8f9fa; border-left: 4px solid #6742FA; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .cancelled-badge { display: inline-block; background: #FEE2E2; color: #DC2626; font-weight: bold; font-size: 12px; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
           </style>
         </head>
         <body>
@@ -54,23 +63,25 @@ export const sendLiveClassEmail = async (
                     <img src="${process.env.BACKEND_URL}/logo.png" alt="Logo" width="40" style="display: block; border: 0;">
                   </td>
                   <td style="vertical-align: middle;">
-                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business Live</h1>
+                    <h1 style="margin: 0; font-size: 24px; color: white;">10Alytics Business</h1>
                   </td>
                 </tr>
               </table>
             </div>
             <div class="content">
               <p>Hi ${recipient.name || 'Student'},</p>
+              ${isCancellation ? '<span class="cancelled-badge">❌ Class Cancelled</span>' : ''}
               <p style="font-size: 16px;">${message}</p>
               
               <div class="info-box">
                 <strong>Topic:</strong> ${liveClass.title}<br>
-                <strong>Start Time:</strong> ${new Date(liveClass.startTime).toLocaleString()}
+                <strong>Scheduled Time:</strong> ${new Date(liveClass.startTime).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' })} (WAT)
               </div>
 
+              ${!isCancellation ? `
               <div style="text-align: center;">
                 <a href="${joinLink}" class="btn">Join Class Now</a>
-              </div>
+              </div>` : ''}
             </div>
             <div class="footer">
               <p>You're receiving this because you're enrolled in a 10Alytics Business program.</p>
@@ -86,6 +97,44 @@ export const sendLiveClassEmail = async (
     await sendMail(mailOptions);
   } catch (err) {
     console.error(`Failed to send ${type} email to ${recipient.email}:`, err);
+  }
+};
+
+export const notifyCohortMembersOfCancellation = async (
+  liveClass: any, // full liveClass object with cohortCourse included
+  reason?: string
+) => {
+  try {
+    const users = await prismadb.userCohort.findMany({
+      where: {
+        cohortId: liveClass.cohortCourse.cohortId,
+        isActive: true,
+        user: { inactive: false },
+      },
+      include: { user: true },
+    });
+
+    console.log(`[LIVE_CANCEL_NOTIFY] Notifying ${users.length} users of cancellation of "${liveClass.title}"`);
+
+    const batchSize = 10;
+    for (let i = 0; i < users.length; i += batchSize) {
+      const batch = users.slice(i, i + batchSize);
+      await Promise.all(
+        batch.map((uc) => {
+          if (uc.user.email) {
+            return sendLiveClassEmail(
+              { email: uc.user.email, name: uc.user.name, userId: uc.user.id },
+              liveClass,
+              'cancellation',
+              reason
+            );
+          }
+          return Promise.resolve();
+        })
+      );
+    }
+  } catch (error) {
+    console.error(`[LIVE_CANCEL_NOTIFY_ERROR] Error notifying cohort of cancellation:`, error);
   }
 };
 

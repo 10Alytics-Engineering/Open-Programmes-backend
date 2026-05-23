@@ -28,7 +28,11 @@ const getCurrentWeek = async (req, res) => {
         const now = new Date();
         // Calculate difference in weeks
         const diffInMs = now.getTime() - cohortStartDate.getTime();
-        const diffInWeeks = Math.floor(diffInMs / (1000 * 60 * 60 * 24 * 7)) + 1; // +1 to count the current week
+        let diffInWeeks = Math.floor(diffInMs / (1000 * 60 * 60 * 24 * 7)) + 1; // +1 to count the current week
+        // If cohort hasn't started, we still want to show at least Week 1 for paid users
+        if (diffInWeeks <= 0) {
+            diffInWeeks = 1;
+        }
         // Get all weeks for this course
         const courseWeeks = await prismadb_1.prismadb.courseWeek.findMany({
             where: {

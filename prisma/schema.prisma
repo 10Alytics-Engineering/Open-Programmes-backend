@@ -462,6 +462,9 @@ model QuizAnswer {
   isCorrect   Boolean          @default(false)
   quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
   quizAnswers UserQuizAnswer[]
+
+  createdAt   DateTime?         @default(now())
+  updatedAt   DateTime?         @updatedAt
 }
 
 model UserQuizAnswer {
@@ -470,7 +473,8 @@ model UserQuizAnswer {
   quizAnswerId String
   quizAnswer   QuizAnswer @relation(fields: [quizAnswerId], references: [id], onDelete: Cascade)
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  createdAt    DateTime?         @default(now())
+  updatedAt    DateTime?         @updatedAt
   @@unique([userId, quizAnswerId])
 }
 
@@ -843,8 +847,9 @@ model ClassMaterial {
   id               String          @id @default(cuid())
   title            String
   description      String?
-  fileUrl          String
+  fileUrl          String?
   fileType         String          @default("pdf")
+  imageUrl         String?
   cohortCourseId   String
   classroomTopicId String?
   createdAt        DateTime        @default(now())

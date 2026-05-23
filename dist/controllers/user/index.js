@@ -53,25 +53,40 @@ const getUsers = async (req, res) => {
         const totalUsers = await prismadb_1.prismadb.user.count({
             where: whereClause,
         });
+        // Fetch all courses and their project videos count once (very fast, selecting only IDs)
+        const coursesSelect = await prismadb_1.prismadb.course.findMany({
+            select: {
+                id: true,
+                course_weeks: {
+                    select: {
+                        courseModules: {
+                            select: {
+                                projectVideos: {
+                                    select: {
+                                        id: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        const courseVideosCountMap = new Map();
+        for (const c of coursesSelect) {
+            const total = c.course_weeks.reduce((weekAcc, week) => {
+                return (weekAcc +
+                    week.courseModules.reduce((moduleAcc, module) => moduleAcc + module.projectVideos.length, 0));
+            }, 0);
+            courseVideosCountMap.set(c.id, total);
+        }
         // Get paginated users
         const users = await prismadb_1.prismadb.user.findMany({
             where: whereClause,
             include: {
                 course_purchased: {
                     include: {
-                        course: {
-                            include: {
-                                course_weeks: {
-                                    include: {
-                                        courseModules: {
-                                            include: {
-                                                projectVideos: true,
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
+                        course: true,
                     },
                 },
                 cohorts: {
@@ -79,7 +94,11 @@ const getUsers = async (req, res) => {
                         cohort: true,
                     },
                 },
-                completed_videos: true,
+                completed_videos: {
+                    select: {
+                        id: true,
+                    },
+                },
             },
             orderBy,
             skip,
@@ -87,13 +106,9 @@ const getUsers = async (req, res) => {
         });
         // Enhance users with progress data
         const usersWithProgress = users.map((user) => {
-            // Calculate total videos across all courses
+            // Calculate total videos across all courses using our map
             const totalVideos = user.course_purchased.reduce((acc, purchase) => {
-                return (acc +
-                    (purchase.course?.course_weeks?.reduce((weekAcc, week) => {
-                        return (weekAcc +
-                            week.courseModules.reduce((moduleAcc, module) => moduleAcc + module.projectVideos.length, 0));
-                    }, 0) || 0));
+                return acc + (courseVideosCountMap.get(purchase.courseId) || 0);
             }, 0);
             // Count completed videos
             const videosCompleted = user.completed_videos?.length || 0;
@@ -180,11 +195,12 @@ const getUser = async (req, res) => {
             include: {
                 completed_videos: true,
                 course_purchased: {
-                    select: {
-                        id: true,
-                        userId: true,
-                        courseId: true,
-                        course: true,
+                    include: {
+                        course: {
+                            include: {
+                                facilitators: true,
+                            },
+                        },
                     },
                 },
                 cohorts: {
@@ -192,6 +208,8 @@ const getUser = async (req, res) => {
                         cohortId: true,
                         userId: true,
                         isPaymentActive: true,
+                        isActive: true,
+                        archivedAt: true,
                         cohort: {
                             select: {
                                 id: true,
@@ -336,6 +354,8 @@ const updateUser = async (req, res) => {
                         cohortId: true,
                         userId: true,
                         isPaymentActive: true,
+                        isActive: true,
+                        archivedAt: true,
                         cohort: {
                             select: {
                                 id: true,
@@ -415,6 +435,8 @@ const updateUserImage = async (req, res) => {
                         cohortId: true,
                         userId: true,
                         isPaymentActive: true,
+                        isActive: true,
+                        archivedAt: true,
                         cohort: {
                             select: {
                                 id: true,
@@ -768,8 +790,8 @@ const updateUserCohort = async (req, res) => {
         await prismadb_1.prismadb.userCohort.update({
             where: { id: currentCohortEnrollment.id },
             data: {
-                //  isActive: false,
-                // archivedAt: new Date()
+                isActive: false,
+                archivedAt: new Date(),
                 isPaymentActive: false,
             },
         });
@@ -780,7 +802,8 @@ const updateUserCohort = async (req, res) => {
                 cohortId: newCohortId,
                 courseId: newCohort.courseId,
                 isPaymentActive: currentCohortEnrollment.isPaymentActive,
-                // previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
+                isActive: true,
+                previousEnrollmentId: currentCohortEnrollment.id // Tracking previous enrollment
             },
         });
         return res.status(200).json({
