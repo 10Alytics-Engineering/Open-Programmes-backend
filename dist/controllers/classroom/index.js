@@ -660,7 +660,7 @@ const getStreamActivities = async (req, res) => {
                 metadata: {
                     materialId: material.id,
                     fileUrl: material.fileUrl,
-                    imageUrl: material.imageUrl,
+                    // imageUrl: material.fileUrl || "",
                     topicTitle: material.classroomTopic?.title, // Include topic if exists
                 },
             })),
