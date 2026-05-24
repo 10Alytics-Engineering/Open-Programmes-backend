@@ -125,6 +125,7 @@ async function login(req, res) {
         const updatedExistingUser = await prismadb_1.prismadb.user.update({
             data: {
                 access_token,
+                lastLoginDate: new Date(),
             },
             where: {
                 id: existingUser.id,
@@ -261,7 +262,7 @@ async function googleAuth(req, res) {
         // Update user with new access token
         const updatedUser = await prismadb_1.prismadb.user.update({
             where: { id: user.id },
-            data: { access_token },
+            data: { access_token, lastLoginDate: new Date() },
         });
         console.log(`[GOOGLE_AUTH]: Login successful for: ${normalizedEmail}`);
         return res.status(200).json({

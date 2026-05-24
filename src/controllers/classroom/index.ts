@@ -2,7 +2,10 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
 import { generateUniqueAssignmentSlug } from "../../utils/slugify";
-import { notifyCohortMembers, notifyCohortMembersOfCancellation } from "../../utils/liveClassNotifications";
+import {
+  notifyCohortMembers,
+  notifyCohortMembersOfCancellation,
+} from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
 
 export const getClassroomData = async (req: Request, res: Response) => {
@@ -751,7 +754,7 @@ export const getStreamActivities = async (req: Request, res: Response) => {
         metadata: {
           materialId: material.id,
           fileUrl: material.fileUrl,
-          imageUrl: material.imageUrl,
+          // imageUrl: material.fileUrl || "",
           topicTitle: material.classroomTopic?.title, // Include topic if exists
         },
       })),
@@ -955,7 +958,7 @@ export const deleteLiveClass = async (req: Request, res: Response) => {
 
     // Notify all cohort members of the cancellation BEFORE deleting
     notifyCohortMembersOfCancellation(liveClass, reason).catch((err) =>
-      console.error("[LIVE_DELETE] Failed to send cancellation emails:", err)
+      console.error("[LIVE_DELETE] Failed to send cancellation emails:", err),
     );
 
     await prismadb.liveClass.delete({

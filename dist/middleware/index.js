@@ -36,7 +36,7 @@ const isLoggedIn = async (req, res, next) => {
                         email: true,
                         role: true,
                         name: true,
-                    }
+                    },
                 });
                 if (!dbUser) {
                     console.log("❌ [isLoggedIn] User not found in database:", decoded.id);
@@ -54,7 +54,10 @@ const isLoggedIn = async (req, res, next) => {
             }
             catch (dbError) {
                 console.error("❌ [isLoggedIn] Database verification error:", dbError);
-                return res.status(500).json({ message: "Internal server error during verification" }).end();
+                return res
+                    .status(500)
+                    .json({ message: "Internal server error during verification" })
+                    .end();
             }
         });
     }
@@ -69,14 +72,13 @@ const isAuthorized = (req, res, next) => {
         (0, exports.isLoggedIn)(req, res, () => {
             const user = req.user;
             const requestedUserId = req.params.userId || req.body.userId;
-            if (user?.id === requestedUserId || user?.role === "ADMIN" || user?.role === "COURSE_ADMIN") {
+            if (user?.id === requestedUserId ||
+                user?.role === "ADMIN" ||
+                user?.role === "COURSE_ADMIN") {
                 next();
             }
             else {
-                return res
-                    .status(403)
-                    .json({ message: "You cannot do that!" })
-                    .end();
+                return res.status(403).json({ message: "You cannot do that!" }).end();
             }
         });
     }
