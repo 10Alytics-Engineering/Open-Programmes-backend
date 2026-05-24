@@ -9,7 +9,7 @@ function ngnToUSD(amountInNGN, rates) {
         throw new Error("NGN rate not found");
     return amountInNGN / ngnRate.sell;
 }
-// Step 2: Convert USD to target currency using buy rate
+// Step 2: Converting USD to target currency using buy rate
 function usdToTarget(amountInUSD, symbol, rates) {
     const rate = rates.find((r) => r.symbol === symbol);
     if (!rate)

@@ -37,8 +37,8 @@ const corsOptions = {
 app.use((0, cors_1.default)(corsOptions));
 app.use((0, cookie_parser_1.default)());
 app.use((0, compression_1.default)());
-app.use(express_1.default.json());
-app.use(body_parser_1.default.json());
+app.use(express_1.default.json({ limit: "50mb" })); // increase limit for large payloads
+app.use(body_parser_1.default.json({ limit: "50mb" })); // increase limit for large payloads
 // Lowest Mb sent at a time
 app.use(body_parser_1.default.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api", (0, route_1.default)());
