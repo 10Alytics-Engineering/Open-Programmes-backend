@@ -7,6 +7,6 @@ exports.default = (router) => {
     router.post("/blogs", middleware_1.isCourseAdmin, blog_1.createBlog);
     router.get("/blogs/:blogId", blog_1.getBlog);
     router.put("/blogs/:blogId", middleware_1.isCourseAdmin, blog_1.updateBlog);
-    router.delete("/blogs/:blogId", middleware_1.isAdmin, blog_1.deleteBlog);
+    router.delete("/blogs/:blogId", middleware_1.isCourseAdmin, blog_1.deleteBlog);
 };
 //# sourceMappingURL=blog.js.map
