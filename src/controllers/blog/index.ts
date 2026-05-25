@@ -187,6 +187,8 @@ export const deleteBlog = async (req: Request, res: Response) => {
   }
 };
 
+
+/*
 export const seedBlogs = async (req: Request, res: Response) => {
   const blogsData = [
     {
@@ -369,4 +371,4 @@ export const seedBlogs = async (req: Request, res: Response) => {
   } catch (error) {
     handleServerError(error, res);
   }
-};
+}; */
