@@ -13,5 +13,6 @@ export default (router: express.Router) => {
   router.post("/blogs", isCourseAdmin, createBlog);
   router.get("/blogs/:blogId", getBlog);
   router.put("/blogs/:blogId", isCourseAdmin, updateBlog);
-  router.delete("/blogs/:blogId", isAdmin, deleteBlog);
+  router.delete("/blogs/:blogId", isCourseAdmin, deleteBlog);
 };
+
