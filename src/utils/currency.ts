@@ -12,7 +12,7 @@ export function ngnToUSD(amountInNGN: number, rates: ForexRate[]) {
   return amountInNGN / ngnRate.sell;
 }
 
-// Step 2: Convert USD to target currency using buy rate
+// Step 2: Converting USD to target currency using buy rate
 export function usdToTarget(
   amountInUSD: number,
   symbol: string,

@@ -444,7 +444,8 @@ async function processCohortChange(userId, currentCohortId, desiredCohortId, pay
             },
             data: {
                 isActive: false,
-                archivedAt: new Date()
+                archivedAt: new Date(),
+                isPaymentActive: false
             }
         }),
         // Create new user cohort relationship

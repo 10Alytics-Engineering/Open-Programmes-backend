@@ -8,6 +8,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const domain = process.env.NEXT_PUBLIC_APP_URL;
 import { sendMail } from "../../utils/nodemailer";
+import { escapeHtml } from "../../helpers/utils";
 
 export const sendPaymentReminder = async (
   email: string,
@@ -1150,13 +1151,6 @@ export type PaymentConfirmationParams =
   | InstallmentPaymentParams;
 
 /** Escape a string for safe inclusion in HTML. */
-const escapeHtml = (s: string): string =>
-  s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 
 const receiptRow = (label: string, value: string, isFirst = false): string => {
   const borderTop = isFirst ? "" : "border-top:1px solid #E5E3DB;";

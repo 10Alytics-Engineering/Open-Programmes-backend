@@ -116,6 +116,9 @@ model User {
   quiz_answers                                                       UserQuizAnswer[]
   accounts                                                           Account[]
   streamPost                                                         StreamPost[]
+  notifications                                                      Notification[]
+  lastLoginDate                                                      DateTime?
+  lastNotificationInActivityDate                                     DateTime?
 }
 
 model ChangeRequest {
@@ -462,6 +465,9 @@ model QuizAnswer {
   isCorrect   Boolean          @default(false)
   quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
   quizAnswers UserQuizAnswer[]
+
+  createdAt   DateTime?         @default(now())
+  updatedAt   DateTime?         @updatedAt
 }
 
 model UserQuizAnswer {
@@ -470,7 +476,8 @@ model UserQuizAnswer {
   quizAnswerId String
   quizAnswer   QuizAnswer @relation(fields: [quizAnswerId], references: [id], onDelete: Cascade)
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  createdAt    DateTime?         @default(now())
+  updatedAt    DateTime?         @updatedAt
   @@unique([userId, quizAnswerId])
 }
 
@@ -956,6 +963,32 @@ model WebinarGenerativeAiData {
   terms_accepted      Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+model Notification {
+  id              String   @id @default(cuid())
+  userId          String
+  type            NotificationType
+  title           String
+  message         String
+  details         String?  // JSON string for additional details like course/cohort names
+  isRead          Boolean  @default(false)
+  relatedUserId   String?  // ID of user who triggered the notification (admin)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  COURSE_SWITCHED
+  COHORT_SWITCHED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_ACTIVATED
+  COURSE_ADDED
 }
 
 enum UserRole {

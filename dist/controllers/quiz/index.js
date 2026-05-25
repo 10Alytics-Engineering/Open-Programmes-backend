@@ -68,12 +68,10 @@ const createQuiz = async (req, res) => {
                 question,
                 moduleId,
                 answers: {
-                    createMany: {
-                        data: answers.map((answer) => ({
-                            name: answer.name,
-                            isCorrect: answer.isCorrect,
-                        })),
-                    },
+                    create: answers.map((answer) => ({
+                        name: answer.name,
+                        isCorrect: answer.isCorrect,
+                    })),
                 },
             },
             include: {

@@ -41,6 +41,7 @@ dotenv.config();
 const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 const domain = process.env.NEXT_PUBLIC_APP_URL;
 const nodemailer_1 = require("../../utils/nodemailer");
+const utils_1 = require("../../helpers/utils");
 const sendPaymentReminder = async (email, userName, courseTitle, installmentNumber, dueDate, amount, paymentLink, daysUntilDue, milestone) => {
     // Determine the milestone message based on installment number
     let milestoneMessage = "";
@@ -1076,12 +1077,6 @@ const sendWrongfulDeactivationAlert = async (email, userName, courseTitle, payme
 };
 exports.sendWrongfulDeactivationAlert = sendWrongfulDeactivationAlert;
 /** Escape a string for safe inclusion in HTML. */
-const escapeHtml = (s) => s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 const receiptRow = (label, value, isFirst = false) => {
     const borderTop = isFirst ? "" : "border-top:1px solid #E5E3DB;";
     return `
@@ -1104,20 +1099,20 @@ const receiptRowEmphasis = (label, value) => `
 `;
 const sendPaymentConfirmationEmail = async (params) => {
     const { userName, userEmail, courseTitle, amountPaid, paymentDate, courseAccessLink, } = params;
-    const safeName = escapeHtml(userName);
-    const safeTitle = escapeHtml(courseTitle);
-    const safeAmount = escapeHtml(amountPaid);
-    const safeDate = escapeHtml(paymentDate);
-    const safeLink = escapeHtml(courseAccessLink);
-    const safeLogo = escapeHtml(`${process.env.BACKEND_URL}/logo.png`);
+    const safeName = (0, utils_1.escapeHtml)(userName);
+    const safeTitle = (0, utils_1.escapeHtml)(courseTitle);
+    const safeAmount = (0, utils_1.escapeHtml)(amountPaid);
+    const safeDate = (0, utils_1.escapeHtml)(paymentDate);
+    const safeLink = (0, utils_1.escapeHtml)(courseAccessLink);
+    const safeLogo = (0, utils_1.escapeHtml)(`${process.env.BACKEND_URL}/logo.png`);
     // Build the receipt rows + intro/outro copy based on payment type.
     let receiptRowsHtml;
     let introParagraph;
     let subject;
     if (params.paymentType === "installment") {
         const installmentsLeft = Math.max(0, params.totalInstallments - params.currentInstallment);
-        const safeTotalPaid = escapeHtml(params.totalAmountPaid);
-        const safeRemaining = escapeHtml(params.remainingBalance);
+        const safeTotalPaid = (0, utils_1.escapeHtml)(params.totalAmountPaid);
+        const safeRemaining = (0, utils_1.escapeHtml)(params.remainingBalance);
         const installmentLabel = `${params.currentInstallment} of ${params.totalInstallments}`;
         const isFinal = installmentsLeft === 0;
         subject = isFinal
