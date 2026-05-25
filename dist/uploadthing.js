@@ -6,7 +6,7 @@ const f = (0, express_1.createUploadthing)();
 exports.uploadRouter = {
     imageUploader: f({
         image: {
-            maxFileSize: "4MB",
+            maxFileSize: "16MB",
             maxFileCount: 4,
         },
     }).onUploadComplete((data) => {
