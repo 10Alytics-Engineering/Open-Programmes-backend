@@ -1208,38 +1208,59 @@ exports.getUserCourseProgress = getUserCourseProgress;
 const switchUserCourse = async (req, res) => {
     try {
         const { userId } = req.params;
-        const { newCourseId, newCohortId, reason } = req.body;
-        if (!userId || !newCourseId || !newCohortId) {
+        const { currentCohortId, currentCourseId, newCourseId, newCohortId, reason, } = req.body;
+        if (!userId ||
+            !newCourseId ||
+            !newCohortId ||
+            !currentCohortId ||
+            !currentCourseId) {
             return res.status(400).json({
-                message: "UserId, newCourseId, and newCohortId are required",
+                message: "UserId, currentCourseId, currentCohortId, newCourseId, and newCohortId are required",
             });
         }
         // Get user with current courses and cohorts
-        const user = await prismadb_1.prismadb.user.findUnique({
-            where: { id: userId },
-            include: {
-                cohorts: {
-                    include: { cohort: true },
+        const [user, newCourse, newCohort, currentCourse, currentCourseCohort] = await Promise.all([
+            prismadb_1.prismadb.user.findUnique({
+                where: { id: userId },
+                include: {
+                    cohorts: {
+                        include: { cohort: true },
+                    },
+                    course_purchased: true,
                 },
-                course_purchased: true,
-            },
-        });
+            }),
+            prismadb_1.prismadb.course.findUnique({
+                where: { id: newCourseId },
+            }),
+            prismadb_1.prismadb.cohort.findUnique({
+                where: { id: newCohortId },
+                include: { course: true },
+            }),
+            prismadb_1.prismadb.course.findUnique({
+                where: { id: currentCourseId },
+                select: { title: true, id: true },
+            }),
+            prismadb_1.prismadb.cohort.findUnique({
+                where: { id: currentCohortId },
+                select: { name: true, id: true, courseId: true },
+            }),
+        ]);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-        // Get new course and cohort info
-        const newCourse = await prismadb_1.prismadb.course.findUnique({
-            where: { id: newCourseId },
-        });
-        const newCohort = await prismadb_1.prismadb.cohort.findUnique({
-            where: { id: newCohortId },
-            include: { course: true },
-        });
         if (!newCourse) {
             return res.status(404).json({ message: "New course not found" });
         }
         if (!newCohort) {
             return res.status(404).json({ message: "New cohort not found" });
+        }
+        if (!currentCourse) {
+            return res.status(404).json({ message: "Selected course not found" });
+        }
+        if (!currentCourseCohort) {
+            return res
+                .status(404)
+                .json({ message: "Selected course cohort not found" });
         }
         // Verify new cohort is for the new course
         if (newCohort.courseId !== newCourseId) {
@@ -1247,38 +1268,44 @@ const switchUserCourse = async (req, res) => {
                 message: "Cohort must belong to the selected course",
             });
         }
-        // Archive all current enrollments (cohorts for all courses)
-        const activeCohorts = user.cohorts.filter((c) => c.isActive);
-        for (const cohort of activeCohorts) {
-            await prismadb_1.prismadb.userCohort.update({
-                where: { id: cohort.id },
+        // Verify current cohort is for the selected course
+        if (currentCourseCohort.courseId !== currentCourseId) {
+            return res.status(400).json({
+                message: "Cohort must belong to the selected course",
+            });
+        }
+        const result = await prismadb_1.prismadb.$transaction(async (tx) => {
+            // Archive all current enrollments (cohorts for selected/current course)
+            await tx.userCohort.updateMany({
+                where: { userId, courseId: currentCourseId, isActive: true },
                 data: {
                     isActive: false,
                     archivedAt: new Date(),
                     isPaymentActive: false,
                 },
             });
-        }
-        // Remove all course purchases
-        await prismadb_1.prismadb.purchase.deleteMany({
-            where: { userId },
-        });
-        // Create new course purchase
-        await prismadb_1.prismadb.purchase.create({
-            data: {
-                userId,
-                courseId: newCourseId,
-            },
-        });
-        // Create new cohort enrollment
-        const newEnrollment = await prismadb_1.prismadb.userCohort.create({
-            data: {
-                userId,
-                cohortId: newCohortId,
-                courseId: newCourseId,
-                isActive: true,
-            },
-            include: { cohort: true },
+            // Remove all purchases for current course
+            await tx.purchase.deleteMany({
+                where: { userId, courseId: currentCourseId },
+            });
+            // Create new course purchase
+            await tx.purchase.create({
+                data: {
+                    userId,
+                    courseId: newCourseId,
+                },
+            });
+            // Create new cohort enrollment
+            const newEnrollment = await tx.userCohort.create({
+                data: {
+                    userId,
+                    cohortId: newCohortId,
+                    courseId: newCourseId,
+                    isActive: true,
+                },
+                include: { cohort: true },
+            });
+            return newEnrollment;
         });
         // Create notification for course switch
         await prismadb_1.prismadb.notification.create({
@@ -1286,7 +1313,7 @@ const switchUserCourse = async (req, res) => {
                 userId,
                 type: "COURSE_SWITCHED",
                 title: "Course Updated",
-                message: `Your course has been switched to ${newCourse.title}`,
+                message: `Your course on ${currentCourse.title} has been switched to ${newCourse.title}`,
                 details: JSON.stringify({
                     newCourseId,
                     newCohortId,
@@ -1301,20 +1328,20 @@ const switchUserCourse = async (req, res) => {
             const html = `
         <h2>Course Update</h2>
         <p>Hi ${user.name || "there"},</p>
-        <p>Your course has been switched to <strong>${newCourse.title}</strong> in cohort <strong>${newCohort.name}</strong>.</p>
+        <p>Your course on <strong>${currentCourse.title}</strong> has been switched to <strong>${newCourse.title}</strong> in cohort <strong>${newCohort.name}</strong>.</p>
         ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ""}
         <p>Please log in to your account to see the details.</p>
       `;
             await (0, nodemailer_1.sendMail)({
                 to: user.email,
-                subject: "Your Course Has Been Updated",
+                subject: "Your Course Has Been Switched",
                 html,
             });
         }
         return res.status(200).json({
             status: "success",
             message: "User course switched successfully",
-            data: newEnrollment,
+            data: result,
         });
     }
     catch (error) {
