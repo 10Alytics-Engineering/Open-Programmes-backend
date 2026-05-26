@@ -8,14 +8,22 @@ const handleServerError = (error, res) => {
 };
 const getBlogs = async (req, res) => {
     try {
-        const blogs = await prismadb_1.prismadb.blog.findMany({
+        const { limit, offset } = req.query;
+        const findOptions = {
             include: {
                 images: true,
             },
             orderBy: {
                 createdAt: "desc",
             },
-        });
+        };
+        if (limit) {
+            findOptions.take = parseInt(limit, 10);
+        }
+        if (offset) {
+            findOptions.skip = parseInt(offset, 10);
+        }
+        const blogs = await prismadb_1.prismadb.blog.findMany(findOptions);
         res.status(200).json({ status: "success", message: null, data: blogs });
     }
     catch (error) {
