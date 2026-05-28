@@ -1404,45 +1404,48 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
   }
 });
 
-paymentApp.get("/start-button/webhook", async (req: Request, res: Response) => {
-  const { event, data } = req.body;
+paymentApp.post(
+  "/start-button/webhook",
+  async (req: Request, res: Response) => {
+    const { event, data } = req.body;
 
-  console.log(
-    `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
-  );
+    console.log(
+      `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
+    );
 
-  try {
-    if (!data.transaction?.id) {
-      return res
-        .status(400)
-        .json({ error: "Invalid expected start button data" });
-    }
-
-    if (event === "collection.completed") {
-      const verifiedTransaction = await verifyPayment(
-        data.transaction?.transactionReference,
-      );
-
-      if (
-        verifiedTransaction.status === "success" ||
-        verifiedTransaction.status === "successful" ||
-        verifiedTransaction.status === "verified"
-      ) {
-        console.log(
-          `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
-        );
-        res.json(verifiedTransaction);
+    try {
+      if (!data.transaction?.id) {
+        return res
+          .status(400)
+          .json({ error: "Invalid expected start button data" });
       }
+
+      if (event === "collection.completed") {
+        const verifiedTransaction = await verifyPayment(
+          data.transaction?.transactionReference,
+        );
+
+        if (
+          verifiedTransaction.status === "success" ||
+          verifiedTransaction.status === "successful" ||
+          verifiedTransaction.status === "verified"
+        ) {
+          console.log(
+            `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
+          );
+          res.json(verifiedTransaction);
+        }
+      }
+    } catch (err) {
+      console.error("Start button webhook error: ", err);
+      return res.status(500).json({
+        status: "error",
+        error: "Start button webhook failed",
+        details: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-  } catch (err) {
-    console.error("Start button webhook error: ", err);
-    return res.status(500).json({
-      status: "error",
-      error: "Start button webhook failed",
-      details: err instanceof Error ? err.message : "Unknown error",
-    });
-  }
-});
+  },
+);
 
 async function verifyPurchaseCreation(
   tx: Prisma.TransactionClient,

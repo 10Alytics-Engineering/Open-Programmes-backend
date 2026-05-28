@@ -1129,7 +1129,7 @@ paymentApp.get("/verify", async (req, res) => {
         });
     }
 });
-paymentApp.get("/start-button/webhook", async (req, res) => {
+paymentApp.post("/start-button/webhook", async (req, res) => {
     const { event, data } = req.body;
     console.log(`Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`);
     try {
