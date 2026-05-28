@@ -568,15 +568,15 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
 
 paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
   try {
-    // const paymentData = await initiateStartButtonPayment(
-    //   "ebirenidavid@gmail.com",
-    //   110000,
-    //   "GHS",
-    //   { userId: "748374H43Jsadaa" },
-    //   ["card", "mobile_money"],
-    // // );
+    const paymentData = await initiateStartButtonPayment(
+      "ebirenidavid@gmail.com",
+      41200,
+      "GHS",
+      { userId: "748374H43Jsadaa" },
+      ["card", "mobile_money"],
+    );
     // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-    const paymentData = await verifyPayment("DIR83XPPL4D");
+    // const paymentData = await verifyPayment("DIR83XPPL4D");
     return res.status(200).json({ paymentData });
     // const results = await prismadb.paymentTransaction.findMany({
     //   orderBy: { createdAt: "desc" },
@@ -1404,44 +1404,48 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
   }
 });
 
-paymentApp.get("/start-button/webhook", async (req: Request, res: Response) => {
-  const { event, data } = req.body;
-
-  try {
-    if (!data.transaction?.id) {
-      return res
-        .status(400)
-        .json({ error: "Invalid expected start button data" });
-    }
+paymentApp.post(
+  "/start-button/webhook",
+  async (req: Request, res: Response) => {
+    const { event, data } = req.body;
 
     console.log(
       `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
     );
-    if (event === "collection.completed") {
-      const verifiedTransaction = await verifyPayment(
-        data.transaction?.transactionReference,
-      );
 
-      if (
-        verifiedTransaction.status === "success" ||
-        verifiedTransaction.status === "successful" ||
-        verifiedTransaction.status === "verified"
-      ) {
-        console.log(
-          `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
-        );
-        res.json(verifiedTransaction);
+    try {
+      if (!data.transaction?.id) {
+        return res
+          .status(400)
+          .json({ error: "Invalid expected start button data" });
       }
+
+      if (event === "collection.completed") {
+        const verifiedTransaction = await verifyPayment(
+          data.transaction?.transactionReference,
+        );
+
+        if (
+          verifiedTransaction.status === "success" ||
+          verifiedTransaction.status === "successful" ||
+          verifiedTransaction.status === "verified"
+        ) {
+          console.log(
+            `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
+          );
+          res.json(verifiedTransaction);
+        }
+      }
+    } catch (err) {
+      console.error("Start button webhook error: ", err);
+      return res.status(500).json({
+        status: "error",
+        error: "Start button webhook failed",
+        details: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-  } catch (err) {
-    console.error("Start button webhook error: ", err);
-    return res.status(500).json({
-      status: "error",
-      error: "Start button webhook failed",
-      details: err instanceof Error ? err.message : "Unknown error",
-    });
-  }
-});
+  },
+);
 
 async function verifyPurchaseCreation(
   tx: Prisma.TransactionClient,
