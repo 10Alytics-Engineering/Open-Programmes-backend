@@ -568,15 +568,15 @@ paymentApp.get("/payment-link", async (req: Request, res: Response) => {
 
 paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
   try {
-    // const paymentData = await initiateStartButtonPayment(
-    //   "ebirenidavid@gmail.com",
-    //   110000,
-    //   "GHS",
-    //   { userId: "748374H43Jsadaa" },
-    //   ["card", "mobile_money"],
-    // // );
+    const paymentData = await initiateStartButtonPayment(
+      "ebirenidavid@gmail.com",
+      41200,
+      "GHS",
+      { userId: "748374H43Jsadaa" },
+      ["card", "mobile_money"],
+    );
     // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-    const paymentData = await verifyPayment("DIR83XPPL4D");
+    // const paymentData = await verifyPayment("DIR83XPPL4D");
     return res.status(200).json({ paymentData });
     // const results = await prismadb.paymentTransaction.findMany({
     //   orderBy: { createdAt: "desc" },
@@ -1407,6 +1407,10 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
 paymentApp.get("/start-button/webhook", async (req: Request, res: Response) => {
   const { event, data } = req.body;
 
+  console.log(
+    `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
+  );
+
   try {
     if (!data.transaction?.id) {
       return res
@@ -1414,9 +1418,6 @@ paymentApp.get("/start-button/webhook", async (req: Request, res: Response) => {
         .json({ error: "Invalid expected start button data" });
     }
 
-    console.log(
-      `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
-    );
     if (event === "collection.completed") {
       const verifiedTransaction = await verifyPayment(
         data.transaction?.transactionReference,

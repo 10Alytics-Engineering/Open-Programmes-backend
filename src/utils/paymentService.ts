@@ -134,7 +134,7 @@ export const initiateStartButtonPayment = async (
         metaData,
         reference: ref,
         paymentMethods: paymentMethods || ["bank", "card", "bank_transfer"],
-        webhookUrl: `${process.env.BACKEND_URL}/start-button/webhook`,
+        webhookUrl: `${process.env.BACKEND_URL}/api/start-button/webhook`,
       },
       {
         headers: {
