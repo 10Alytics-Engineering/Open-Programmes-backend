@@ -570,22 +570,24 @@ paymentApp.get("/start-button-test", async (req: Request, res: Response) => {
   try {
     // const paymentData = await initiateStartButtonPayment(
     //   "ebirenidavid@gmail.com",
-    //   110000,
+    //   41200,
     //   "GHS",
     //   { userId: "748374H43Jsadaa" },
     //   ["card", "mobile_money"],
-    // // );
+    // );
     // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-    const paymentData = await verifyPayment("DIR83XPPL4D");
-    return res.status(200).json({ paymentData });
-    // const results = await prismadb.paymentTransaction.findMany({
-    //   orderBy: { createdAt: "desc" },
-    //   take: 40,
-    //   include: {
-    //     paymentStatus: true,
-    //   },
-    // });
-    // res.status(200).json({ results });
+    // const paymentData = await verifyPayment("DIR83XPPL4D");
+    // return res.status(200).json({ paymentData });
+    const results = await prismadb.paymentStatus.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      include: {
+        user: true,
+        paymentInstallments: true,
+        cohort: true,
+      },
+    });
+    res.status(200).json({ results });
   } catch (error) {
     console.log("Start Button Error: " + error);
     return res.status(500).json({
@@ -1404,44 +1406,48 @@ paymentApp.get("/verify", async (req: Request, res: Response) => {
   }
 });
 
-paymentApp.get("/start-button/webhook", async (req: Request, res: Response) => {
-  const { event, data } = req.body;
+paymentApp.post(
+  "/start-button/webhook",
+  async (req: Request, res: Response) => {
+    const { event, data } = req.body;
 
-  try {
-    if (!data.transaction?.id) {
-      return res
-        .status(400)
-        .json({ error: "Invalid expected start button data" });
-    }
+    try {
+      if (!data.transaction?.id) {
+        return res
+          .status(400)
+          .json({ error: "Invalid expected start button data" });
+      }
 
-    console.log(
-      `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
-    );
-    if (event === "collection.completed") {
-      const verifiedTransaction = await verifyPayment(
-        data.transaction?.transactionReference,
+      console.log(
+        `Start Button Webhook Triggered [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference} - ${event}`,
       );
 
-      if (
-        verifiedTransaction.status === "success" ||
-        verifiedTransaction.status === "successful" ||
-        verifiedTransaction.status === "verified"
-      ) {
-        console.log(
-          `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
+      if (event === "collection.completed") {
+        const verifiedTransaction = await verifyPayment(
+          data.transaction?.transactionReference,
         );
-        res.json(verifiedTransaction);
+
+        if (
+          verifiedTransaction.status === "success" ||
+          verifiedTransaction.status === "successful" ||
+          verifiedTransaction.status === "verified"
+        ) {
+          console.log(
+            `Start Button Webhook Payment Successful [${data?.transaction.createdAt}]: ${data.transaction?.transactionReference}`,
+          );
+          res.json(verifiedTransaction);
+        }
       }
+    } catch (err) {
+      console.error("Start button webhook error: ", err);
+      return res.status(500).json({
+        status: "error",
+        error: "Start button webhook failed",
+        details: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-  } catch (err) {
-    console.error("Start button webhook error: ", err);
-    return res.status(500).json({
-      status: "error",
-      error: "Start button webhook failed",
-      details: err instanceof Error ? err.message : "Unknown error",
-    });
-  }
-});
+  },
+);
 
 async function verifyPurchaseCreation(
   tx: Prisma.TransactionClient,
@@ -1956,83 +1962,6 @@ cron.schedule("0 * * * *", async () => {
       status: "expired",
     },
   });
-});
-
-cron.schedule("0 9 * * *", async () => {
-  const today = new Date();
-
-  // Find installments due in the next 3 days
-  const dueInstallments = await prismadb.paymentInstallment.findMany({
-    where: {
-      dueDate: {
-        lte: new Date(today.getTime() + 3 * 86400000),
-        gte: today,
-      },
-      paid: false,
-      lastReminderSent: {
-        lt: new Date(today.getTime() - 86400000), // Only send once per day
-      },
-    },
-    include: {
-      paymentStatus: {
-        include: {
-          user: true,
-          course: true,
-          cohort: true,
-          transactions: true,
-        },
-      },
-    },
-  });
-
-  for (const installment of dueInstallments) {
-    try {
-      const paymentPlan = getPaymentPlan(installment.paymentStatus);
-
-      // Calculate days until due
-      const daysUntilDue = Math.ceil(
-        (installment.dueDate.getTime() - today.getTime()) / 86400000,
-      );
-
-      // const paymentLink = await paystack.transaction
-      //   .initialize({
-      //     amount: `${installment.amount * 100}`,
-      //     email: installment.paymentStatus.user.email!,
-      //     metadata: {
-      //       installmentId: installment.id,
-      //       paymentPlan: paymentPlan,
-      //       userId: installment.paymentStatus.userId,
-      //       courseId: installment.paymentStatus.courseId,
-      //       installmentNumber: installment.installmentNumber,
-      //     },
-      //     callback_url: process.env.PAYSTACK_CALLBACK_URL,
-      //   })
-      //   .then((res) => res.data.authorization_url);
-
-      const paymentLink = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/billing`;
-
-      await sendPaymentReminder(
-        installment.paymentStatus.user.email!,
-        installment.paymentStatus.user.name || "Student",
-        installment.paymentStatus.course.title,
-        installment.installmentNumber,
-        installment.dueDate,
-        installment.amount,
-        paymentLink,
-        daysUntilDue,
-      );
-
-      await prismadb.paymentInstallment.update({
-        where: { id: installment.id },
-        data: { lastReminderSent: new Date() },
-      });
-    } catch (error) {
-      console.error(
-        `Reminder failed for installment ${installment.id}:`,
-        error,
-      );
-    }
-  }
 });
 
 // Comprehensive Fixed Cron Job - No Premature Deactivation

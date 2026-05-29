@@ -473,22 +473,24 @@ paymentApp.get("/start-button-test", async (req, res) => {
     try {
         // const paymentData = await initiateStartButtonPayment(
         //   "ebirenidavid@gmail.com",
-        //   110000,
+        //   41200,
         //   "GHS",
         //   { userId: "748374H43Jsadaa" },
         //   ["card", "mobile_money"],
-        // // );
+        // );
         // const converted = await convertNairaToOtherCurrency("GHS", 40000);
-        const paymentData = await verifyPayment("DIR83XPPL4D");
-        return res.status(200).json({ paymentData });
-        // const results = await prismadb.paymentTransaction.findMany({
-        //   orderBy: { createdAt: "desc" },
-        //   take: 40,
-        //   include: {
-        //     paymentStatus: true,
-        //   },
-        // });
-        // res.status(200).json({ results });
+        // const paymentData = await verifyPayment("DIR83XPPL4D");
+        // return res.status(200).json({ paymentData });
+        const results = await prismadb_1.prismadb.paymentStatus.findMany({
+            orderBy: { createdAt: "desc" },
+            take: 40,
+            include: {
+                user: true,
+                paymentInstallments: true,
+                cohort: true,
+            },
+        });
+        res.status(200).json({ results });
     }
     catch (error) {
         console.log("Start Button Error: " + error);
@@ -1135,7 +1137,7 @@ paymentApp.get("/verify", async (req, res) => {
         });
     }
 });
-paymentApp.get("/start-button/webhook", async (req, res) => {
+paymentApp.post("/start-button/webhook", async (req, res) => {
     const { event, data } = req.body;
     try {
         if (!data.transaction?.id) {
@@ -1568,62 +1570,6 @@ node_cron_1.default.schedule("0 * * * *", async () => {
             status: "expired",
         },
     });
-});
-node_cron_1.default.schedule("0 9 * * *", async () => {
-    const today = new Date();
-    // Find installments due in the next 3 days
-    const dueInstallments = await prismadb_1.prismadb.paymentInstallment.findMany({
-        where: {
-            dueDate: {
-                lte: new Date(today.getTime() + 3 * 86400000),
-                gte: today,
-            },
-            paid: false,
-            lastReminderSent: {
-                lt: new Date(today.getTime() - 86400000), // Only send once per day
-            },
-        },
-        include: {
-            paymentStatus: {
-                include: {
-                    user: true,
-                    course: true,
-                    cohort: true,
-                    transactions: true,
-                },
-            },
-        },
-    });
-    for (const installment of dueInstallments) {
-        try {
-            const paymentPlan = getPaymentPlan(installment.paymentStatus);
-            // Calculate days until due
-            const daysUntilDue = Math.ceil((installment.dueDate.getTime() - today.getTime()) / 86400000);
-            // const paymentLink = await paystack.transaction
-            //   .initialize({
-            //     amount: `${installment.amount * 100}`,
-            //     email: installment.paymentStatus.user.email!,
-            //     metadata: {
-            //       installmentId: installment.id,
-            //       paymentPlan: paymentPlan,
-            //       userId: installment.paymentStatus.userId,
-            //       courseId: installment.paymentStatus.courseId,
-            //       installmentNumber: installment.installmentNumber,
-            //     },
-            //     callback_url: process.env.PAYSTACK_CALLBACK_URL,
-            //   })
-            //   .then((res) => res.data.authorization_url);
-            const paymentLink = `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/billing`;
-            await (0, mail_1.sendPaymentReminder)(installment.paymentStatus.user.email, installment.paymentStatus.user.name || "Student", installment.paymentStatus.course.title, installment.installmentNumber, installment.dueDate, installment.amount, paymentLink, daysUntilDue);
-            await prismadb_1.prismadb.paymentInstallment.update({
-                where: { id: installment.id },
-                data: { lastReminderSent: new Date() },
-            });
-        }
-        catch (error) {
-            console.error(`Reminder failed for installment ${installment.id}:`, error);
-        }
-    }
 });
 // Comprehensive Fixed Cron Job - No Premature Deactivation
 node_cron_1.default.schedule("0 0 * * *", async () => {
