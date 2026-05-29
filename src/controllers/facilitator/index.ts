@@ -1,22 +1,26 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 
-
 export const createFacilitator = async (req: Request, res: Response) => {
   try {
-    const { name, email, phoneNumber, imageUrl, bio, title, courseIds } = req.body;
+    const { name, email, phoneNumber, imageUrl, bio, title, courseIds } =
+      req.body;
 
     // Validate input
     if (!name || !email || !phoneNumber) {
-      return res.status(400).json({ error: "Name, email and phone number are required" });
+      return res
+        .status(400)
+        .json({ error: "Name, email and phone number are required" });
     }
 
     // Check if facilitator exists
-    const existingFacilitator = await prismadb.facilitator.findUnique({ 
-      where: { email } 
+    const existingFacilitator = await prismadb.facilitator.findUnique({
+      where: { email },
     });
     if (existingFacilitator) {
-      return res.status(409).json({ error: "Facilitator with this email already exists" });
+      return res
+        .status(409)
+        .json({ error: "Facilitator with this email already exists" });
     }
 
     // Create facilitator
@@ -29,12 +33,12 @@ export const createFacilitator = async (req: Request, res: Response) => {
         bio,
         title,
         courses: {
-          connect: courseIds?.map((id: string) => ({ id })) || []
-        }
+          connect: courseIds?.map((id: string) => ({ id })) || [],
+        },
       },
       include: {
-        courses: true
-      }
+        courses: true,
+      },
     });
 
     res.status(201).json(facilitator);
@@ -51,13 +55,13 @@ export const getFacilitators = async (req: Request, res: Response) => {
         courses: {
           select: {
             id: true,
-            title: true
-          }
-        }
+            title: true,
+          },
+        },
       },
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: "desc",
+      },
     });
 
     res.status(200).json(facilitators);
@@ -70,11 +74,12 @@ export const getFacilitators = async (req: Request, res: Response) => {
 export const updateFacilitator = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, email, phoneNumber, imageUrl, bio, title, courseIds } = req.body;
+    const { name, email, phoneNumber, imageUrl, bio, title, courseIds } =
+      req.body;
 
     // Check if facilitator exists
-    const existingFacilitator = await prismadb.facilitator.findUnique({ 
-      where: { id } 
+    const existingFacilitator = await prismadb.facilitator.findUnique({
+      where: { id },
     });
     if (!existingFacilitator) {
       return res.status(404).json({ error: "Facilitator not found" });
@@ -91,12 +96,12 @@ export const updateFacilitator = async (req: Request, res: Response) => {
         bio,
         title,
         courses: {
-          set: courseIds?.map((id: string) => ({ id })) || []
-        }
+          set: courseIds?.map((id: string) => ({ id })) || [],
+        },
       },
       include: {
-        courses: true
-      }
+        courses: true,
+      },
     });
 
     res.status(200).json(facilitator);
@@ -111,8 +116,8 @@ export const deleteFacilitator = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     // Check if facilitator exists
-    const existingFacilitator = await prismadb.facilitator.findUnique({ 
-      where: { id } 
+    const existingFacilitator = await prismadb.facilitator.findUnique({
+      where: { id },
     });
     if (!existingFacilitator) {
       return res.status(404).json({ error: "Facilitator not found" });
@@ -120,7 +125,7 @@ export const deleteFacilitator = async (req: Request, res: Response) => {
 
     // Delete facilitator
     await prismadb.facilitator.delete({
-      where: { id }
+      where: { id },
     });
 
     res.status(200).json({ message: "Facilitator deleted successfully" });
@@ -130,21 +135,24 @@ export const deleteFacilitator = async (req: Request, res: Response) => {
   }
 };
 
-export const assignFacilitatorToCourse = async (req: Request, res: Response) => {
+export const assignFacilitatorToCourse = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { facilitatorId, courseId } = req.params;
 
     // Check if facilitator exists
-    const facilitator = await prismadb.facilitator.findUnique({ 
-      where: { id: facilitatorId } 
+    const facilitator = await prismadb.facilitator.findUnique({
+      where: { id: facilitatorId },
     });
     if (!facilitator) {
       return res.status(404).json({ error: "Facilitator not found" });
     }
 
     // Check if course exists
-    const course = await prismadb.course.findUnique({ 
-      where: { id: courseId } 
+    const course = await prismadb.course.findUnique({
+      where: { id: courseId },
     });
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
@@ -155,12 +163,12 @@ export const assignFacilitatorToCourse = async (req: Request, res: Response) => 
       where: { id: courseId },
       data: {
         facilitators: {
-          connect: { id: facilitatorId }
-        }
+          connect: { id: facilitatorId },
+        },
       },
       include: {
-        facilitators: true
-      }
+        facilitators: true,
+      },
     });
 
     res.status(200).json(updatedCourse);

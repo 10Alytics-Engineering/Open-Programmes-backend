@@ -42,41 +42,19 @@ const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 const domain = process.env.NEXT_PUBLIC_APP_URL;
 const nodemailer_1 = require("../../utils/nodemailer");
 const utils_1 = require("../../helpers/utils");
-const sendPaymentReminder = async (email, userName, courseTitle, installmentNumber, dueDate, amount, paymentLink, daysUntilDue, milestone) => {
+const sendPaymentReminder = async (email, userName, courseTitle, dueDate, totalAmount, amountLeft, paymentLink, daysUntilDue, milestone, cohortName) => {
     // Determine the milestone message based on installment number
     let milestoneMessage = "";
     if (milestone) {
-        milestoneMessage = `<p>🚀 <strong>This payment unlocks:</strong> ${milestone}</p>`;
-    }
-    else {
-        switch (installmentNumber) {
-            case 1:
-                milestoneMessage =
-                    "<p>🚀 <strong>This payment unlocks:</strong> Seat reservation and course access</p>";
-                break;
-            case 2:
-                milestoneMessage =
-                    "<p>🚀 <strong>This payment unlocks:</strong> Full course materials and community access</p>";
-                break;
-            case 3:
-                milestoneMessage =
-                    "<p>🚀 <strong>This payment unlocks:</strong> Advanced modules and project work</p>";
-                break;
-            case 4:
-                milestoneMessage =
-                    "<p>🎓 <strong>This payment completes:</strong> Your program investment and certification</p>";
-                break;
-        }
+        milestoneMessage = `<p>🚀 ${milestone}</p>`;
     }
     // Calculate days until due if not provided
-    const daysLeft = daysUntilDue !== undefined
-        ? daysUntilDue
-        : Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const daysLeft = daysUntilDue !== undefined ? daysUntilDue : 0;
     const urgencyLevel = daysLeft <= 1 ? "high" : daysLeft <= 3 ? "medium" : "low";
     const mailOptions = {
         from: process.env.EMAIL_FROM || "programrelations@nebiant.com",
         to: email,
-        subject: `⏰ Payment Reminder: ${courseTitle} - Installment ${installmentNumber} (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`,
+        subject: `⏰ Payment Reminder: ${courseTitle} | ${cohortName} (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`,
         html: `
       <!DOCTYPE html>
       <html>
@@ -196,22 +174,21 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
           </div>
           <div class="content">
             <h3 style="color: #6742FA; text-align: center; margin: 0 0 10px 0;">⏰ Payment Reminder</h3>
-              <p>Dear ${userName},</p>
-            </div>
+            <p>Dear ${userName},</p>
+            <p>This is a friendly reminder that your payment for <strong>${courseTitle}</strong> in the <strong>${cohortName}</strong> is due on <strong>${dueDate}</strong>.</p>
+          </div>
 
             <div class="payment-details">
               <h3>Payment Details</h3>
               <p><span class="badge badge-primary">Course</span> ${courseTitle}</p>
+              <p><span class="badge badge-primary">Cohort</span> ${cohortName}</p>
               <p><span class="badge badge-${urgencyLevel === "high" ? "warning" : urgencyLevel === "medium" ? "warning" : "success"}">Due In</span> 
                  <span class="urgency-${urgencyLevel}">${daysLeft} day${daysLeft !== 1 ? "s" : ""}</span></p>
-              <p><span class="badge badge-primary">Installment</span> #${installmentNumber}</p>
-              <p><span class="badge badge-primary">Amount</span> <strong>₦${amount.toLocaleString()}</strong></p>
-              <p><span class="badge badge-primary">Due Date</span> ${dueDate.toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        })}</p>
+             
+              ${totalAmount
+            ? `<p><span class="badge badge-primary">Total Fee</span> <strong>₦${Number(totalAmount).toLocaleString()}</strong></p>`
+            : ""}
+              <p><span class="badge badge-primary">Outstanding Balance</span><strong>₦${Number(amountLeft).toLocaleString()}</strong></p>
             </div>
 
             ${milestoneMessage}
@@ -228,11 +205,11 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
             </div>
 
             <a href="${paymentLink}" class="payment-button">
-              💳 PAY INSTALLMENT ${installmentNumber} NOW - ₦${amount.toLocaleString()}
+              💳 Pay Remaining Balance
             </a>
 
             <p style="text-align: center; color: #6c757d; font-size: 0.9em;">
-              🔒 Secure payment processed by Paystack
+              🔒 Secure payment processed by Start Button
             </p>
 
             <div class="footer">
@@ -254,7 +231,7 @@ const sendPaymentReminder = async (email, userName, courseTitle, installmentNumb
     };
     try {
         await (0, nodemailer_1.sendMail)(mailOptions);
-        console.log(`Payment reminder sent to ${email} for installment ${installmentNumber}`);
+        console.log(`Payment reminder sent to ${email} for ${courseTitle} (${cohortName}), due in ${daysLeft} day(s)`);
     }
     catch (error) {
         console.error("Error sending payment reminder:", error);
