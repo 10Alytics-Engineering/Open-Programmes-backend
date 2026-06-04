@@ -14,7 +14,8 @@ import {
   deleteRecording,
   joinLiveClass,
   getLiveClassAttendance,
-  getCohortLiveClasses
+  getCohortLiveClasses,
+  deleteLiveClass,
 } from "../controllers/classroom";
 import {
   addBatchItem,
@@ -24,11 +25,7 @@ import {
 import { isLoggedIn, isCourseAdmin } from "../middleware";
 
 export default (router: express.Router) => {
-    router.get(
-    "/classroom/batch/topics",
-    isLoggedIn,
-    getTopicsForCohorts
-  );
+  router.get("/classroom/batch/topics", isLoggedIn, getTopicsForCohorts);
   router.get("/classroom/:cohortId", isLoggedIn, getClassroomData);
   router.get("/classroom/topics", isLoggedIn, getClassroomTopics);
   router.get("/classroom/:cohortId/topics", isLoggedIn, getClassroomTopics);
@@ -40,48 +37,65 @@ export default (router: express.Router) => {
     "/classroom/topics/:topicId",
     isLoggedIn,
     isCourseAdmin,
-    updateTopic
+    updateTopic,
   );
   router.delete(
     "/classroom/topics/:topicId",
     isLoggedIn,
     isCourseAdmin,
-    deleteTopic
+    deleteTopic,
   );
   router.post("/classroom/items", isLoggedIn, isCourseAdmin, addSubItem);
   router.post("/classroom/live-class/:id/join", isLoggedIn, joinLiveClass);
-  router.get("/classroom/live-class/:id/attendance", isLoggedIn, isCourseAdmin, getLiveClassAttendance);
-  router.get("/classroom/:cohortId/live-classes", isLoggedIn, isCourseAdmin, getCohortLiveClasses);
+  router.get(
+    "/classroom/live-class/:id/attendance",
+    isLoggedIn,
+    isCourseAdmin,
+    getLiveClassAttendance,
+  );
+  router.get(
+    "/classroom/:cohortId/live-classes",
+    isLoggedIn,
+    isCourseAdmin,
+    getCohortLiveClasses,
+  );
+  router.delete(
+    "/classroom/live-class/:liveClassId",
+    isLoggedIn,
+    isCourseAdmin,
+    deleteLiveClass,
+  );
 
   // Batch operations
   router.post(
     "/classroom/batch/items",
     isLoggedIn,
     isCourseAdmin,
-    addBatchItem
+    addBatchItem,
   );
   router.post(
     "/classroom/batch/topics",
     isLoggedIn,
     isCourseAdmin,
-    createBatchTopics
+    createBatchTopics,
   );
-    router.delete(
+
+  router.delete(
     "/classroom/assignments/:assignmentId",
     isLoggedIn,
     isCourseAdmin,
-    deleteAssignment
+    deleteAssignment,
   );
   router.delete(
     "/classroom/materials/:materialId",
     isLoggedIn,
     isCourseAdmin,
-    deleteMaterial
+    deleteMaterial,
   );
   router.delete(
     "/classroom/recordings/:recordingId",
     isLoggedIn,
     isCourseAdmin,
-    deleteRecording
+    deleteRecording,
   );
 };

@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { generateUniqueAssignmentSlug } from "../../utils/slugify";
-import { User, AssignmentType } from "@prisma/client";
 import { NebiantUser } from "../../middleware";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
+import { NotificationService } from "../../services/notification.service";
 
 // Updated getAssignment to include assignment quiz questions
 export const getAssignment = async (req: Request, res: Response) => {
@@ -19,10 +19,10 @@ export const getAssignment = async (req: Request, res: Response) => {
         assignmentQuizQuestions: {
           include: {
             assignmentQuizOptions: {
-              orderBy: { order: "asc" }
-            }
+              orderBy: { order: "asc" },
+            },
           },
-          orderBy: { order: "asc" }
+          orderBy: { order: "asc" },
         },
         cohortCourse: {
           include: {
@@ -41,9 +41,9 @@ export const getAssignment = async (req: Request, res: Response) => {
         },
         _count: {
           select: {
-            assignmentQuizQuestions: true
-          }
-        }
+            assignmentQuizQuestions: true,
+          },
+        },
       },
     });
 
@@ -53,13 +53,16 @@ export const getAssignment = async (req: Request, res: Response) => {
 
     // For quiz assignments, don't send correct answers to students
     if (assignment.type === "QUIZ" && req.query.studentId) {
-      assignment.assignmentQuizQuestions = assignment.assignmentQuizQuestions.map(question => ({
-        ...question,
-        assignmentQuizOptions: question.assignmentQuizOptions.map(option => ({
-          ...option,
-          isCorrect: undefined as boolean | undefined
-        }))
-      }));
+      assignment.assignmentQuizQuestions =
+        assignment.assignmentQuizQuestions.map((question) => ({
+          ...question,
+          assignmentQuizOptions: question.assignmentQuizOptions.map(
+            (option) => ({
+              ...option,
+              isCorrect: false,
+            }),
+          ),
+        }));
     }
 
     res.json({ assignment });
@@ -108,6 +111,183 @@ export const getAssignmentSubmission = async (req: Request, res: Response) => {
   }
 };
 
+// helper function to handle quiz submissions
+const handleAssignmentQuizSubmission = async (
+  assignment: any,
+  quizAnswers: any[],
+  studentId: string,
+  res: Response,
+) => {
+  if (assignment.isLocked) {
+    return res.status(403).json({ error: "Quiz submissions are locked." });
+  }
+
+  // Check if already submitted
+  const existingSubmission = await prismadb.assignmentQuizSubmission.findUnique(
+    {
+      where: {
+        assignmentId_studentId: {
+          assignmentId: assignment.id,
+          studentId,
+        },
+      },
+    },
+  );
+
+  if (existingSubmission) {
+    return res.status(400).json({ error: "Quiz already submitted" });
+  }
+
+  // Calculate score
+  let totalScore = 0;
+  const maxScore = assignment.assignmentQuizQuestions.reduce(
+    (sum: number, q: any) => sum + (q.points || 1),
+    0,
+  );
+
+  const answerResults = await Promise.all(
+    quizAnswers.map(async (answer) => {
+      const question = assignment.assignmentQuizQuestions.find(
+        (q: any) => q.id === answer.questionId,
+      );
+      const selectedOption = question.assignmentQuizOptions.find(
+        (opt: any) => opt.id === answer.selectedOptionId,
+      );
+
+      const isCorrect = selectedOption?.isCorrect || false;
+      const pointsEarned = isCorrect ? question.points || 1 : 0;
+
+      totalScore += pointsEarned;
+
+      return {
+        assignmentQuizQuestionId: answer.questionId,
+        selectedAssignmentQuizOptionId: answer.selectedOptionId,
+        isCorrect,
+        pointsEarned,
+      };
+    }),
+  );
+
+  // Create quiz submission with answers
+  const result = await prismadb.$transaction(async (tx) => {
+    const submission = await tx.assignmentQuizSubmission.create({
+      data: {
+        assignmentId: assignment.id,
+        studentId,
+        totalScore,
+        maxScore,
+        assignmentQuizAnswers: {
+          create: answerResults.map((result) => ({
+            assignmentQuizQuestionId: result.assignmentQuizQuestionId,
+            selectedAssignmentQuizOptionId:
+              result.selectedAssignmentQuizOptionId,
+            isCorrect: result.isCorrect,
+            pointsEarned: result.pointsEarned,
+          })),
+        },
+      },
+      include: {
+        assignmentQuizAnswers: {
+          include: {
+            assignmentQuizQuestion: {
+              include: {
+                assignmentQuizOptions: true,
+              },
+            },
+            selectedAssignmentQuizOption: true,
+          },
+        },
+      },
+    });
+
+    await tx.courseCohortLeaderboard.upsert({
+      where: {
+        userId_courseId_cohortId: {
+          cohortId: assignment.cohortCourse?.cohort?.id,
+          courseId: assignment.cohortCourse?.course?.id,
+          userId: studentId,
+        },
+      },
+      create: {
+        assignmentPoints: totalScore,
+        points: totalScore,
+        lessonQuizPoints: 0,
+        lessonVideoPoints: 0,
+        cohortId: assignment.cohortCourse?.cohort?.id,
+        courseId: assignment.cohortCourse?.course?.id,
+        userId: studentId,
+      },
+      update: {
+        assignmentPoints: { increment: totalScore || 0 },
+        points: { increment: totalScore || 0 },
+      },
+    });
+
+    const assignmentSubmission = await tx.assignmentSubmission.create({
+      data: {
+        assignmentId: assignment.id,
+        studentId,
+        content: `Quiz submitted - Score: ${totalScore}/${maxScore}`,
+        submittedAt: new Date(),
+      },
+    });
+
+    return {
+      submission,
+      assignmentSubmission,
+    };
+  });
+
+  if (!result.submission.id) {
+    return res.status(500).json({ error: "Failed to submit quiz" });
+  }
+
+  // Create Notification about new quiz submission
+  await Promise.all([
+    await NotificationService.create({
+      userId: studentId,
+      type: "CLASSROOM_ASSIGNMENT_SUBMITTED",
+      payload: {
+        assignmentId: assignment.id,
+        assignmentTitle: assignment.title,
+        cohortId: assignment.cohortCourse.cohort.id,
+        cohortName: assignment.cohortCourse.cohort.name,
+        courseTitle: assignment.cohortCourse.course.title,
+        topicId: assignment.classroomTopic?.id,
+        topicTitle: assignment.classroomTopic?.title,
+        courseId: assignment.cohortCourse.course.id,
+      },
+      relatedUserId: studentId,
+    }),
+
+    await NotificationService.create({
+      userId: studentId,
+      type: "CLASSROOM_ASSIGNMENT_GRADED",
+      payload: {
+        assignmentId: assignment.id,
+        assignmentTitle: assignment.title,
+        cohortId: assignment.cohortCourse.cohort.id,
+        cohortName: assignment.cohortCourse.cohort.name,
+        courseTitle: assignment.cohortCourse.course.title,
+        courseId: assignment.cohortCourse.course.id,
+        topicId: assignment.classroomTopic?.id,
+        topicTitle: assignment.classroomTopic?.title,
+        assignmentMaxScore: maxScore,
+        assignmentScore: totalScore,
+      },
+      relatedUserId: studentId,
+    }),
+  ]);
+
+  res.json({
+    submission: result.submission,
+    score: totalScore,
+    maxScore,
+    percentage: Math.round((totalScore / maxScore) * 100),
+    message: "Quiz submitted successfully",
+  });
+};
+
 // Updated submitAssignment to handle quiz submissions
 export const submitAssignment = async (req: Request, res: Response) => {
   try {
@@ -125,10 +305,22 @@ export const submitAssignment = async (req: Request, res: Response) => {
       include: {
         assignmentQuizQuestions: {
           include: {
-            assignmentQuizOptions: true
-          }
-        }
-      }
+            assignmentQuizOptions: true,
+          },
+        },
+        cohortCourse: {
+          include: {
+            cohort: { select: { id: true, name: true } },
+            course: { select: { id: true, title: true } },
+          },
+        },
+        classroomTopic: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
     });
 
     if (!assignment) {
@@ -137,11 +329,18 @@ export const submitAssignment = async (req: Request, res: Response) => {
 
     // Handle quiz submission
     if (assignment.type === "QUIZ" && quizAnswers) {
-      return await handleAssignmentQuizSubmission(assignment, quizAnswers, studentId, res);
+      return await handleAssignmentQuizSubmission(
+        assignment,
+        quizAnswers,
+        studentId,
+        res,
+      );
     }
 
     if (assignment.isLocked) {
-      return res.status(403).json({ error: "Submissions for this assignment are locked." });
+      return res
+        .status(403)
+        .json({ error: "Submissions for this assignment are locked." });
     }
 
     // Handle regular assignment submission
@@ -179,20 +378,36 @@ export const submitAssignment = async (req: Request, res: Response) => {
       },
     });
 
-    // Log the submission for tracking
-    console.log(`Assignment submitted: ${assignment.id} by student: ${studentId}`);
+    if (!submission.id) {
+      return res.status(500).json({ error: "Failed to submit assignment" });
+    }
+
+    // Create Notification about new submission
+    await NotificationService.create({
+      userId: user.id,
+      type: "CLASSROOM_ASSIGNMENT_SUBMITTED",
+      payload: {
+        assignmentId: assignment.id,
+        assignmentTitle: assignment.title,
+        cohortId: assignment.cohortCourse.cohort.id,
+        cohortName: assignment.cohortCourse.cohort.name,
+        courseTitle: assignment.cohortCourse.course.title,
+        topicId: assignment.classroomTopic?.id,
+        topicTitle: assignment.classroomTopic?.title,
+        courseId: assignment.cohortCourse.course.id,
+      },
+      relatedUserId: user.id,
+    });
 
     res.json({
       submission,
       message: "Assignment submitted successfully",
     });
-
   } catch (error) {
     console.error("Submit assignment error:", error);
     res.status(500).json({ error: "Failed to submit assignment" });
   }
 };
-
 
 // Get all submissions for an assignment
 export const getAssignmentSubmissions = async (req: Request, res: Response) => {
@@ -248,10 +463,26 @@ export const gradeSubmission = async (req: Request, res: Response) => {
     const assignment = await prismadb.assignment.findFirst({
       where: {
         submissions: {
-          some: { id: submissionId }
-        }
+          some: { id: submissionId },
+        },
       },
-      select: { points: true }
+      select: {
+        points: true,
+        id: true,
+        title: true,
+        cohortCourse: {
+          select: {
+            cohort: { select: { id: true, name: true } },
+            course: { select: { id: true, title: true } },
+          },
+        },
+        classroomTopic: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
     });
 
     if (!assignment) {
@@ -260,7 +491,9 @@ export const gradeSubmission = async (req: Request, res: Response) => {
 
     const maxPoints = assignment.points || 100;
     if (grade < 0 || grade > maxPoints) {
-      return res.status(400).json({ error: `Grade must be between 0 and ${maxPoints}` });
+      return res
+        .status(400)
+        .json({ error: `Grade must be between 0 and ${maxPoints}` });
     }
 
     const submission = await prismadb.assignmentSubmission.update({
@@ -290,24 +523,68 @@ export const gradeSubmission = async (req: Request, res: Response) => {
         assignment: {
           include: {
             cohortCourse: {
-              include: { cohort: true }
-            }
-          }
-        }
+              include: { cohort: true },
+            },
+          },
+        },
       },
     });
+
+    const adminUser = req?.user as NebiantUser;
 
     // Send Notification to the specific student
     try {
       if (submission?.student?.email) {
-        await sendClassroomNotificationEmail(
-          [submission.student.email],
-          submission.assignment.cohortCourse.cohort.name,
-          "grade",
-          submission.assignment.title,
-          `Your submission has been graded. Grade: ${grade}/${maxPoints}. Feedback: ${feedback || 'No feedback provided.'}`,
-          submission.gradedBy?.name || "Instructor"
-        );
+        await Promise.all([
+          await sendClassroomNotificationEmail(
+            [submission.student.email],
+            submission.assignment.cohortCourse.cohort.name,
+            "grade",
+            submission.assignment.title,
+            `Your submission has been graded. Grade: ${grade}/${maxPoints}. Feedback: ${feedback || "No feedback provided."}`,
+            submission.gradedBy?.name || "Instructor",
+          ),
+          await NotificationService.create({
+            userId: submission.student.id,
+            type: "CLASSROOM_ASSIGNMENT_GRADED",
+            payload: {
+              assignmentId: assignment.id,
+              assignmentTitle: assignment.title,
+              cohortId: assignment.cohortCourse.cohort.id,
+              cohortName: assignment.cohortCourse.cohort.name,
+              courseTitle: assignment.cohortCourse.course.title,
+              courseId: assignment.cohortCourse.course.id,
+              topicId: assignment.classroomTopic?.id,
+              topicTitle: assignment.classroomTopic?.title,
+              assignmentMaxScore: maxPoints,
+              assignmentScore: grade,
+            },
+            relatedUserId: adminUser?.id,
+          }),
+
+          await prismadb.courseCohortLeaderboard.upsert({
+            where: {
+              userId_courseId_cohortId: {
+                cohortId: assignment.cohortCourse?.cohort?.id,
+                courseId: assignment.cohortCourse?.course?.id,
+                userId: submission.student.id,
+              },
+            },
+            create: {
+              assignmentPoints: grade,
+              points: grade,
+              lessonQuizPoints: 0,
+              lessonVideoPoints: 0,
+              cohortId: assignment.cohortCourse?.cohort?.id,
+              courseId: assignment.cohortCourse?.course?.id,
+              userId: submission.student.id,
+            },
+            update: {
+              assignmentPoints: { increment: grade || 0 },
+              points: { increment: grade || 0 },
+            },
+          }),
+        ]);
       }
     } catch (notifError) {
       console.error("Failed to send grade notification:", notifError);
@@ -315,7 +592,7 @@ export const gradeSubmission = async (req: Request, res: Response) => {
 
     res.json({
       submission,
-      message: "Submission graded successfully"
+      message: "Submission graded successfully",
     });
   } catch (error) {
     console.error("Grade submission error:", error);
@@ -327,6 +604,75 @@ export const gradeQuizSubmission = async (req: Request, res: Response) => {
   try {
     const { submissionId } = req.params;
     const { grade, feedback, gradedById } = req.body;
+    const adminUser = req.user as NebiantUser;
+
+    const [existingSubmission] = await Promise.all([
+      prismadb.assignmentQuizSubmission.findUnique({
+        where: {
+          id: submissionId,
+        },
+        include: {
+          assignment: {
+            select: {
+              id: true,
+              title: true,
+              cohortCourse: {
+                include: {
+                  cohort: { select: { id: true, name: true } },
+                  course: { select: { id: true, title: true } },
+                },
+              },
+              classroomTopic: {
+                select: {
+                  id: true,
+                  title: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!existingSubmission?.id) {
+      return res
+        .status(404)
+        .json({ status: "error", message: "Assignment submission not found" });
+    }
+
+    const userLeadboard = await prismadb.courseCohortLeaderboard.findUnique({
+      where: {
+        userId_courseId_cohortId: {
+          courseId: existingSubmission.assignment.cohortCourse.course.id,
+          cohortId: existingSubmission.assignment.cohortCourse.cohort.id,
+          userId: existingSubmission.studentId,
+        },
+      },
+      select: {
+        id: true,
+        points: true,
+        assignmentPoints: true,
+      },
+    });
+
+    let newAssignmentPoints = parseInt(grade),
+      newTotalPoints = parseInt(grade);
+
+    if (
+      userLeadboard?.id &&
+      userLeadboard?.assignmentPoints &&
+      existingSubmission.totalScore
+    ) {
+      newAssignmentPoints =
+        (userLeadboard.assignmentPoints || 0) -
+        (existingSubmission.totalScore || 0) +
+        parseInt(grade);
+
+      newTotalPoints =
+        userLeadboard.points -
+        (existingSubmission.totalScore || 0) +
+        parseInt(grade);
+    }
 
     const submission = await prismadb.assignmentQuizSubmission.update({
       where: { id: submissionId },
@@ -335,8 +681,58 @@ export const gradeQuizSubmission = async (req: Request, res: Response) => {
         feedback: feedback || null,
         gradedById,
         gradedAt: new Date(),
-      }
+      },
     });
+
+    if (!submission.id) {
+      return res.status(400).json({
+        status: "error",
+        message: "Failed to grade assignment submission quiz",
+      });
+    }
+
+    await Promise.all([
+      await NotificationService.create({
+        userId: existingSubmission.studentId,
+        type: "CLASSROOM_ASSIGNMENT_GRADED",
+        payload: {
+          assignmentId: existingSubmission.assignment.id,
+          assignmentTitle: existingSubmission.assignment.title,
+          cohortId: existingSubmission.assignment.cohortCourse.cohort.id,
+          cohortName: existingSubmission.assignment.cohortCourse.cohort.name,
+          courseTitle: existingSubmission.assignment.cohortCourse.course.title,
+          courseId: existingSubmission.assignment.cohortCourse.course.id,
+          topicId: existingSubmission.assignment.classroomTopic?.id,
+          topicTitle: existingSubmission.assignment.classroomTopic?.id,
+          assignmentMaxScore: existingSubmission.maxScore,
+          assignmentScore: parseInt(grade),
+        },
+        relatedUserId: adminUser?.id,
+      }),
+
+      await prismadb.courseCohortLeaderboard.upsert({
+        where: {
+          userId_courseId_cohortId: {
+            cohortId: existingSubmission.assignment.cohortCourse?.cohort?.id,
+            courseId: existingSubmission.assignment.cohortCourse?.course?.id,
+            userId: existingSubmission.studentId,
+          },
+        },
+        create: {
+          assignmentPoints: parseInt(grade),
+          points: parseInt(grade),
+          lessonQuizPoints: 0,
+          lessonVideoPoints: 0,
+          cohortId: existingSubmission.assignment.cohortCourse?.cohort?.id,
+          courseId: existingSubmission.assignment.cohortCourse?.course?.id,
+          userId: existingSubmission.studentId,
+        },
+        update: {
+          assignmentPoints: newAssignmentPoints,
+          points: newTotalPoints,
+        },
+      }),
+    ]);
 
     res.json({ submission });
   } catch (error) {
@@ -350,6 +746,7 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
     const { grades, gradedById } = req.body;
+    const adminUser = req.user as NebiantUser;
 
     if (!Array.isArray(grades) || grades.length === 0) {
       return res.status(400).json({ error: "No grades provided" });
@@ -360,7 +757,23 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
       where: {
         OR: [{ id: assignmentId }, { slug: assignmentId }],
       },
-      select: { points: true }
+      select: {
+        points: true,
+        id: true,
+        title: true,
+        cohortCourse: {
+          select: {
+            cohort: { select: { id: true, name: true } },
+            course: { select: { id: true, title: true } },
+          },
+        },
+        classroomTopic: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
+      },
     });
 
     if (!assignment) {
@@ -373,14 +786,14 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
     for (const gradeData of grades) {
       if (gradeData.grade < 0 || gradeData.grade > maxPoints) {
         return res.status(400).json({
-          error: `Grade for submission ${gradeData.submissionId} must be between 0 and ${maxPoints}`
+          error: `Grade for submission ${gradeData.submissionId} must be between 0 and ${maxPoints}`,
         });
       }
     }
 
     // Update all submissions in a transaction
     const results = await prismadb.$transaction(
-      grades.map(gradeData =>
+      grades.map((gradeData) =>
         prismadb.assignmentSubmission.update({
           where: { id: gradeData.submissionId },
           data: {
@@ -398,13 +811,77 @@ export const bulkGradeSubmissions = async (req: Request, res: Response) => {
               },
             },
           },
-        })
-      )
+        }),
+      ),
     );
+
+    if (Array.isArray(results)) {
+      const cohortId = assignment.cohortCourse?.cohort?.id;
+      const cohortName = assignment.cohortCourse?.cohort?.name;
+      const courseId = assignment.cohortCourse?.course?.id;
+      const courseTitle = assignment.cohortCourse?.course?.title;
+
+      void Promise.all(
+        results.map(async (studentSubmission) => {
+          const gradeData = grades.find(
+            (grade) => grade.submissionId === studentSubmission.id,
+          );
+
+          const finalGrade = Number(gradeData?.grade || 0);
+
+          return Promise.all([
+            NotificationService.create({
+              userId: studentSubmission.studentId,
+              type: "CLASSROOM_ASSIGNMENT_GRADED",
+              payload: {
+                assignmentId: assignment.id,
+                assignmentTitle: assignment.title,
+                cohortId,
+                cohortName,
+                courseId,
+                courseTitle,
+                topicId: assignment.classroomTopic?.id,
+                topicTitle: assignment.classroomTopic?.title,
+                assignmentMaxScore: maxPoints,
+                assignmentScore: finalGrade,
+              },
+              relatedUserId: adminUser?.id,
+            }),
+
+            prismadb.courseCohortLeaderboard.upsert({
+              where: {
+                userId_courseId_cohortId: {
+                  userId: studentSubmission.studentId,
+                  courseId,
+                  cohortId,
+                },
+              },
+              create: {
+                userId: studentSubmission.studentId,
+                courseId,
+                cohortId,
+                assignmentPoints: finalGrade,
+                points: finalGrade,
+                lessonQuizPoints: 0,
+                lessonVideoPoints: 0,
+              },
+              update: {
+                assignmentPoints: {
+                  increment: finalGrade,
+                },
+                points: {
+                  increment: finalGrade,
+                },
+              },
+            }),
+          ]);
+        }),
+      );
+    }
 
     res.json({
       submissions: results,
-      message: `${results.length} submissions graded successfully`
+      message: `${results.length} submissions graded successfully`,
     });
   } catch (error) {
     console.error("Bulk grade error:", error);
@@ -423,14 +900,13 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
       points,
       classroomTopicId,
       cohortCourseId: bodyCohortCourseId,
-      questions
+      questions,
     } = req.body;
-
 
     // Validate required fields
     if (!title) {
       return res.status(400).json({
-        error: "Title is required"
+        error: "Title is required",
       });
     }
 
@@ -457,20 +933,24 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
       }
 
       if (!topic.cohortCourseId) {
-        return res.status(400).json({ error: "Topic is not associated with a valid cohort course" });
+        return res.status(400).json({
+          error: "Topic is not associated with a valid cohort course",
+        });
       }
 
       finalCohortCourseId = topic.cohortCourseId;
     }
 
     if (!finalCohortCourseId) {
-      return res.status(400).json({ error: "Either classroomTopicId or cohortCourseId must be provided" });
+      return res.status(400).json({
+        error: "Either classroomTopicId or cohortCourseId must be provided",
+      });
     }
 
     // Validate questions
     if (!questions || !Array.isArray(questions) || questions.length === 0) {
       return res.status(400).json({
-        error: "At least one question is required"
+        error: "At least one question is required",
       });
     }
 
@@ -479,33 +959,41 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
       const question = questions[i];
       if (!question.question?.trim()) {
         return res.status(400).json({
-          error: `Question ${i + 1} text is required`
+          error: `Question ${i + 1} text is required`,
         });
       }
-      if (!question.options || !Array.isArray(question.options) || question.options.length === 0) {
+      if (
+        !question.options ||
+        !Array.isArray(question.options) ||
+        question.options.length === 0
+      ) {
         return res.status(400).json({
-          error: `Question ${i + 1} must have at least one option`
+          error: `Question ${i + 1} must have at least one option`,
         });
       }
 
-      const correctOptions = question.options.filter((opt: any) => opt.isCorrect);
+      const correctOptions = question.options.filter(
+        (opt: any) => opt.isCorrect,
+      );
       if (correctOptions.length !== 1) {
         return res.status(400).json({
-          error: `Question ${i + 1} must have exactly one correct answer`
+          error: `Question ${i + 1} must have exactly one correct answer`,
         });
       }
 
       for (let j = 0; j < question.options.length; j++) {
         if (!question.options[j].text?.trim()) {
           return res.status(400).json({
-            error: `Option ${j + 1} for question ${i + 1} is required`
+            error: `Option ${j + 1} for question ${i + 1} is required`,
           });
         }
       }
     }
 
     // Calculate total points
-    const totalPoints = points || questions.reduce((sum: number, q: any) => sum + (q.points || 1), 0);
+    const totalPoints =
+      points ||
+      questions.reduce((sum: number, q: any) => sum + (q.points || 1), 0);
 
     // Create the quiz assignment using the same pattern as regular assignments
     const assignment = await prismadb.assignment.create({
@@ -528,24 +1016,24 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
               create: q.options.map((opt: any, optIndex: number) => ({
                 text: opt.text.trim(),
                 isCorrect: opt.isCorrect,
-                order: optIndex
-              }))
-            }
-          }))
-        }
+                order: optIndex,
+              })),
+            },
+          })),
+        },
       },
       include: {
         assignmentQuizQuestions: {
           include: {
-            assignmentQuizOptions: true
+            assignmentQuizOptions: true,
           },
-          orderBy: { order: 'asc' }
+          orderBy: { order: "asc" },
         },
         cohortCourse: {
           include: {
             course: true,
-            cohort: true
-          }
+            cohort: true,
+          },
         },
       },
     });
@@ -554,10 +1042,12 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
     try {
       const students = await prismadb.userCohort.findMany({
         where: { cohortId: assignment.cohortCourse.cohortId, isActive: true },
-        include: { user: { select: { email: true } } }
+        include: { user: { select: { email: true } } },
       });
 
-      const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+      const emails = students
+        .map((s) => s.user.email)
+        .filter(Boolean) as string[];
       const currentUser = req.user as NebiantUser;
 
       if (emails.length > 0) {
@@ -567,7 +1057,7 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
           "quiz assignment",
           title,
           description || instructions || "",
-          currentUser?.name || "Instructor"
+          currentUser?.name || "Instructor",
         );
       }
     } catch (notifError) {
@@ -576,21 +1066,21 @@ export const createQuizAssignment = async (req: Request, res: Response) => {
 
     res.status(201).json({
       assignment,
-      message: "Quiz assignment created successfully"
+      message: "Quiz assignment created successfully",
     });
   } catch (error) {
     console.error("Create quiz assignment error:", error);
 
-    if (error instanceof Error && 'code' in error) {
+    if (error instanceof Error && "code" in error) {
       const prismaError = error as any;
       switch (prismaError.code) {
-        case 'P2003':
+        case "P2003":
           return res.status(400).json({
-            error: "Invalid reference: One of the provided IDs does not exist"
+            error: "Invalid reference: One of the provided IDs does not exist",
           });
-        case 'P2002':
+        case "P2002":
           return res.status(400).json({
-            error: "A assignment with similar details already exists"
+            error: "A assignment with similar details already exists",
           });
       }
     }
@@ -616,105 +1106,11 @@ export const updateAssignment = async (req: Request, res: Response) => {
   }
 };
 
-// Helper function for quiz submission
-const handleAssignmentQuizSubmission = async (
-  assignment: any,
-  quizAnswers: any[],
-  studentId: string,
-  res: Response
-) => {
-  if (assignment.isLocked) {
-    return res.status(403).json({ error: "Quiz submissions are locked." });
-  }
-
-  // Check if already submitted
-  const existingSubmission = await prismadb.assignmentQuizSubmission.findUnique({
-    where: {
-      assignmentId_studentId: {
-        assignmentId: assignment.id,
-        studentId,
-      },
-    },
-  });
-
-  if (existingSubmission) {
-    return res.status(400).json({ error: "Quiz already submitted" });
-  }
-
-  // Calculate score
-  let totalScore = 0;
-  const maxScore = assignment.assignmentQuizQuestions.reduce((sum: number, q: any) => sum + (q.points || 1), 0);
-
-  const answerResults = await Promise.all(
-    quizAnswers.map(async (answer) => {
-      const question = assignment.assignmentQuizQuestions.find((q: any) => q.id === answer.questionId);
-      const selectedOption = question.assignmentQuizOptions.find((opt: any) => opt.id === answer.selectedOptionId);
-
-      const isCorrect = selectedOption?.isCorrect || false;
-      const pointsEarned = isCorrect ? (question.points || 1) : 0;
-
-      totalScore += pointsEarned;
-
-      return {
-        assignmentQuizQuestionId: answer.questionId,
-        selectedAssignmentQuizOptionId: answer.selectedOptionId,
-        isCorrect,
-        pointsEarned,
-      };
-    })
-  );
-
-  // Create quiz submission with answers
-  const submission = await prismadb.assignmentQuizSubmission.create({
-    data: {
-      assignmentId: assignment.id,
-      studentId,
-      totalScore,
-      maxScore,
-      assignmentQuizAnswers: {
-        create: answerResults.map(result => ({
-          assignmentQuizQuestionId: result.assignmentQuizQuestionId,
-          selectedAssignmentQuizOptionId: result.selectedAssignmentQuizOptionId,
-          isCorrect: result.isCorrect,
-          pointsEarned: result.pointsEarned,
-        }))
-      }
-    },
-    include: {
-      assignmentQuizAnswers: {
-        include: {
-          assignmentQuizQuestion: {
-            include: {
-              assignmentQuizOptions: true
-            }
-          },
-          selectedAssignmentQuizOption: true
-        }
-      }
-    }
-  });
-
-  // Also create a regular assignment submission for consistency
-  await prismadb.assignmentSubmission.create({
-    data: {
-      assignmentId: assignment.id,
-      studentId,
-      content: `Quiz submitted - Score: ${totalScore}/${maxScore}`,
-      submittedAt: new Date(),
-    }
-  });
-
-  res.json({
-    submission,
-    score: totalScore,
-    maxScore,
-    percentage: Math.round((totalScore / maxScore) * 100),
-    message: "Quiz submitted successfully"
-  });
-};
-
 // Get all quiz submissions for an assignment (Instructor view)
-export const getAssignmentQuizSubmissions = async (req: Request, res: Response) => {
+export const getAssignmentQuizSubmissions = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { assignmentId } = req.params;
 
@@ -734,12 +1130,12 @@ export const getAssignmentQuizSubmissions = async (req: Request, res: Response) 
           include: {
             assignmentQuizQuestion: {
               include: {
-                assignmentQuizOptions: true
-              }
+                assignmentQuizOptions: true,
+              },
             },
-            selectedAssignmentQuizOption: true
-          }
-        }
+            selectedAssignmentQuizOption: true,
+          },
+        },
       },
       orderBy: { submittedAt: "desc" },
     });
@@ -767,26 +1163,27 @@ export const getAssignmentQuizResults = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Assignment not found" });
     }
 
-    const assignmentQuizSubmission = await prismadb.assignmentQuizSubmission.findUnique({
-      where: {
-        assignmentId_studentId: {
-          assignmentId: targetAssignment.id,
-          studentId: studentId as string,
+    const assignmentQuizSubmission =
+      await prismadb.assignmentQuizSubmission.findUnique({
+        where: {
+          assignmentId_studentId: {
+            assignmentId: targetAssignment.id,
+            studentId: studentId as string,
+          },
         },
-      },
-      include: {
-        assignmentQuizAnswers: {
-          include: {
-            assignmentQuizQuestion: {
-              include: {
-                assignmentQuizOptions: true
-              }
+        include: {
+          assignmentQuizAnswers: {
+            include: {
+              assignmentQuizQuestion: {
+                include: {
+                  assignmentQuizOptions: true,
+                },
+              },
+              selectedAssignmentQuizOption: true,
             },
-            selectedAssignmentQuizOption: true
-          }
-        }
-      }
-    });
+          },
+        },
+      });
 
     if (!assignmentQuizSubmission) {
       return res.status(404).json({ error: "Quiz submission not found" });

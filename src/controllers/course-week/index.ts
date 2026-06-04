@@ -144,13 +144,11 @@ export const updateCourseWeek = async (req: Request, res: Response) => {
       },
     });
 
-    return res
-      .status(200)
-      .json({
-        status: "Course week updated",
-        message: null,
-        data: updatedCourseWeek,
-      });
+    return res.status(200).json({
+      status: "Course week updated",
+      message: null,
+      data: updatedCourseWeek,
+    });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -195,7 +193,9 @@ export const deleteCourseWeek = async (req: Request, res: Response) => {
       });
     });
 
-    return res.status(200).json({ status: "Course week and related modules deleted" });
+    return res
+      .status(200)
+      .json({ status: "Course week and related modules deleted" });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -232,13 +232,11 @@ export const publishCourseWeek = async (req: Request, res: Response) => {
       },
     });
 
-    return res
-      .status(200)
-      .json({
-        status: "Course week updated",
-        message: null,
-        data: updatedCourseWeek,
-      });
+    return res.status(200).json({
+      status: "Course week updated",
+      message: null,
+      data: updatedCourseWeek,
+    });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -275,13 +273,11 @@ export const unPublishCourseWeek = async (req: Request, res: Response) => {
       },
     });
 
-    return res
-      .status(200)
-      .json({
-        status: "Course week updated",
-        message: null,
-        data: updatedCourseWeek,
-      });
+    return res.status(200).json({
+      status: "Course week updated",
+      message: null,
+      data: updatedCourseWeek,
+    });
   } catch (error) {
     handleServerError(error, res);
   }

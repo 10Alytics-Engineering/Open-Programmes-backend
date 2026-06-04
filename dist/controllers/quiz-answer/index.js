@@ -2,34 +2,62 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteQuizAnswer = exports.submitAnswer = void 0;
 const prismadb_1 = require("../../lib/prismadb");
-const increment_points_1 = require("../../helpers/increment-points");
 const submitAnswer = async (req, res) => {
     try {
         const user = req.user;
         const userId = user?.id;
         const { quizId, answerId, } = req.body;
-        const quiz = await prismadb_1.prismadb.quiz.findUnique({
-            where: { id: quizId },
-        });
+        const [quiz, answer, quizAnswered] = await Promise.all([
+            // Check if user already answered this quiz
+            prismadb_1.prismadb.quiz.findUnique({
+                where: { id: quizId },
+                include: {
+                    courseModule: {
+                        select: {
+                            CourseWeek: {
+                                select: {
+                                    courseId: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            }),
+            // Get the answer to check if it's correct
+            prismadb_1.prismadb.quizAnswer.findUnique({
+                where: { id: answerId },
+            }),
+            prismadb_1.prismadb.userQuizAnswer.findUnique({
+                where: {
+                    userId_quizAnswerId: {
+                        userId,
+                        quizAnswerId: answerId,
+                    },
+                },
+            }),
+        ]);
         if (!quiz) {
             return res.status(404).json({ message: "Quiz not found" });
         }
-        const answer = await prismadb_1.prismadb.quizAnswer.findUnique({
-            where: { id: answerId },
-        });
         if (!answer) {
             return res.status(404).json({ message: "Answer not found" });
         }
-        const quizAnswered = await prismadb_1.prismadb.userQuizAnswer.findUnique({
-            where: {
-                userId_quizAnswerId: {
-                    userId,
-                    quizAnswerId: answerId,
-                },
-            },
-        });
         if (quizAnswered) {
             return res.status(403).json({ message: "Quiz already answered by user" });
+        }
+        const userCohort = await prismadb_1.prismadb.userCohort.findFirst({
+            where: {
+                isActive: true,
+                userId: user?.id,
+                courseId: quiz.courseModule.CourseWeek.courseId,
+            },
+            orderBy: { createdAt: "desc" },
+        });
+        if (!userCohort?.id) {
+            return res.status(404).json({
+                status: "error",
+                message: "Active cohort for user not found",
+            });
         }
         await prismadb_1.prismadb.userQuizAnswer.create({
             data: {
@@ -40,7 +68,28 @@ const submitAnswer = async (req, res) => {
         const isCorrect = answer.isCorrect;
         // Increment points if the answer is correct
         if (isCorrect) {
-            await (0, increment_points_1.incrementPoints)(userId, quizId, isCorrect);
+            await prismadb_1.prismadb.courseCohortLeaderboard.upsert({
+                where: {
+                    userId_courseId_cohortId: {
+                        cohortId: userCohort?.cohortId,
+                        courseId: userCohort?.courseId,
+                        userId: user.id,
+                    },
+                },
+                create: {
+                    assignmentPoints: 0,
+                    points: 1,
+                    lessonQuizPoints: 1,
+                    lessonVideoPoints: 0,
+                    cohortId: userCohort?.cohortId,
+                    courseId: userCohort?.courseId,
+                    userId: user.id,
+                },
+                update: {
+                    lessonQuizPoints: { increment: 1 },
+                    points: { increment: 1 },
+                },
+            });
         }
         return res
             .status(200)

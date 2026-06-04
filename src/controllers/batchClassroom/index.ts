@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { sendClassroomNotificationEmail } from "../authentication/mail";
 import { NebiantUser } from "../../middleware";
+import { NotificationService } from "../../services/notification.service";
+import { NotificationType } from "@prisma/client";
 
 interface BatchItemData {
   type: "assignment" | "material" | "recording";
@@ -22,30 +24,32 @@ export const addBatchItem = async (req: Request, res: Response) => {
 
     if (!type || !data || !topicIds || !Array.isArray(topicIds)) {
       return res.status(400).json({
-        error: "Type, data, and topicIds array are required"
+        error: "Type, data, and topicIds array are required",
       });
     }
 
     // Validate all topics exist and get their cohortCourseIds
     const topics = await prismadb.classroomTopic.findMany({
       where: {
-        id: { in: topicIds }
+        id: { in: topicIds },
       },
       include: {
         cohortCourse: {
-          include: {
-            cohort: true
-          }
-        }
-      }
+          select: {
+            cohortId: true,
+            cohort: true,
+            course: { select: { id: true, title: true } },
+          },
+        },
+      },
     });
 
     if (topics.length !== topicIds.length) {
-      const foundIds = topics.map(t => t.id);
-      const missingIds = topicIds.filter(id => !foundIds.includes(id));
+      const foundIds = topics.map((t) => t.id);
+      const missingIds = topicIds.filter((id) => !foundIds.includes(id));
       return res.status(404).json({
         error: "Some topics not found",
-        missingIds
+        missingIds,
       });
     }
 
@@ -55,7 +59,11 @@ export const addBatchItem = async (req: Request, res: Response) => {
     // Create item for each topic
     for (const topic of topics) {
       try {
-        let result;
+        let result,
+          course = topic.cohortCourse.course,
+          cohort = topic.cohortCourse.cohort,
+          notificationType = "",
+          metaData = {};
 
         switch (type) {
           case "assignment":
@@ -65,15 +73,9 @@ export const addBatchItem = async (req: Request, res: Response) => {
                 classroomTopicId: topic.id,
                 cohortCourseId: topic.cohortCourseId,
               },
-              include: {
-                classroomTopic: true,
-                cohortCourse: {
-                  include: {
-                    cohort: true
-                  }
-                }
-              }
             });
+            notificationType = "CLASSROOM_ASSIGNMENT_ADDED";
+            metaData = { assignmentTitle: data.title, assignmentId: result.id };
             break;
           case "material":
             result = await prismadb.classMaterial.create({
@@ -82,15 +84,9 @@ export const addBatchItem = async (req: Request, res: Response) => {
                 classroomTopicId: topic.id,
                 cohortCourseId: topic.cohortCourseId,
               },
-              include: {
-                classroomTopic: true,
-                cohortCourse: {
-                  include: {
-                    cohort: true
-                  }
-                }
-              }
             });
+            notificationType = "CLASSROOM_MATERIAL_ADDED";
+            metaData = { materialTitle: data.title, materialId: result.id };
             break;
           case "recording":
             result = await prismadb.classRecording.create({
@@ -99,20 +95,14 @@ export const addBatchItem = async (req: Request, res: Response) => {
                 classroomTopicId: topic.id,
                 cohortCourseId: topic.cohortCourseId,
               },
-              include: {
-                classroomTopic: true,
-                cohortCourse: {
-                  include: {
-                    cohort: true
-                  }
-                }
-              }
             });
+            notificationType = "CLASSROOM_RECORDING_ADDED";
+            metaData = { recordingTitle: data.title, recordingId: result.id };
             break;
           default:
             errors.push({
               topicId: topic.id,
-              error: "Invalid item type"
+              error: "Invalid item type",
             });
             continue;
         }
@@ -121,36 +111,60 @@ export const addBatchItem = async (req: Request, res: Response) => {
         try {
           const students = await prismadb.userCohort.findMany({
             where: { cohortId: topic.cohortCourse.cohortId, isActive: true },
-            include: { user: { select: { email: true } } }
+            include: { user: { select: { email: true } } },
           });
 
-          const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+          const emails = students
+            .map((s) => s.user.email)
+            .filter(Boolean) as string[];
+          const studentIds = students.map((s) => s.userId);
           const currentUser = req.user as NebiantUser;
 
           if (emails.length > 0) {
+            if (notificationType) {
+              await NotificationService.createMany(
+                studentIds,
+                notificationType as NotificationType,
+                {
+                  cohortId: cohort.id,
+                  cohortName: cohort.name,
+                  topicId: topic.id,
+                  topicTitle: topic.title,
+                  courseId: course.id,
+                  courseTitle: course.title,
+                  ...metaData,
+                  actionUrl: `/dashboard/classroom?tab=class`,
+                },
+                currentUser.id,
+              );
+            }
+
             await sendClassroomNotificationEmail(
               emails,
               topic.cohortCourse.cohort.name,
               type,
               data.title,
               data.description || data.instructions || "",
-              currentUser?.name || "Instructor"
+              currentUser?.name || "Instructor",
             );
           }
         } catch (notifError) {
-          console.error("Failed to send batch classroom notification:", notifError);
+          console.error(
+            "Failed to send batch classroom notification:",
+            notifError,
+          );
         }
 
         results.push({
           topicId: topic.id,
           topicTitle: topic.title,
           cohortName: topic.cohortCourse.cohort.name,
-          item: result
+          item: result,
         });
       } catch (error) {
         errors.push({
           topicId: topic.id,
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
@@ -162,8 +176,8 @@ export const addBatchItem = async (req: Request, res: Response) => {
       summary: {
         total: topicIds.length,
         successful: results.length,
-        failed: errors.length
-      }
+        failed: errors.length,
+      },
     });
   } catch (error) {
     console.error("Batch add item error:", error);
@@ -173,31 +187,32 @@ export const addBatchItem = async (req: Request, res: Response) => {
 
 export const createBatchTopics = async (req: Request, res: Response) => {
   try {
-    const { title, description, isPinned, cohortCourseIds }: BatchTopicData = req.body;
+    const { title, description, isPinned, cohortCourseIds }: BatchTopicData =
+      req.body;
 
     if (!title || !cohortCourseIds || !Array.isArray(cohortCourseIds)) {
       return res.status(400).json({
-        error: "Title and cohortCourseIds array are required"
+        error: "Title and cohortCourseIds array are required",
       });
     }
 
     // Validate all cohort courses exist
     const cohortCourses = await prismadb.cohortCourse.findMany({
       where: {
-        id: { in: cohortCourseIds }
+        id: { in: cohortCourseIds },
       },
       include: {
         cohort: true,
-        course: true
-      }
+        course: true,
+      },
     });
 
     if (cohortCourses.length !== cohortCourseIds.length) {
-      const foundIds = cohortCourses.map(cc => cc.id);
-      const missingIds = cohortCourseIds.filter(id => !foundIds.includes(id));
+      const foundIds = cohortCourses.map((cc) => cc.id);
+      const missingIds = cohortCourseIds.filter((id) => !foundIds.includes(id));
       return res.status(404).json({
         error: "Some cohort courses not found",
-        missingIds
+        missingIds,
       });
     }
 
@@ -225,30 +240,47 @@ export const createBatchTopics = async (req: Request, res: Response) => {
             cohortCourse: {
               include: {
                 cohort: true,
-                course: true
-              }
-            }
-          }
+                course: true,
+              },
+            },
+          },
         });
 
         // Send Notification to all students in the cohort (optional for topic creation, but user said "every action")
         try {
           const students = await prismadb.userCohort.findMany({
             where: { cohortId: cohortCourse.cohort.id, isActive: true },
-            include: { user: { select: { email: true } } }
+            include: { user: { select: { email: true } } },
           });
 
-          const emails = students.map(s => s.user.email).filter(Boolean) as string[];
+          const emails = students
+            .map((s) => s.user.email)
+            .filter(Boolean) as string[];
+          const studentIds = students.map((s) => s.userId);
           const currentUser = req.user as NebiantUser;
 
           if (emails.length > 0) {
+            await NotificationService.createMany(
+              studentIds,
+              "CLASSROOM_TOPIC_ADDED",
+              {
+                cohortId: cohortCourse.cohort.id,
+                cohortName: cohortCourse.cohort.name,
+                topicId: topic.id,
+                topicTitle: topic.title,
+                courseTitle: cohortCourse.course.title,
+                courseId: cohortCourse.course.id,
+              },
+              currentUser.id,
+            );
+
             await sendClassroomNotificationEmail(
               emails,
               cohortCourse.cohort.name,
               "topic",
               title,
               description || "",
-              currentUser?.name || "Instructor"
+              currentUser?.name || "Instructor",
             );
           }
         } catch (notifError) {
@@ -259,12 +291,12 @@ export const createBatchTopics = async (req: Request, res: Response) => {
           cohortCourseId: cohortCourse.id,
           cohortName: cohortCourse.cohort.name,
           courseName: cohortCourse.course.title,
-          topic
+          topic,
         });
       } catch (error) {
         errors.push({
           cohortCourseId: cohortCourse.id,
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       }
     }
@@ -276,8 +308,8 @@ export const createBatchTopics = async (req: Request, res: Response) => {
       summary: {
         total: cohortCourseIds.length,
         successful: results.length,
-        failed: errors.length
-      }
+        failed: errors.length,
+      },
     });
   } catch (error) {
     console.error("Create batch topics error:", error);
@@ -290,37 +322,36 @@ export const getTopicsForCohorts = async (req: Request, res: Response) => {
   try {
     const { cohortIds } = req.query;
 
-    if (!cohortIds || typeof cohortIds !== 'string') {
-      return res.status(400).json({ error: "cohortIds query parameter is required" });
+    if (!cohortIds || typeof cohortIds !== "string") {
+      return res
+        .status(400)
+        .json({ error: "cohortIds query parameter is required" });
     }
 
-    const cohortIdsArray = cohortIds.split(',');
+    const cohortIdsArray = cohortIds.split(",");
 
     const topics = await prismadb.classroomTopic.findMany({
       where: {
         cohortCourse: {
-          cohortId: { in: cohortIdsArray }
-        }
+          cohortId: { in: cohortIdsArray },
+        },
       },
       include: {
         cohortCourse: {
           include: {
             cohort: true,
-            course: true
-          }
+            course: true,
+          },
         },
         _count: {
           select: {
             assignments: true,
             classMaterials: true,
-            classRecordings: true
-          }
-        }
+            classRecordings: true,
+          },
+        },
       },
-      orderBy: [
-        { isPinned: "desc" },
-        { order: "asc" }
-      ]
+      orderBy: [{ isPinned: "desc" }, { order: "asc" }],
     });
 
     // Group topics by cohort for easier frontend display
@@ -330,7 +361,7 @@ export const getTopicsForCohorts = async (req: Request, res: Response) => {
         acc[cohortId] = {
           cohort: topic.cohortCourse.cohort,
           course: topic.cohortCourse.course,
-          topics: []
+          topics: [],
         };
       }
       acc[cohortId].topics.push(topic);
@@ -339,7 +370,7 @@ export const getTopicsForCohorts = async (req: Request, res: Response) => {
 
     res.json({
       topics: groupedByCohort,
-      total: topics.length
+      total: topics.length,
     });
   } catch (error) {
     console.error("Get topics for cohorts error:", error);

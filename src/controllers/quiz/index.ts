@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { NebiantUser } from "../../middleware";
+import { NotificationService } from "../../services/notification.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -63,6 +64,7 @@ export const createQuiz = async (req: Request, res: Response) => {
   }: {
     question: string;
     moduleId: string;
+    courseId: string;
     answers: { name: string; isCorrect: boolean }[];
   } = req.body;
 
@@ -78,22 +80,91 @@ export const createQuiz = async (req: Request, res: Response) => {
     return res.status(400).json({ message: "Answer is required" });
   }
 
-  try {
-    const quiz = await prismadb.quiz.create({
-      data: {
-        question,
-        moduleId,
-        answers: {
-          create: answers.map((answer) => ({
-            name: answer.name,
-            isCorrect: answer.isCorrect,
-          })),
+  const [users, module] = await Promise.all([
+    prismadb.user.findMany({
+      where: {
+        inactive: false,
+        course_purchased: {
+          some: {
+            course: {
+              course_weeks: {
+                some: {
+                  courseModules: {
+                    some: { id: moduleId },
+                  },
+                },
+              },
+            },
+          },
         },
       },
-      include: {
-        answers: true,
+      select: {
+        id: true,
       },
-    });
+    }),
+
+    prismadb.module.findUnique({
+      where: {
+        id: moduleId,
+      },
+      select: {
+        id: true,
+        title: true,
+        CourseWeek: {
+          select: {
+            id: true,
+            title: true,
+            course: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  if (!module) {
+    return res.status(404).json({ message: "Module not found" });
+  }
+
+  const adminUser = req.user as NebiantUser;
+
+  try {
+    const [quiz, notifications] = await Promise.all([
+      prismadb.quiz.create({
+        data: {
+          question,
+          moduleId,
+          answers: {
+            create: answers.map((answer) => ({
+              name: answer.name,
+              isCorrect: answer.isCorrect,
+            })),
+          },
+        },
+        include: {
+          answers: true,
+        },
+      }),
+
+      NotificationService.createMany(
+        users.map((item: { id: string }) => item.id),
+        "COURSE_QUIZ_ADDED",
+        {
+          courseId: module.CourseWeek.course?.id,
+          courseTitle: module.CourseWeek.course?.title,
+          weekId: module.CourseWeek.id,
+          weekName: module.CourseWeek.title,
+          moduleId: module.id,
+          moduleTitle: module.title,
+          actionUrl: `/dashboard/lessons/${module.CourseWeek.course.id}?weekId=${module.CourseWeek.id}&moduleId=${module.id}`,
+        },
+        adminUser?.id,
+      ),
+    ]);
 
     res.status(201).json({
       status: "success",
@@ -137,6 +208,7 @@ export const deleteQuiz = async (req: Request, res: Response) => {
     handleServerError(error, res);
   }
 };
+
 export const getQuizzesByWeek = async (req: Request, res: Response) => {
   try {
     const { weekId } = req.params;
@@ -168,7 +240,6 @@ export const getQuizzesByWeek = async (req: Request, res: Response) => {
   }
 };
 
-// Add this new controller
 export const updateQuiz = async (req: Request, res: Response) => {
   try {
     const { quizId } = req.params;
@@ -215,8 +286,61 @@ export const updateQuiz = async (req: Request, res: Response) => {
     // Fetch the updated quiz with answers
     const finalQuiz = await prismadb.quiz.findUnique({
       where: { id: quizId },
-      include: { answers: true },
+      include: {
+        answers: true,
+        courseModule: {
+          select: {
+            id: true,
+            title: true,
+            CourseWeek: {
+              select: {
+                id: true,
+                title: true,
+                courseId: true,
+                course: {
+                  select: {
+                    id: true,
+                    title: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
+
+    if (finalQuiz?.courseModule?.CourseWeek?.course?.id) {
+      const courseId = finalQuiz.courseModule.CourseWeek.course.id;
+
+      const enrolledUsers = await prismadb.purchase.findMany({
+        where: {
+          courseId,
+          user: {
+            inactive: false,
+          },
+        },
+        select: {
+          userId: true,
+        },
+      });
+
+      const userIds = enrolledUsers.map((item) => item.userId);
+
+      if (userIds.length > 0) {
+        await NotificationService.createMany(userIds, "COURSE_QUIZ_EDITED", {
+          courseId,
+          courseTitle: finalQuiz.courseModule.CourseWeek.course.title,
+          moduleId: finalQuiz.courseModule.id,
+          moduleTitle: finalQuiz.courseModule.title,
+          weekId: finalQuiz.courseModule.CourseWeek.id,
+          weekName: finalQuiz.courseModule.CourseWeek.title,
+          quizId: finalQuiz.id,
+          quizTitle: finalQuiz.question,
+          actionUrl: `/dashboard/lessons/${courseId}?weekId=${finalQuiz.courseModule.CourseWeek.id}&moduleId=${finalQuiz.courseModule.id}`,
+        });
+      }
+    }
 
     res.status(200).json({
       status: "success",
@@ -244,15 +368,31 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
         .json({ message: "QuizId and AnswerId are required" });
     }
 
-    // Check if user already answered this quiz
-    const existingAnswer = await prismadb.userQuizAnswer.findFirst({
-      where: {
-        userId,
-        quizAnswer: {
-          quizId,
+    const [existingAnswer, answer] = await Promise.all([
+      // Check if user already answered this quiz
+      prismadb.userQuizAnswer.findFirst({
+        where: {
+          userId,
+          quizAnswer: {
+            quizId,
+          },
         },
-      },
-    });
+      }),
+
+      // Get the answer to check if it's correct
+      prismadb.quizAnswer.findUnique({
+        where: { id: answerId },
+        include: {
+          quiz: {
+            select: {
+              courseModule: {
+                select: { CourseWeek: { select: { courseId: true } } },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
     if (existingAnswer) {
       return res
@@ -260,14 +400,24 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
         .json({ message: "You've already answered this quiz" });
     }
 
-    // Get the answer to check if it's correct
-    const answer = await prismadb.quizAnswer.findUnique({
-      where: { id: answerId },
-      include: { quiz: true },
-    });
-
     if (!answer) {
       return res.status(404).json({ message: "Answer not found" });
+    }
+
+    const userCohort = await prismadb.userCohort.findFirst({
+      where: {
+        isActive: true,
+        userId: user?.id,
+        courseId: answer.quiz.courseModule.CourseWeek.courseId,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!userCohort?.id) {
+      return res.status(404).json({
+        status: "error",
+        message: "Active cohort for user not found",
+      });
     }
 
     // Record the user's answer
@@ -281,29 +431,28 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
     // If answer is correct, update leaderboard
     if (answer.isCorrect) {
       // Check if user already has a leaderboard entry for this quiz
-      const existingLeaderboard = await prismadb.leaderboard.findFirst({
+      await prismadb.courseCohortLeaderboard.upsert({
         where: {
-          userId,
-          quizId,
+          userId_courseId_cohortId: {
+            cohortId: userCohort?.cohortId,
+            courseId: userCohort?.courseId,
+            userId: user.id,
+          },
+        },
+        create: {
+          assignmentPoints: 0,
+          points: 1,
+          lessonQuizPoints: 1,
+          lessonVideoPoints: 0,
+          cohortId: userCohort?.cohortId,
+          courseId: userCohort?.courseId,
+          userId: user.id,
+        },
+        update: {
+          lessonQuizPoints: { increment: 1 },
+          points: { increment: 1 },
         },
       });
-
-      if (existingLeaderboard) {
-        // Update existing points
-        await prismadb.leaderboard.update({
-          where: { id: existingLeaderboard.id },
-          data: { points: existingLeaderboard.points + 1 },
-        });
-      } else {
-        // Create new leaderboard entry
-        await prismadb.leaderboard.create({
-          data: {
-            userId,
-            quizId,
-            points: 1,
-          },
-        });
-      }
     }
 
     res.status(200).json({

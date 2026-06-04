@@ -28,6 +28,7 @@ import {
   initiateStartButtonPayment,
   verifyStartButtonTransaction,
 } from "../../utils/paymentService";
+import { NotificationService } from "../../services/notification.service";
 
 if (!process.env.PAYSTACK_SECRET_KEY) {
   console.warn("⚠️ PAYSTACK_SECRET_KEY is missing from environment variables!");
@@ -1235,38 +1236,70 @@ async function verifyPayment(reference: string) {
       console.log(
         `Installment payment summary for user ${user?.id} - Paid: ${totalPaid}, Remaining: ${totalRemaining}`,
       );
-      await sendPaymentConfirmationEmail({
-        amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
-        courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-        courseTitle: course?.title || "",
-        paymentType: "installment",
-        currentInstallment: metadata.installmentNumber || 1,
-        remainingBalance:
-          totalRemaining > 0
-            ? `${currenciesInfo.NGN.symbol}${totalRemaining.toLocaleString()}`
-            : "0",
-        totalAmountPaid: `${currenciesInfo.NGN.symbol}${Number(totalPaid).toLocaleString()}`,
-        totalInstallments: metadata.installmentsCount || 1,
-        paymentDate: format(
-          new Date(existingTx.paymentDate || ""),
-          "d MMM yyyy",
-        ),
-        userEmail: user?.email || "",
-        userName: user?.name || "Student",
-      });
+      await Promise.all([
+        await sendPaymentConfirmationEmail({
+          amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
+          courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+          courseTitle: course?.title || "",
+          paymentType: "installment",
+          currentInstallment: metadata.installmentNumber || 1,
+          remainingBalance:
+            totalRemaining > 0
+              ? `${currenciesInfo.NGN.symbol}${totalRemaining.toLocaleString()}`
+              : "0",
+          totalAmountPaid: `${currenciesInfo.NGN.symbol}${Number(totalPaid).toLocaleString()}`,
+          totalInstallments: metadata.installmentsCount || 1,
+          paymentDate: format(
+            new Date(existingTx.paymentDate || ""),
+            "d MMM yyyy",
+          ),
+          userEmail: user?.email || "",
+          userName: user?.name || "Student",
+        }),
+
+        await NotificationService.create({
+          type: "COURSE_ADDED",
+          userId: user?.id || "",
+          payload: {
+            cohortId: existingTx?.paymentStatus?.cohortId || undefined,
+            cohortName: existingTx?.paymentStatus?.cohort?.name,
+            courseTitle: course?.title,
+            courseId: course?.id,
+            paymentStatusId: existingTx.paymentStatusId,
+            paymentTransactionId: existingTx.id,
+            actionUrl: `/dashboard/lessons/${course?.id}`,
+          },
+        }),
+      ]);
     } else {
-      await sendPaymentConfirmationEmail({
-        amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
-        courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-        courseTitle: course?.title || "",
-        paymentType: "one_time",
-        paymentDate: format(
-          new Date(existingTx.paymentDate || ""),
-          "d MMM yyyy",
-        ),
-        userEmail: user?.email || "",
-        userName: user?.name || "Student",
-      });
+      await Promise.all([
+        await sendPaymentConfirmationEmail({
+          amountPaid: `${currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${currenciesInfo[metadata.selectedCurrency as CurrrencyType]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
+          courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+          courseTitle: course?.title || "",
+          paymentType: "one_time",
+          paymentDate: format(
+            new Date(existingTx.paymentDate || ""),
+            "d MMM yyyy",
+          ),
+          userEmail: user?.email || "",
+          userName: user?.name || "Student",
+        }),
+
+        await NotificationService.create({
+          type: "COURSE_ADDED",
+          userId: user?.id || "",
+          payload: {
+            cohortId: existingTx?.paymentStatus?.cohortId || undefined,
+            cohortName: existingTx?.paymentStatus?.cohort?.name,
+            courseTitle: course?.title,
+            courseId: course?.id,
+            paymentStatusId: existingTx.paymentStatusId,
+            paymentTransactionId: existingTx.id,
+            actionUrl: `/dashboard/lessons/${course?.id}`,
+          },
+        }),
+      ]);
     }
   } catch (emailError) {
     console.error("Email notification failed:", emailError);

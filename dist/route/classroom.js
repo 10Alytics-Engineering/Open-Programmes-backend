@@ -18,6 +18,7 @@ exports.default = (router) => {
     router.post("/classroom/live-class/:id/join", middleware_1.isLoggedIn, classroom_1.joinLiveClass);
     router.get("/classroom/live-class/:id/attendance", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.getLiveClassAttendance);
     router.get("/classroom/:cohortId/live-classes", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.getCohortLiveClasses);
+    router.delete("/classroom/live-class/:liveClassId", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, classroom_1.deleteLiveClass);
     // Batch operations
     router.post("/classroom/batch/items", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, batchClassroom_1.addBatchItem);
     router.post("/classroom/batch/topics", middleware_1.isLoggedIn, middleware_1.isCourseAdmin, batchClassroom_1.createBatchTopics);
