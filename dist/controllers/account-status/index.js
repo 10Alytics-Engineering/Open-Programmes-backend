@@ -2,21 +2,25 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserAccountStatus = exports.toggleUserAccountStatus = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const notification_service_1 = require("../../services/notification.service");
 const toggleUserAccountStatus = async (req, res) => {
     try {
         const { userId } = req.params;
         const { inactive } = req.body;
+        const adminUser = req.user;
         // Validate input
         if (!userId) {
             return res.status(400).json({ error: "User ID is required" });
         }
-        if (typeof inactive !== 'boolean') {
-            return res.status(400).json({ error: "Invalid status value. Must be boolean" });
+        if (typeof inactive !== "boolean") {
+            return res
+                .status(400)
+                .json({ error: "Invalid status value. Must be boolean" });
         }
         // Check if user exists
         const existingUser = await prismadb_1.prismadb.user.findUnique({
             where: { id: userId },
-            select: { id: true, name: true, email: true, inactive: true }
+            select: { id: true, name: true, email: true, inactive: true },
         });
         if (!existingUser) {
             return res.status(404).json({ error: "User not found" });
@@ -30,14 +34,24 @@ const toggleUserAccountStatus = async (req, res) => {
                 name: true,
                 email: true,
                 inactive: true,
-                updatedAt: true
-            }
+                updatedAt: true,
+            },
         });
         // Log the action for audit purposes
-        console.log(`[USER_STATUS_CHANGE] User ${updatedUser.email} account ${inactive ? 'suspended' : 'activated'} at ${new Date().toISOString()}`);
+        console.log(`[USER_STATUS_CHANGE] User ${updatedUser.email} account ${inactive ? "suspended" : "activated"} at ${new Date().toISOString()}`);
+        if (!updatedUser.id) {
+            return res.status(400).json({
+                error: `Failed to ${inactive ? "suspend" : "activate"} user`,
+            });
+        }
+        await notification_service_1.NotificationService.create({
+            userId,
+            type: inactive ? "ACCOUNT_SUSPENDED" : "ACCOUNT_ACTIVATED",
+            relatedUserId: adminUser?.id,
+        });
         res.status(200).json({
-            message: `User account ${inactive ? 'suspended' : 'activated'} successfully`,
-            user: updatedUser
+            message: `User account ${inactive ? "suspended" : "activated"} successfully`,
+            user: updatedUser,
         });
     }
     catch (error) {
@@ -59,15 +73,15 @@ const getUserAccountStatus = async (req, res) => {
                 name: true,
                 email: true,
                 inactive: true,
-                updatedAt: true
-            }
+                updatedAt: true,
+            },
         });
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
         res.status(200).json({
             user,
-            status: user.inactive ? 'inactive' : 'active'
+            status: user.inactive ? "inactive" : "active",
         });
     }
     catch (error) {

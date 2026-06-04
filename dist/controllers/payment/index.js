@@ -45,6 +45,7 @@ const mail_1 = require("./mail");
 const node_cron_1 = __importDefault(require("node-cron"));
 const date_fns_1 = require("date-fns");
 const paymentService_1 = require("../../utils/paymentService");
+const notification_service_1 = require("../../services/notification.service");
 if (!process.env.PAYSTACK_SECRET_KEY) {
     console.warn("⚠️ PAYSTACK_SECRET_KEY is missing from environment variables!");
 }
@@ -1009,32 +1010,62 @@ async function verifyPayment(reference) {
             const totalPaid = paidInstallments.reduce((s, i) => s + i.amount, 0);
             const totalRemaining = unpaidInstallments.reduce((s, i) => s + i.amount, 0);
             console.log(`Installment payment summary for user ${user?.id} - Paid: ${totalPaid}, Remaining: ${totalRemaining}`);
-            await (0, mail_1.sendPaymentConfirmationEmail)({
-                amountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${paymentService_1.currenciesInfo[metadata.selectedCurrency]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
-                courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-                courseTitle: course?.title || "",
-                paymentType: "installment",
-                currentInstallment: metadata.installmentNumber || 1,
-                remainingBalance: totalRemaining > 0
-                    ? `${paymentService_1.currenciesInfo.NGN.symbol}${totalRemaining.toLocaleString()}`
-                    : "0",
-                totalAmountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(totalPaid).toLocaleString()}`,
-                totalInstallments: metadata.installmentsCount || 1,
-                paymentDate: (0, date_fns_1.format)(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
-                userEmail: user?.email || "",
-                userName: user?.name || "Student",
-            });
+            await Promise.all([
+                await (0, mail_1.sendPaymentConfirmationEmail)({
+                    amountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${paymentService_1.currenciesInfo[metadata.selectedCurrency]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
+                    courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+                    courseTitle: course?.title || "",
+                    paymentType: "installment",
+                    currentInstallment: metadata.installmentNumber || 1,
+                    remainingBalance: totalRemaining > 0
+                        ? `${paymentService_1.currenciesInfo.NGN.symbol}${totalRemaining.toLocaleString()}`
+                        : "0",
+                    totalAmountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(totalPaid).toLocaleString()}`,
+                    totalInstallments: metadata.installmentsCount || 1,
+                    paymentDate: (0, date_fns_1.format)(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
+                    userEmail: user?.email || "",
+                    userName: user?.name || "Student",
+                }),
+                await notification_service_1.NotificationService.create({
+                    type: "COURSE_ADDED",
+                    userId: user?.id || "",
+                    payload: {
+                        cohortId: existingTx?.paymentStatus?.cohortId || undefined,
+                        cohortName: existingTx?.paymentStatus?.cohort?.name,
+                        courseTitle: course?.title,
+                        courseId: course?.id,
+                        paymentStatusId: existingTx.paymentStatusId,
+                        paymentTransactionId: existingTx.id,
+                        actionUrl: `/dashboard/lessons/${course?.id}`,
+                    },
+                }),
+            ]);
         }
         else {
-            await (0, mail_1.sendPaymentConfirmationEmail)({
-                amountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${paymentService_1.currenciesInfo[metadata.selectedCurrency]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
-                courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-                courseTitle: course?.title || "",
-                paymentType: "one_time",
-                paymentDate: (0, date_fns_1.format)(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
-                userEmail: user?.email || "",
-                userName: user?.name || "Student",
-            });
+            await Promise.all([
+                await (0, mail_1.sendPaymentConfirmationEmail)({
+                    amountPaid: `${paymentService_1.currenciesInfo.NGN.symbol}${Number(existingTx.amount).toLocaleString()}${metadata.selectedCurrency && metadata.selectedCurrency !== "NGN" ? ` (${paymentService_1.currenciesInfo[metadata.selectedCurrency]?.symbol} ${metadata.currencyAmount.toLocaleString()})` : ""}`,
+                    courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+                    courseTitle: course?.title || "",
+                    paymentType: "one_time",
+                    paymentDate: (0, date_fns_1.format)(new Date(existingTx.paymentDate || ""), "d MMM yyyy"),
+                    userEmail: user?.email || "",
+                    userName: user?.name || "Student",
+                }),
+                await notification_service_1.NotificationService.create({
+                    type: "COURSE_ADDED",
+                    userId: user?.id || "",
+                    payload: {
+                        cohortId: existingTx?.paymentStatus?.cohortId || undefined,
+                        cohortName: existingTx?.paymentStatus?.cohort?.name,
+                        courseTitle: course?.title,
+                        courseId: course?.id,
+                        paymentStatusId: existingTx.paymentStatusId,
+                        paymentTransactionId: existingTx.id,
+                        actionUrl: `/dashboard/lessons/${course?.id}`,
+                    },
+                }),
+            ]);
         }
     }
     catch (emailError) {

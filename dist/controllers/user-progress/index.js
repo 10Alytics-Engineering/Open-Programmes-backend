@@ -16,15 +16,29 @@ const updateCourseVideoProgress = async (req, res) => {
         if (!courseId || !videoId) {
             return res.status(400).json({ message: "Missing required fields" });
         }
-        const existingProgress = await prismadb_1.prismadb.userProgress.findUnique({
-            where: {
-                userId_videoId_courseId: {
-                    userId: user.id,
-                    videoId,
-                    courseId,
+        const [existingProgress, userCohort] = await Promise.all([
+            prismadb_1.prismadb.userProgress.findUnique({
+                where: {
+                    userId_videoId_courseId: {
+                        userId: user.id,
+                        videoId,
+                        courseId,
+                    },
                 },
-            },
-        });
+            }),
+            prismadb_1.prismadb.userCohort.findFirst({
+                where: {
+                    isActive: true,
+                    userId: user?.id,
+                },
+                orderBy: { createdAt: "desc" },
+            }),
+        ]);
+        if (!userCohort?.id) {
+            return res
+                .status(404)
+                .json({ status: "error", message: "Active cohort for user not found" });
+        }
         const shouldBeCompleted = existingProgress?.isCompleted || progressPercentage >= 70;
         const finalProgressPercentage = shouldBeCompleted
             ? Math.max(existingProgress?.progressPercentage || 0, progressPercentage)
@@ -54,6 +68,30 @@ const updateCourseVideoProgress = async (req, res) => {
                 isCompleted: shouldBeCompleted,
             },
         });
+        if (!existingProgress?.isCompleted && progressPercentage >= 70) {
+            await prismadb_1.prismadb.courseCohortLeaderboard.upsert({
+                where: {
+                    userId_courseId_cohortId: {
+                        cohortId: userCohort?.cohortId,
+                        courseId: userCohort?.courseId,
+                        userId: user.id,
+                    },
+                },
+                create: {
+                    assignmentPoints: 0,
+                    points: 1,
+                    lessonQuizPoints: 0,
+                    lessonVideoPoints: 1,
+                    cohortId: userCohort?.cohortId,
+                    courseId: userCohort?.courseId,
+                    userId: user.id,
+                },
+                update: {
+                    lessonVideoPoints: { increment: 1 },
+                    points: { increment: 1 },
+                },
+            });
+        }
         res.status(200).json(progressRecord);
     }
     catch (error) {
@@ -71,27 +109,40 @@ const submitQuizAnswer = async (req, res) => {
             return res.status(400).json({ message: "Missing answer ID" });
         }
         // Get answer with quiz info using your schema relations
-        const answer = await prismadb_1.prismadb.quizAnswer.findUnique({
-            where: { id: quizAnswerId },
-            include: {
-                quiz: {
-                    include: {
-                        courseModule: true,
+        const [answer, existingAnswer, userCohort] = await Promise.all([
+            prismadb_1.prismadb.quizAnswer.findUnique({
+                where: { id: quizAnswerId },
+                include: {
+                    quiz: {
+                        include: {
+                            courseModule: true,
+                        },
                     },
                 },
-            },
-        });
+            }),
+            prismadb_1.prismadb.userQuizAnswer.findFirst({
+                where: {
+                    userId: user.id,
+                    quizAnswerId,
+                },
+            }),
+            prismadb_1.prismadb.userCohort.findFirst({
+                where: {
+                    isActive: true,
+                    userId: user?.id,
+                },
+                orderBy: { createdAt: "desc" },
+            }),
+        ]);
         if (!answer)
             return res.status(404).json({ message: "Answer not found" });
-        // Check for existing answer
-        const existingAnswer = await prismadb_1.prismadb.userQuizAnswer.findFirst({
-            where: {
-                userId: user.id,
-                quizAnswerId,
-            },
-        });
         if (existingAnswer) {
             return res.status(400).json({ message: "Already answered this quiz" });
+        }
+        if (!userCohort?.id) {
+            return res
+                .status(404)
+                .json({ status: "error", message: "Active cohort for user not found" });
         }
         // Record answer
         const userAnswer = await prismadb_1.prismadb.userQuizAnswer.create({
@@ -102,19 +153,25 @@ const submitQuizAnswer = async (req, res) => {
         });
         // Update leaderboard if correct
         if (answer.isCorrect) {
-            await prismadb_1.prismadb.leaderboard.upsert({
+            await prismadb_1.prismadb.courseCohortLeaderboard.upsert({
                 where: {
-                    userId_quizId: {
+                    userId_courseId_cohortId: {
+                        cohortId: userCohort?.cohortId,
+                        courseId: userCohort?.courseId,
                         userId: user.id,
-                        quizId: answer.quiz.id,
                     },
                 },
                 create: {
-                    userId: user.id,
-                    quizId: answer.quiz.id,
+                    assignmentPoints: 0,
                     points: 1,
+                    lessonQuizPoints: 1,
+                    lessonVideoPoints: 0,
+                    cohortId: userCohort?.cohortId,
+                    courseId: userCohort?.courseId,
+                    userId: user.id,
                 },
                 update: {
+                    lessonQuizPoints: { increment: 1 },
                     points: { increment: 1 },
                 },
             });

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseVideosByCourseId = exports.deleteCourseVideo = exports.updateCourseVideo = exports.createCourseVideo = exports.getCourseVideo = exports.getCourseVideos = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const notification_service_1 = require("../../services/notification.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -114,6 +115,14 @@ const createCourseVideo = async (req, res) => {
                 id: moduleId,
                 courseWeekId: weekId,
             },
+            include: {
+                CourseWeek: {
+                    select: {
+                        id: true,
+                        title: true,
+                    },
+                },
+            },
         });
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
@@ -139,6 +148,32 @@ const createCourseVideo = async (req, res) => {
                 status: "Failed to add course vidoe",
                 message: "An error occured while saving course video",
             });
+        }
+        const students = await prismadb_1.prismadb.purchase.findMany({
+            where: {
+                courseId,
+                user: {
+                    inactive: false,
+                },
+            },
+            select: {
+                userId: true,
+            },
+        });
+        const studentIds = students.map((purchase) => purchase.userId);
+        const user = req.user;
+        if (studentIds.length > 0) {
+            await notification_service_1.NotificationService.createMany(studentIds, "COURSE_LESSON_VIDEO_ADDED", {
+                courseId: existingCourse.id,
+                courseTitle: existingCourse.title,
+                weekId,
+                weekName: existingModule.CourseWeek.title,
+                moduleId,
+                moduleTitle: existingModule.title,
+                videoId: courseVideo.id,
+                videoTitle: courseVideo.title,
+                actionUrl: `/dashboard/lessons/${existingCourse.id}?videoId=${courseVideo.id}&weekId=${weekId}&moduleId=${moduleId}`,
+            }, user.id);
         }
         return res.status(201).json({
             status: "Course video created",
@@ -178,6 +213,14 @@ const updateCourseVideo = async (req, res) => {
                     id: moduleId,
                     courseWeekId: weekId,
                 },
+                include: {
+                    CourseWeek: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
+                },
             }),
             prismadb_1.prismadb.projectVideo.findFirst({
                 where: {
@@ -204,6 +247,38 @@ const updateCourseVideo = async (req, res) => {
                 ...body,
             },
         });
+        if (!updatedVideo.id) {
+            return res.status(422).json({
+                status: "Failed to update course video",
+                message: "An error occured while updating course video",
+            });
+        }
+        const students = await prismadb_1.prismadb.purchase.findMany({
+            where: {
+                courseId,
+                user: {
+                    inactive: false,
+                },
+            },
+            select: {
+                userId: true,
+            },
+        });
+        const studentIds = students.map((purchase) => purchase.userId);
+        const user = req.user;
+        if (studentIds.length > 0) {
+            await notification_service_1.NotificationService.createMany(studentIds, "COURSE_LESSON_VIDEO_EDITED", {
+                courseId: existingCourse.id,
+                courseTitle: existingCourse.title,
+                weekId,
+                weekName: existingModule.CourseWeek.title,
+                moduleId,
+                moduleTitle: existingModule.title,
+                videoId: existingVideo.id,
+                videoTitle: existingVideo.title,
+                actionUrl: `/dashboard/lessons/${existingCourse.id}?videoId=${existingVideo.id}&weekId=${weekId}&moduleId=${moduleId}`,
+            }, user.id);
+        }
         return res.status(200).json({ status: "Course video updated" });
     }
     catch (error) {
@@ -226,40 +301,81 @@ const deleteCourseVideo = async (req, res) => {
         if (!videoId) {
             return res.status(400).json({ message: "VideoId is required" });
         }
-        const existingCourse = await prismadb_1.prismadb.course.findUnique({
-            where: {
-                id: courseId,
-            },
-        });
+        const [existingCourse, existingModule, existingVideo] = await Promise.all([
+            prismadb_1.prismadb.course.findUnique({
+                where: {
+                    id: courseId,
+                },
+            }),
+            prismadb_1.prismadb.module.findUnique({
+                where: {
+                    id: moduleId,
+                    courseWeekId: weekId,
+                },
+                include: {
+                    CourseWeek: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
+                },
+            }),
+            prismadb_1.prismadb.projectVideo.findUnique({
+                where: {
+                    id: videoId,
+                    moduleId,
+                    courseId,
+                },
+            }),
+        ]);
         if (!existingCourse) {
             return res.status(404).json({ message: "Course does not exist" });
         }
-        const existingModule = await prismadb_1.prismadb.module.findUnique({
-            where: {
-                id: moduleId,
-                courseWeekId: weekId,
-            },
-        });
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const existingVideo = await prismadb_1.prismadb.projectVideo.findUnique({
-            where: {
-                id: videoId,
-                moduleId,
-                courseId,
-            },
-        });
         if (!existingVideo) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        await prismadb_1.prismadb.projectVideo.delete({
+        const deletedVideo = await prismadb_1.prismadb.projectVideo.delete({
             where: {
                 id: videoId,
                 moduleId,
                 courseId,
             },
         });
+        if (!deletedVideo.id) {
+            return res.status(422).json({
+                status: "Failed to delete course video",
+                message: "An error occured while deleting course video",
+            });
+        }
+        const students = await prismadb_1.prismadb.purchase.findMany({
+            where: {
+                courseId,
+                user: {
+                    inactive: false,
+                },
+            },
+            select: {
+                userId: true,
+            },
+        });
+        const studentIds = students.map((purchase) => purchase.userId);
+        const user = req.user;
+        if (studentIds.length > 0) {
+            await notification_service_1.NotificationService.createMany(studentIds, "COURSE_LESSON_VIDEO_REMOVED", {
+                courseId: existingCourse.id,
+                courseTitle: existingCourse.title,
+                weekId,
+                weekName: existingModule.CourseWeek.title,
+                moduleId,
+                moduleTitle: existingModule.title,
+                videoId: deletedVideo.id,
+                videoTitle: deletedVideo.title,
+            }, user.id);
+        }
         return res.status(200).json({ status: "Course video deleted" });
     }
     catch (error) {

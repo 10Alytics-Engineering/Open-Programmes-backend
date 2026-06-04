@@ -117,6 +117,7 @@ model User {
   accounts                                                           Account[]
   streamPost                                                         StreamPost[]
   notifications                                                      Notification[]
+  userCourseCohortLeaderBoards                                       CourseCohortLeaderboard[]
   lastLoginDate                                                      DateTime?
   lastNotificationInActivityDate                                     DateTime?
 }
@@ -184,6 +185,7 @@ model Cohort {
   cohortCourses         CohortCourse[]
   paymentStatuses       PaymentStatus[]
   users                 UserCohort[]
+  cohortLeaderBoards    CourseCohortLeaderboard[]
 }
 
 model CohortCourse {
@@ -361,6 +363,7 @@ model Course {
   tags                               Tag[]
   timetable                          TimeTable[]
   facilitators                       Facilitator[]        @relation("CourseToFacilitator")
+  courseLeaderBoards                 CourseCohortLeaderboard[] 
 }
 
 model CoursePricingPlan {
@@ -492,6 +495,27 @@ model Leaderboard {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, quizId])
+}
+
+model CourseCohortLeaderboard {
+  id        String   @id @default(cuid())
+  userId    String
+  cohortId  String
+  courseId  String
+
+  points    Int
+  assignmentPoints Int
+  lessonQuizPoints  Int
+  lessonVideoPoints Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  cohort    Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId, cohortId])
 }
 
 model TimeTable {
@@ -988,7 +1012,33 @@ enum NotificationType {
   COHORT_SWITCHED
   ACCOUNT_SUSPENDED
   ACCOUNT_ACTIVATED
+  
   COURSE_ADDED
+  COURSE_REMOVED
+
+  COURSE_LESSON_VIDEO_ADDED
+  COURSE_LESSON_VIDEO_EDITED
+  COURSE_LESSON_VIDEO_REMOVED
+  
+  COURSE_QUIZ_ADDED
+  COURSE_QUIZ_EDITED
+
+  CLASSROOM_MATERIAL_ADDED
+  CLASSROOM_MATERIAL_REMOVED
+
+  CLASSROOM_RECORDING_ADDED 
+  CLASSROOM_RECORDING_REMOVED
+
+  CLASSROOM_LIVE_CLASS_ADDED
+  CLASSROOM_LIVE_CLASS_REMOVED
+
+  CLASSROOM_TOPIC_ADDED
+  CLASSROOM_TOPIC_REMOVED
+
+  CLASSROOM_ASSIGNMENT_ADDED
+  CLASSROOM_ASSIGNMENT_SUBMITTED
+  CLASSROOM_ASSIGNMENT_GRADED
+  CLASSROOM_ASSIGNMENT_REMOVED
 }
 
 enum UserRole {

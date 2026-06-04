@@ -8,6 +8,7 @@ const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("./mail");
 const nodemailer_1 = require("../../utils/nodemailer");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const notification_service_1 = require("../../services/notification.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -757,80 +758,155 @@ const addUserCourse = async (req, res) => {
         const { userId } = req.params;
         const { courseId, cohortId } = req.body;
         if (!userId || !courseId) {
-            return res
-                .status(400)
-                .json({ message: "UserId and CourseId are required" });
+            return res.status(400).json({
+                message: "UserId and CourseId are required",
+            });
         }
-        const user = await prismadb_1.prismadb.user.findUnique({
-            where: { id: userId },
-        });
+        const adminUser = req.user;
+        const [user, course, existingPurchase, fallbackCohort] = await Promise.all([
+            prismadb_1.prismadb.user.findUnique({
+                where: { id: userId },
+                select: {
+                    id: true,
+                    ongoing_courses: true,
+                },
+            }),
+            prismadb_1.prismadb.course.findUnique({
+                where: { id: courseId },
+                select: {
+                    id: true,
+                    title: true,
+                },
+            }),
+            prismadb_1.prismadb.purchase.findFirst({
+                where: {
+                    userId,
+                    courseId,
+                },
+                select: {
+                    id: true,
+                },
+            }),
+            cohortId
+                ? Promise.resolve(null)
+                : prismadb_1.prismadb.cohort.findFirst({
+                    where: { courseId },
+                    orderBy: { createdAt: "desc" },
+                    select: {
+                        id: true,
+                        name: true,
+                        courseId: true,
+                    },
+                }),
+        ]);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-        const course = await prismadb_1.prismadb.course.findUnique({
-            where: { id: courseId },
-        });
         if (!course) {
             return res.status(404).json({ message: "Course not found" });
         }
-        // Checking if user already has this course
-        const existingPurchase = await prismadb_1.prismadb.purchase.findFirst({
-            where: {
-                userId,
-                courseId,
-            },
-        });
         if (existingPurchase) {
-            return res.status(400).json({ message: "User already has this course" });
+            return res.status(400).json({
+                message: "User already has this course",
+            });
         }
-        let courseCohortId = cohortId;
-        // Finding the latest cohort for this course
-        if (!cohortId) {
-            const latestCohort = await prismadb_1.prismadb.cohort.findFirst({
+        const selectedCohortId = cohortId || fallbackCohort?.id;
+        if (!selectedCohortId) {
+            return res.status(400).json({
+                message: "This course does not have a cohort",
+            });
+        }
+        const selectedCohort = cohortId
+            ? await prismadb_1.prismadb.cohort.findFirst({
                 where: {
+                    id: selectedCohortId,
                     courseId,
                 },
-                orderBy: {
-                    createdAt: "desc",
+                select: {
+                    id: true,
+                    name: true,
+                    courseId: true,
+                },
+            })
+            : fallbackCohort;
+        if (!selectedCohort) {
+            return res.status(400).json({
+                message: "Selected cohort does not belong to this course",
+            });
+        }
+        const shouldAddToOngoing = !user.ongoing_courses.includes(courseId);
+        const result = await prismadb_1.prismadb.$transaction(async (tx) => {
+            const purchase = await tx.purchase.create({
+                data: {
+                    userId,
+                    courseId,
                 },
             });
-            courseCohortId = latestCohort?.id;
-        }
-        if (!courseCohortId) {
-            return res
-                .status(400)
-                .json({ message: "This course does not have a cohort" });
-        }
-        // Add the course to user
-        const purchase = await prismadb_1.prismadb.purchase.create({
-            data: {
-                userId,
-                courseId,
-            },
-        });
-        // Update user's ongoing courses if not included
-        await prismadb_1.prismadb.user.update({
-            where: { id: userId },
-            data: {
-                ongoing_courses: {
-                    push: courseId,
+            const userCohort = await tx.userCohort.upsert({
+                where: {
+                    userId_cohortId_courseId: {
+                        userId,
+                        cohortId: selectedCohort.id,
+                        courseId,
+                    },
                 },
-            },
+                create: {
+                    userId,
+                    cohortId: selectedCohort.id,
+                    courseId,
+                    isPaymentActive: true,
+                    isActive: true,
+                },
+                update: {
+                    isPaymentActive: true,
+                    archivedAt: null,
+                },
+            });
+            const updatedUser = shouldAddToOngoing
+                ? await tx.user.update({
+                    where: { id: userId },
+                    data: {
+                        ongoing_courses: {
+                            push: courseId,
+                        },
+                    },
+                    select: {
+                        id: true,
+                        ongoing_courses: true,
+                    },
+                })
+                : null;
+            return {
+                purchase,
+                userCohort,
+                updatedUser,
+            };
         });
-        await prismadb_1.prismadb.userCohort.create({
-            data: {
-                userId,
-                cohortId: courseCohortId,
+        if (!result?.purchase?.id) {
+            return res.status(400).json({
+                status: "error",
+                message: "Failed to add course to user",
+            });
+        }
+        await notification_service_1.NotificationService.create({
+            userId,
+            type: "COURSE_ADDED",
+            payload: {
                 courseId,
-                isPaymentActive: true,
+                courseTitle: course.title,
+                cohortId,
+                cohortName: selectedCohort.name,
+                actionUrl: `/dashboard/lessons/${courseId}`,
             },
+            relatedUserId: adminUser?.id,
         });
         return res.status(200).json({
             status: "success",
             message: "Course added and user enrolled in cohort",
             data: {
-                purchase,
-                cohort: { id: courseCohortId },
+                purchase: result.purchase,
+                cohort: selectedCohort,
+                userCohort: result.userCohort,
             },
         });
     }
@@ -848,52 +924,75 @@ const removeUserCourse = async (req, res) => {
                 .status(400)
                 .json({ message: "UserId and CourseId are required" });
         }
-        const user = await prismadb_1.prismadb.user.findUnique({
-            where: { id: userId },
-        });
+        const adminUser = req.user;
+        const [user, course, existingPurchase] = await Promise.all([
+            prismadb_1.prismadb.user.findUnique({
+                where: { id: userId },
+            }),
+            prismadb_1.prismadb.course.findUnique({
+                where: { id: courseId },
+            }),
+            prismadb_1.prismadb.purchase.findFirst({
+                where: {
+                    userId,
+                    courseId,
+                },
+            }),
+        ]);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-        const course = await prismadb_1.prismadb.course.findUnique({
-            where: { id: courseId },
-        });
         if (!course) {
             return res.status(404).json({ message: "Course not found" });
         }
-        const existingPurchase = await prismadb_1.prismadb.purchase.findFirst({
-            where: {
-                userId,
-                courseId,
-            },
-        });
         if (!existingPurchase) {
             return res.status(400).json({ message: "User doesn't have this course" });
         }
-        // Remove user from any cohorts associated with this course
-        await prismadb_1.prismadb.userCohort.deleteMany({
-            where: {
-                userId,
-                courseId,
-            },
-        });
-        // Remove the course purchase
-        await prismadb_1.prismadb.purchase.deleteMany({
-            where: {
-                userId,
-                courseId,
-            },
-        });
-        // Update user's ongoing and completed courses arrays
-        await prismadb_1.prismadb.user.update({
-            where: { id: userId },
-            data: {
-                ongoing_courses: {
-                    set: user.ongoing_courses.filter((id) => id !== courseId),
+        const result = await prismadb_1.prismadb.$transaction(async (tx) => {
+            // Remove user from any cohorts associated with this course
+            await tx.userCohort.deleteMany({
+                where: {
+                    userId,
+                    courseId,
                 },
-                completed_courses: {
-                    set: user.completed_courses.filter((id) => id !== courseId),
+            });
+            // Remove the course purchase
+            await tx.purchase.deleteMany({
+                where: {
+                    userId,
+                    courseId,
                 },
+            });
+            // Update user's ongoing and completed courses arrays
+            const updatedUser = await tx.user.update({
+                where: { id: userId },
+                data: {
+                    ongoing_courses: {
+                        set: user.ongoing_courses.filter((id) => id !== courseId),
+                    },
+                    completed_courses: {
+                        set: user.completed_courses.filter((id) => id !== courseId),
+                    },
+                },
+            });
+            return {
+                updatedUser,
+            };
+        });
+        if (!result?.updatedUser) {
+            return res.status(422).json({
+                status: "error",
+                message: "Failed to remove course for user",
+            });
+        }
+        await notification_service_1.NotificationService.create({
+            userId,
+            type: "COURSE_REMOVED",
+            payload: {
+                courseId,
+                courseTitle: course.title,
             },
+            relatedUserId: adminUser?.id,
         });
         return res.status(200).json({
             status: "success",
@@ -914,6 +1013,7 @@ const updateUserCohort = async (req, res) => {
                 message: "UserId, cohortId and courseId are required",
             });
         }
+        const adminUser = req.user;
         const [currentEnrollment, newCohort, user] = await Promise.all([
             prismadb_1.prismadb.userCohort.findFirst({
                 where: {
@@ -927,6 +1027,12 @@ const updateUserCohort = async (req, res) => {
                             id: true,
                             name: true,
                             courseId: true,
+                            course: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                },
+                            },
                         },
                     },
                 },
@@ -937,6 +1043,12 @@ const updateUserCohort = async (req, res) => {
                     id: true,
                     name: true,
                     courseId: true,
+                    course: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
                 },
             }),
             prismadb_1.prismadb.user.findUnique({
@@ -1002,25 +1114,27 @@ const updateUserCohort = async (req, res) => {
                     previousEnrollmentId: currentEnrollment.id,
                 },
             });
-            await tx.notification.create({
-                data: {
-                    userId,
-                    type: "COHORT_SWITCHED",
-                    title: "Cohort Updated",
-                    message: `Your cohort has been switched to ${newCohort.name}`,
-                    details: JSON.stringify({
-                        oldCohortId: currentEnrollment.cohortId,
-                        newCohortId: cohortId,
-                        courseId,
-                        reason,
-                    }),
-                },
-            });
             return {
                 previousCohort: archivedEnrollment,
                 newCohort: newEnrollment,
             };
         });
+        if (result.newCohort) {
+            await notification_service_1.NotificationService.create({
+                userId,
+                type: "COHORT_SWITCHED",
+                payload: {
+                    courseId,
+                    courseTitle: currentEnrollment.cohort.course.title,
+                    cohortId,
+                    cohortName: newCohort.name,
+                    previousCohortId: currentEnrollment.cohortId,
+                    previousCohortName: currentEnrollment.cohort.name,
+                    reason,
+                },
+                relatedUserId: adminUser?.id,
+            });
+        }
         if (user.email) {
             const html = `
         <h2>Cohort Update</h2>
@@ -1209,6 +1323,7 @@ const switchUserCourse = async (req, res) => {
     try {
         const { userId } = req.params;
         const { currentCohortId, currentCourseId, newCourseId, newCohortId, reason, } = req.body;
+        const adminUser = req.user;
         if (!userId ||
             !newCourseId ||
             !newCohortId ||
@@ -1308,20 +1423,22 @@ const switchUserCourse = async (req, res) => {
             return newEnrollment;
         });
         // Create notification for course switch
-        await prismadb_1.prismadb.notification.create({
-            data: {
-                userId,
-                type: "COURSE_SWITCHED",
-                title: "Course Updated",
-                message: `Your course on ${currentCourse.title} has been switched to ${newCourse.title}`,
-                details: JSON.stringify({
-                    newCourseId,
-                    newCohortId,
-                    courseName: newCourse.title,
-                    cohortName: newCohort.name,
-                    reason,
-                }),
+        await notification_service_1.NotificationService.create({
+            userId,
+            type: "COURSE_SWITCHED",
+            payload: {
+                courseId: newCourse.id,
+                courseTitle: newCourse.title,
+                previousCourseId: currentCourse.id,
+                previousCourseTitle: currentCourse.title,
+                cohortId: newCohort.id,
+                cohortName: newCohort.name,
+                previousCohortId: currentCourseCohort.id,
+                previousCohortName: currentCourseCohort.name,
+                reason,
+                actionUrl: `/dashboard/lessons/${newCourse.id}`,
             },
+            relatedUserId: adminUser?.id,
         });
         // Send email notification
         if (user.email) {
