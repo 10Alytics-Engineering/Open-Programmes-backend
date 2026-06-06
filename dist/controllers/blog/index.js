@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteBlog = exports.updateBlog = exports.createBlog = exports.getBlog = exports.getBlogs = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -78,10 +79,21 @@ const getBlog = async (req, res) => {
                 images: true,
             },
         });
+        if (!existingBlog?.id)
+            return res.status(404).json({ error: "Blog not found" });
+        const images = await Promise.all(existingBlog.images.map(async (image) => {
+            if (image.url) {
+                return image;
+            }
+            else {
+                const url = (await (0, upload_service_1.generateSignedFileUrl)(image.key || "")) || "";
+                return { ...image, url: url };
+            }
+        }));
         res.status(200).json({
             status: "success",
             message: existingBlog ? null : "Nonexistent Blog!",
-            data: existingBlog,
+            data: { ...existingBlog, images },
         });
     }
     catch (error) {
@@ -103,7 +115,7 @@ const createBlog = async (req, res) => {
                 images: images && images.length
                     ? {
                         create: images.map((image) => ({
-                            url: image.url,
+                            key: image.key,
                         })),
                     }
                     : undefined,
@@ -156,7 +168,7 @@ const updateBlog = async (req, res) => {
                 images: images && images.length
                     ? {
                         create: images.map((image) => ({
-                            url: image.url,
+                            key: image.key,
                         })),
                     }
                     : undefined,

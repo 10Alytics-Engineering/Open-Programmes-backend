@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseVideosByCourseId = exports.deleteCourseVideo = exports.updateCourseVideo = exports.createCourseVideo = exports.getCourseVideo = exports.getCourseVideos = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const notification_service_1 = require("../../services/notification.service");
+const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -37,9 +38,16 @@ const getCourseVideos = async (req, res) => {
                 createdAt: "asc",
             },
         });
-        return res
-            .status(200)
-            .json({ status: "success", message: null, data: courseVideos });
+        const videosWithThumbnailUrls = await (0, upload_service_1.attachSignedUrls)({
+            items: courseVideos,
+            keyField: "thumbnailKey",
+            urlField: "thumbnailUrl",
+        });
+        return res.status(200).json({
+            status: "success",
+            message: null,
+            data: videosWithThumbnailUrls,
+        });
     }
     catch (error) {
         handleServerError(error, res);
@@ -80,9 +88,14 @@ const getCourseVideo = async (req, res) => {
         if (!video) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        return res
-            .status(200)
-            .json({ status: "success", message: null, data: video });
+        const thumbnailUrl = video.thumbnailKey
+            ? await (0, upload_service_1.generateSignedFileUrl)(video.thumbnailKey || "")
+            : video.thumbnailUrl || "";
+        return res.status(200).json({
+            status: "success",
+            message: null,
+            data: { ...video, thumbnailUrl },
+        });
     }
     catch (error) {
         handleServerError(error, res);
@@ -91,7 +104,7 @@ const getCourseVideo = async (req, res) => {
 exports.getCourseVideo = getCourseVideo;
 const createCourseVideo = async (req, res) => {
     try {
-        const { title, videoUrl, thumbnailUrl, duration, videoType, } = req.body;
+        const { title, videoUrl, thumbnailKey, duration, videoType, } = req.body;
         const { courseId, weekId, moduleId } = req.params;
         if (!courseId) {
             return res.status(400).json({ message: "CourseId is required" });
@@ -131,7 +144,7 @@ const createCourseVideo = async (req, res) => {
             data: {
                 title,
                 videoUrl,
-                thumbnailUrl,
+                thumbnailKey,
                 duration,
                 videoType: videoType || "VIMEO",
                 moduleId,

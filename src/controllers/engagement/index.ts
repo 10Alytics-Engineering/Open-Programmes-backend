@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { NebiantUser } from "../../middleware";
+import { attachSignedUrls } from "../../services/upload.service";
 
 export const getStudentEngagement = async (req: Request, res: Response) => {
   try {
@@ -97,13 +98,13 @@ export const getStudentEngagement = async (req: Request, res: Response) => {
       const videosCompleted = videoDetails.filter(
         (v) =>
           v.courseModule?.CourseWeek?.courseId === course.courseId &&
-          completedVideos.some((cv) => cv.videoId === v.id)
+          completedVideos.some((cv) => cv.videoId === v.id),
       ).length;
 
       const quizzesCompleted = quizAnswers.filter(
         (q) =>
           q.quizAnswer.quiz.courseModule?.CourseWeek?.courseId ===
-          course.courseId
+          course.courseId,
       ).length;
 
       // FIXED: Get last activity without relying on video relation
@@ -111,9 +112,9 @@ export const getStudentEngagement = async (req: Request, res: Response) => {
         (item) =>
           ("videoId" in item
             ? videoDetails.find((v) => v.id === item.videoId)?.courseModule
-              ?.CourseWeek?.courseId
+                ?.CourseWeek?.courseId
             : item.quizAnswer.quiz.courseModule?.CourseWeek?.courseId) ===
-          course.courseId
+          course.courseId,
       );
 
       return {
@@ -138,17 +139,17 @@ export const getStudentEngagement = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Error fetching student engagement:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       status: "error",
       message: "Internal server error",
-      data: null 
+      data: null,
     });
   }
 };
 
 export const getVideoEngagementDetails = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { videoId } = req.params;
@@ -234,7 +235,7 @@ export const getVideoEngagementDetails = async (
 
 export const getCourseEngagementOverview = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { courseId } = req.params;
@@ -318,7 +319,7 @@ export const getCourseEngagementOverview = async (
           totalQuizzes: courseQuizzes.length,
           lastActivity: lastActivity?.updatedAt,
         };
-      })
+      }),
     );
 
     // Calculate overall course metrics
@@ -326,12 +327,12 @@ export const getCourseEngagementOverview = async (
     const averageVideoCompletion =
       engagementData.reduce(
         (acc, curr) => acc + (curr.videosCompleted / curr.totalVideos) * 100,
-        0
+        0,
       ) / totalStudents;
     const averageQuizCompletion =
       engagementData.reduce(
         (acc, curr) => acc + (curr.quizzesCompleted / curr.totalQuizzes) * 100,
-        0
+        0,
       ) / totalStudents;
 
     res.status(200).json({
@@ -342,7 +343,7 @@ export const getCourseEngagementOverview = async (
       studentEngagement: engagementData.sort(
         (a, b) =>
           new Date(b.lastActivity || 0).getTime() -
-          new Date(a.lastActivity || 0).getTime()
+          new Date(a.lastActivity || 0).getTime(),
       ),
     });
   } catch (error) {
@@ -350,7 +351,6 @@ export const getCourseEngagementOverview = async (
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
 
 export const getCourseVideos = async (req: Request, res: Response) => {
   try {
@@ -364,6 +364,7 @@ export const getCourseVideos = async (req: Request, res: Response) => {
         title: true,
         duration: true,
         thumbnailUrl: true,
+        thumbnailKey: true,
         createdAt: true,
         courseModule: {
           select: {
@@ -371,43 +372,52 @@ export const getCourseVideos = async (req: Request, res: Response) => {
             CourseWeek: {
               select: {
                 title: true,
-                courseId: true
-              }
-            }
-          }
-        }
+                courseId: true,
+              },
+            },
+          },
+        },
       },
       orderBy: {
-        createdAt: 'asc'
-      }
+        createdAt: "asc",
+      },
     });
 
     if (!videos.length) {
-      return res.status(404).json({ message: "No videos found for this course" });
+      return res
+        .status(404)
+        .json({ message: "No videos found for this course" });
     }
 
     // Transform the data to a simpler structure
-    const formattedVideos = videos.map(video => ({
+    const formattedVideos = videos.map((video) => ({
       id: video.id,
       title: video.title,
       duration: video.duration,
       thumbnailUrl: video.thumbnailUrl,
+      thumbnailKey: video.thumbnailKey,
       moduleTitle: video.courseModule.title,
       weekTitle: video.courseModule.CourseWeek.title,
-      createdAt: video.createdAt
+      createdAt: video.createdAt,
     }));
+
+    const videosWithThumbnailUrls = await attachSignedUrls({
+      items: formattedVideos,
+      keyField: "thumbnailKey",
+      urlField: "thumbnailUrl",
+    });
 
     res.status(200).json({
       status: "success",
       message: null,
-      data: formattedVideos,
+      data: videosWithThumbnailUrls,
     });
   } catch (error) {
     console.error("Error fetching course videos:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       status: "error",
       message: "Internal server error",
-      data: null 
+      data: null,
     });
   }
 };
@@ -420,58 +430,62 @@ export const getUserCourseVideos = async (req: Request, res: Response) => {
     const userProgress = await prismadb.userProgress.findMany({
       where: {
         userId,
-        courseId
+        courseId,
       },
       select: {
         videoId: true,
         isCompleted: true,
         updatedAt: true,
-        createdAt: true
+        createdAt: true,
       },
       orderBy: {
-        updatedAt: 'desc' // Show most recently watched first
-      }
+        updatedAt: "desc", // Show most recently watched first
+      },
     });
 
     if (!userProgress.length) {
-      return res.status(404).json({ message: "No video progress found for this user in the selected course" });
+      return res.status(404).json({
+        message: "No video progress found for this user in the selected course",
+      });
     }
 
     // Get details for all videos the user has progress for
     const videos = await prismadb.projectVideo.findMany({
       where: {
-        id: { in: userProgress.map(p => p.videoId) },
-        courseId
+        id: { in: userProgress.map((p) => p.videoId) },
+        courseId,
       },
       include: {
         courseModule: {
           include: {
             CourseWeek: {
               select: {
-                title: true
-              }
-            }
-          }
-        }
-      }
+                title: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     // Combine the data
-    const formattedVideos = userProgress.map(progress => {
-      const video = videos.find(v => v.id === progress.videoId);
-      if (!video) return null;
+    const formattedVideos = userProgress
+      .map((progress) => {
+        const video = videos.find((v) => v.id === progress.videoId);
+        if (!video) return null;
 
-      return {
-        id: progress.videoId,
-        title: video.title,
-        duration: video.duration,
-        thumbnailUrl: video.thumbnailUrl,
-        moduleTitle: video.courseModule.title,
-        weekTitle: video.courseModule.CourseWeek.title,
-        isCompleted: progress.isCompleted,
-        lastWatched: progress.updatedAt
-      };
-    }).filter(video => video !== null);
+        return {
+          id: progress.videoId,
+          title: video.title,
+          duration: video.duration,
+          thumbnailUrl: video.thumbnailUrl,
+          moduleTitle: video.courseModule.title,
+          weekTitle: video.courseModule.CourseWeek.title,
+          isCompleted: progress.isCompleted,
+          lastWatched: progress.updatedAt,
+        };
+      })
+      .filter((video) => video !== null);
 
     res.status(200).json({
       status: "success",
@@ -480,10 +494,10 @@ export const getUserCourseVideos = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Error fetching user's course videos:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       status: "error",
       message: "Internal server error",
-      data: null 
+      data: null,
     });
   }
 };

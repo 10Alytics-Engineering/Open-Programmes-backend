@@ -213,6 +213,7 @@ const createCohort = async (req, res) => {
                     description: course.description,
                     price: course.price,
                     imageUrl: course.imageUrl,
+                    imageKey: course.imageKey,
                     course_duration: course.course_duration,
                     course_instructor_name: course.course_instructor_name,
                     course_instructor_image: course.course_instructor_image,
@@ -241,7 +242,7 @@ const createCohort = async (req, res) => {
                 const cohortCourseWeek = await prisma.cohortCourseWeek.create({
                     data: {
                         title: week.title,
-                        iconUrl: week.iconUrl,
+                        iconKey: week.iconKey,
                         cohortCourseId: cohortCourse.id,
                         isPublished: week.isPublished,
                     },
@@ -251,6 +252,7 @@ const createCohort = async (req, res) => {
                         data: {
                             name: attachment.name,
                             url: attachment.url,
+                            fileKey: attachment.fileKey,
                             cohortCourseWeekId: cohortCourseWeek.id,
                         },
                     });
@@ -261,6 +263,7 @@ const createCohort = async (req, res) => {
                             title: module.title,
                             description: module.description,
                             iconUrl: module.iconUrl,
+                            iconKey: module.iconKey,
                             cohortCourseWeekId: cohortCourseWeek.id,
                             cohortCourseId: cohortCourse.id,
                         },
@@ -271,6 +274,7 @@ const createCohort = async (req, res) => {
                                 title: video.title,
                                 videoUrl: video.videoUrl,
                                 thumbnailUrl: video.thumbnailUrl,
+                                thumbnailKey: video.thumbnailKey,
                                 duration: video.duration,
                                 cohortCourseModuleId: cohortCourseModule.id,
                                 cohortCourseId: cohortCourse.id,

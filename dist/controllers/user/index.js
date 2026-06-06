@@ -9,6 +9,7 @@ const mail_1 = require("./mail");
 const nodemailer_1 = require("../../utils/nodemailer");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const notification_service_1 = require("../../services/notification.service");
+const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -316,7 +317,7 @@ const getUser = async (req, res) => {
             });
         }
         // ENRICH COURSE DATA
-        const enrichedCourses = user.course_purchased.map((purchase) => {
+        const enrichedCourses = await Promise.all(user.course_purchased.map(async (purchase) => {
             const course = purchase.course;
             // =========================
             // VIDEO STATS
@@ -380,8 +381,15 @@ const getUser = async (req, res) => {
             }
             const nextInstallment = paymentInstallments.find((installment) => !installment.paid) ||
                 null;
+            const courseImageUrl = course.imageKey
+                ? await (0, upload_service_1.generateSignedFileUrl)(course.imageKey)
+                : course.imageUrl || null;
             return {
                 ...purchase,
+                course: {
+                    ...course,
+                    imageUrl: courseImageUrl,
+                },
                 courseStats: {
                     // VIDEO
                     totalVideos,
@@ -402,7 +410,7 @@ const getUser = async (req, res) => {
                     installments: paymentInstallments,
                 },
             };
-        });
+        }));
         const userResponse = {
             ...user,
             hasPassword: !!user.password,

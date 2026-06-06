@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCourseCohorts = exports.getCourseWithoutAuthWithSlug = exports.getCourseWithoutAuth = exports.deleteCourse = exports.updateCourse = exports.createCourse = exports.getCourse = exports.getCourses = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
     console.error("❌ [SERVER_ERROR]:", error);
     res.status(500).json({
@@ -34,6 +35,7 @@ const getCourses = async (req, res) => {
                                         id: true,
                                         title: true,
                                         thumbnailUrl: true,
+                                        thumbnailKey: true,
                                         duration: true,
                                         moduleId: true,
                                         courseId: true,
@@ -64,9 +66,14 @@ const getCourses = async (req, res) => {
                 createdAt: "desc",
             },
         });
+        const coursesWithImageUrls = await (0, upload_service_1.attachSignedUrls)({
+            items: courses,
+            keyField: "imageKey",
+            urlField: "imageUrl",
+        });
         return res
             .status(200)
-            .json({ status: "success", message: null, data: courses });
+            .json({ status: "success", message: null, data: coursesWithImageUrls });
     }
     catch (error) {
         handleServerError(error, res);
@@ -130,6 +137,7 @@ const getCourse = async (req, res) => {
                                         title: true,
                                         videoUrl: isCoursePurchased ? true : false,
                                         thumbnailUrl: true,
+                                        thumbnailKey: true,
                                         duration: true,
                                         moduleId: true,
                                         courseId: true,
@@ -160,12 +168,16 @@ const getCourse = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
+        const courseImageUrl = course.imageKey
+            ? await (0, upload_service_1.generateSignedFileUrl)(course.imageKey || "")
+            : course.imageUrl || "";
+        console.log(courseImageUrl);
         return res.status(200).json({
             status: "success",
             message: `${user?.role === "USER" &&
                 !coursePurchased &&
                 "Course purchase not found, weekly attachments and video url is disabled"}`,
-            data: course,
+            data: { ...course, imageUrl: courseImageUrl },
         });
     }
     catch (error) {
@@ -407,6 +419,7 @@ const getCourseWithoutAuth = async (req, res) => {
                                         id: true,
                                         title: true,
                                         thumbnailUrl: true,
+                                        thumbnailKey: true,
                                         duration: true,
                                         moduleId: true,
                                         courseId: true,
@@ -437,10 +450,13 @@ const getCourseWithoutAuth = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
+        const courseImageUrl = course.imageKey
+            ? await (0, upload_service_1.generateSignedFileUrl)(course.imageKey || "")
+            : course.imageUrl || "";
         return res.status(200).json({
             status: "success",
             message: null,
-            data: course,
+            data: { ...course, imageUrl: courseImageUrl },
         });
     }
     catch (error) {
@@ -479,6 +495,7 @@ const getCourseWithoutAuthWithSlug = async (req, res) => {
                                         id: true,
                                         title: true,
                                         thumbnailUrl: true,
+                                        thumbnailKey: true,
                                         duration: true,
                                         moduleId: true,
                                         courseId: true,
@@ -509,10 +526,13 @@ const getCourseWithoutAuthWithSlug = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course does not exist" });
         }
+        const courseImageUrl = course.imageKey
+            ? await (0, upload_service_1.generateSignedFileUrl)(course.imageKey || "")
+            : course.imageUrl || "";
         return res.status(200).json({
             status: "success",
             message: null,
-            data: course,
+            data: { ...course, imageUrl: courseImageUrl },
         });
     }
     catch (error) {

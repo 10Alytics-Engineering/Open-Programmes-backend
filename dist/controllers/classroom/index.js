@@ -6,6 +6,23 @@ const mail_1 = require("../authentication/mail");
 const slugify_1 = require("../../utils/slugify");
 const liveClassNotifications_1 = require("../../utils/liveClassNotifications");
 const notification_service_1 = require("../../services/notification.service");
+const upload_service_1 = require("../../services/upload.service");
+const attachSignedUrlsToMaterial = async (material) => {
+    const imageUrl = material.imageKey
+        ? await (0, upload_service_1.generateSignedFileUrl)(material.imageKey)
+        : material.imageUrl || null;
+    const fileUrl = material.fileKey
+        ? await (0, upload_service_1.generateSignedFileUrl)(material.fileKey)
+        : material.fileUrl || null;
+    return {
+        ...material,
+        imageUrl,
+        fileUrl,
+    };
+};
+const attachSignedUrlsToMaterials = async (materials = []) => {
+    return Promise.all(materials.map(attachSignedUrlsToMaterial));
+};
 const getClassroomData = async (req, res) => {
     try {
         const { cohortId } = req.params;
@@ -118,6 +135,7 @@ const getClassroomTopics = async (req, res) => {
                 orderBy: { createdAt: "desc" },
             }),
         ]);
+        const formattedUnassignedMaterials = await attachSignedUrlsToMaterials(unassignedMaterials);
         const user = req.user;
         const userId = user?.id;
         const isAdmin = user?.role === "ADMIN" || user?.role === "COURSE_ADMIN";
@@ -134,11 +152,12 @@ const getClassroomTopics = async (req, res) => {
         const submittedAssignmentIds = new Set(submissions.map((s) => s.assignmentId));
         // Process topics to add isCompleted and isLocked status
         let previousTopicCompleted = true; // The first topic is always unlocked
-        const processedTopics = topics.map((topic) => {
+        const processedTopics = await Promise.all(topics.map(async (topic) => {
             const processedAssignments = topic.assignments.map((a) => ({
                 ...a,
                 isCompleted: submittedAssignmentIds.has(a.id),
             }));
+            const processedMaterials = await attachSignedUrlsToMaterials(topic.classMaterials);
             const processedRecordings = topic.classRecordings.map((r) => ({
                 ...r,
                 isCompleted: completedVideoIds.has(r.id),
@@ -161,16 +180,17 @@ const getClassroomTopics = async (req, res) => {
             return {
                 ...topic,
                 assignments: processedAssignments,
+                classMaterials: processedMaterials,
                 classRecordings: processedRecordings,
                 isCompleted,
                 isLocked: isAdmin ? false : isLocked,
             };
-        });
+        }));
         res.json({
             topics: processedTopics,
             unassignedItems: {
                 assignments: unassignedAssignments,
-                materials: unassignedMaterials,
+                materials: formattedUnassignedMaterials,
                 recordings: unassignedRecordings,
                 liveClasses: unassignedLiveClasses,
             },

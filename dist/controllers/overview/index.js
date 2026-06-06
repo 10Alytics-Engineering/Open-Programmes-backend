@@ -44,6 +44,7 @@ const getStudentDashboard = async (req, res) => {
                                 id: true,
                                 title: true,
                                 imageUrl: true,
+                                imageKey: true,
                             },
                         },
                     },
@@ -100,6 +101,7 @@ const getStudentDashboard = async (req, res) => {
             id: purchase.course.id,
             title: purchase.course.title,
             imageUrl: purchase.course.imageUrl,
+            imageKey: purchase.course.imageKey,
             cohorts: user.cohorts
                 .filter((item) => item.courseId === purchase.courseId)
                 .map((item) => ({

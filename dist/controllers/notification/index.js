@@ -13,6 +13,7 @@ const getUserNotifications = async (req, res) => {
         const { status, limit = "20", offset = "0" } = req.query;
         const where = {
             userId,
+            adminOnly: { not: true },
         };
         if (status === "read")
             where.isRead = true;
@@ -32,7 +33,7 @@ const getUserNotifications = async (req, res) => {
             prismadb_1.prismadb.notification.count({ where }),
             prismadb_1.prismadb.notification.count({
                 where: {
-                    userId,
+                    ...where,
                     isRead: false,
                 },
             }),

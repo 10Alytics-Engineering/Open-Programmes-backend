@@ -8,16 +8,24 @@ const client_1 = require("@prisma/client");
 const createChangeRequest = async (req, res) => {
     try {
         const user = req.user;
-        const { type, currentCourseId, desiredCourseId, currentCohortId, desiredCohortId, reason } = req.body;
+        const { type, currentCourseId, desiredCourseId, currentCohortId, desiredCohortId, reason, } = req.body;
         if (!type || !reason) {
             return res.status(400).json({ message: "Type and reason are required" });
         }
         // Validate based on request type
-        if (type === client_1.RequestType.COURSE_CHANGE && (!currentCourseId || !desiredCourseId)) {
-            return res.status(400).json({ message: "Course change requires current and desired course IDs" });
+        if (type === client_1.RequestType.COURSE_CHANGE &&
+            (!currentCourseId || !desiredCourseId)) {
+            return res
+                .status(400)
+                .json({
+                message: "Course change requires current and desired course IDs",
+            });
         }
-        if (type === client_1.RequestType.DEFERMENT && (!currentCohortId || !desiredCohortId)) {
-            return res.status(400).json({ message: "Deferment requires current and desired cohort IDs" });
+        if (type === client_1.RequestType.DEFERMENT &&
+            (!currentCohortId || !desiredCohortId)) {
+            return res
+                .status(400)
+                .json({ message: "Deferment requires current and desired cohort IDs" });
         }
         // Check if user has an active payment for the current course/cohort
         let paymentStatus;
@@ -28,21 +36,21 @@ const createChangeRequest = async (req, res) => {
                     userId: user.id,
                     courseId: currentCourseId,
                     status: {
-                        in: ["COMPLETE", "BALANCE_HALF_PAYMENT"]
-                    }
-                }
+                        in: ["COMPLETE", "BALANCE_HALF_PAYMENT"],
+                    },
+                },
             });
             // If no payment status found, check if user has purchased the course
             if (!paymentStatus) {
                 const purchase = await prismadb_1.prismadb.purchase.findFirst({
                     where: {
                         userId: user.id,
-                        courseId: currentCourseId
-                    }
+                        courseId: currentCourseId,
+                    },
                 });
                 if (!purchase) {
                     return res.status(400).json({
-                        message: "You don't have an active enrollment for this course"
+                        message: "You don't have an active enrollment for this course",
                     });
                 }
                 // Create a payment status record if purchase exists but no payment status
@@ -52,8 +60,8 @@ const createChangeRequest = async (req, res) => {
                         courseId: currentCourseId,
                         status: "COMPLETE", // Assuming purchase means complete payment
                         paymentType: "FULL",
-                        paymentPlan: "ONE_TIME"
-                    }
+                        paymentPlan: "ONE_TIME",
+                    },
                 });
             }
         }
@@ -64,13 +72,13 @@ const createChangeRequest = async (req, res) => {
                     userId: user.id,
                     cohortId: currentCohortId,
                     status: {
-                        in: ["COMPLETE", "BALANCE_HALF_PAYMENT"]
-                    }
-                }
+                        in: ["COMPLETE", "BALANCE_HALF_PAYMENT"],
+                    },
+                },
             });
             if (!paymentStatus) {
                 return res.status(400).json({
-                    message: "You don't have an active payment for this cohort"
+                    message: "You don't have an active payment for this cohort",
                 });
             }
         }
@@ -88,16 +96,19 @@ const createChangeRequest = async (req, res) => {
                 where: {
                     userId: user.id,
                     courseId: currentCourseId,
-                    isActive: true
-                }
+                    isActive: true,
+                },
             });
             cohortIdToCheck = userCohort?.cohortId;
         }
-        const currentCohort = cohortIdToCheck ? await prismadb_1.prismadb.cohort.findUnique({
-            where: { id: cohortIdToCheck }
-        }) : null;
+        const currentCohort = cohortIdToCheck
+            ? await prismadb_1.prismadb.cohort.findUnique({
+                where: { id: cohortIdToCheck },
+            })
+            : null;
         const isWithinTwoWeeks = currentCohort &&
-            new Date() <= new Date(currentCohort.startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+            new Date() <=
+                new Date(currentCohort.startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
         let status = client_1.RequestStatus.PENDING;
         // If within two weeks, auto-approve for immediate change
         if (isWithinTwoWeeks) {
@@ -123,24 +134,34 @@ const createChangeRequest = async (req, res) => {
                 status,
                 paymentStatusId: paymentStatus.id,
                 // Set payment due date if not within two weeks
-                paymentDueDate: isWithinTwoWeeks ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                paymentDueDate: isWithinTwoWeeks
+                    ? null
+                    : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             },
             include: {
                 user: {
-                    select: { name: true, email: true }
+                    select: { name: true, email: true },
                 },
-                currentCourse: type === client_1.RequestType.COURSE_CHANGE ? { select: { title: true } } : false,
-                desiredCourse: type === client_1.RequestType.COURSE_CHANGE ? { select: { title: true } } : false,
-                currentCohort: type === client_1.RequestType.DEFERMENT ? { select: { name: true, startDate: true } } : false,
-                desiredCohort: type === client_1.RequestType.DEFERMENT ? { select: { name: true, startDate: true } } : false,
-            }
+                currentCourse: type === client_1.RequestType.COURSE_CHANGE
+                    ? { select: { title: true } }
+                    : false,
+                desiredCourse: type === client_1.RequestType.COURSE_CHANGE
+                    ? { select: { title: true } }
+                    : false,
+                currentCohort: type === client_1.RequestType.DEFERMENT
+                    ? { select: { name: true, startDate: true } }
+                    : false,
+                desiredCohort: type === client_1.RequestType.DEFERMENT
+                    ? { select: { name: true, startDate: true } }
+                    : false,
+            },
         });
         // If within two weeks, send completion email immediately
         if (isWithinTwoWeeks) {
             await (0, mail_1.sendCompletionEmail)(request.user, {
                 type: request.type,
                 desiredCourse: request.desiredCourse,
-                desiredCohort: request.desiredCohort
+                desiredCohort: request.desiredCohort,
             });
         }
         else {
@@ -152,7 +173,7 @@ const createChangeRequest = async (req, res) => {
             message: isWithinTwoWeeks
                 ? "Change processed successfully"
                 : "Request submitted for admin approval",
-            data: request
+            data: request,
         });
     }
     catch (error) {
@@ -168,23 +189,23 @@ const getUserChangeRequests = async (req, res) => {
             where: { userId: user.id },
             include: {
                 currentCourse: {
-                    select: { title: true, imageUrl: true }
+                    select: { title: true, imageUrl: true, imageKey: true },
                 },
                 desiredCourse: {
-                    select: { title: true, imageUrl: true }
+                    select: { title: true, imageUrl: true, imageKey: true },
                 },
                 currentCohort: {
-                    select: { name: true, startDate: true }
+                    select: { name: true, startDate: true },
                 },
                 desiredCohort: {
-                    select: { name: true, startDate: true }
-                }
+                    select: { name: true, startDate: true },
+                },
             },
-            orderBy: { createdAt: "desc" }
+            orderBy: { createdAt: "desc" },
         });
         return res.status(200).json({
             status: "success",
-            data: requests
+            data: requests,
         });
     }
     catch (error) {
@@ -205,29 +226,29 @@ const getAllChangeRequests = async (req, res) => {
             where: whereClause,
             include: {
                 user: {
-                    select: { name: true, email: true, phone_number: true }
+                    select: { name: true, email: true, phone_number: true },
                 },
                 currentCourse: {
-                    select: { title: true, imageUrl: true }
+                    select: { title: true, imageUrl: true, imageKey: true },
                 },
                 desiredCourse: {
-                    select: { title: true, imageUrl: true }
+                    select: { title: true, imageUrl: true, imageKey: true },
                 },
                 currentCohort: {
-                    select: { name: true, startDate: true }
+                    select: { name: true, startDate: true },
                 },
                 desiredCohort: {
-                    select: { name: true, startDate: true }
+                    select: { name: true, startDate: true },
                 },
                 processedBy: {
-                    select: { name: true }
-                }
+                    select: { name: true },
+                },
             },
-            orderBy: { createdAt: "desc" }
+            orderBy: { createdAt: "desc" },
         });
         return res.status(200).json({
             status: "success",
-            data: requests
+            data: requests,
         });
     }
     catch (error) {
@@ -246,7 +267,7 @@ const updateChangeRequest = async (req, res) => {
         }
         if (status === "REJECTED" && !adminReason) {
             return res.status(400).json({
-                message: "Reason is required when rejecting a request"
+                message: "Reason is required when rejecting a request",
             });
         }
         const request = await prismadb_1.prismadb.changeRequest.findUnique({
@@ -257,46 +278,48 @@ const updateChangeRequest = async (req, res) => {
                 desiredCohort: true,
                 currentCourse: true,
                 desiredCourse: true,
-                currentCohort: true
-            }
+                currentCohort: true,
+            },
         });
         if (!request) {
             return res.status(404).json({ message: "Request not found" });
         }
         if (request.status !== client_1.RequestStatus.PENDING) {
             return res.status(400).json({
-                message: "This request has already been processed"
+                message: "This request has already been processed",
             });
         }
         // Update the request
         const updatedRequest = await prismadb_1.prismadb.changeRequest.update({
             where: { id: requestId },
             data: {
-                status: status === "APPROVED" ? client_1.RequestStatus.PAYMENT_PENDING : client_1.RequestStatus.REJECTED,
+                status: status === "APPROVED"
+                    ? client_1.RequestStatus.PAYMENT_PENDING
+                    : client_1.RequestStatus.REJECTED,
                 adminReason,
                 processedById: user.id,
-                processedAt: new Date()
+                processedAt: new Date(),
             },
             include: {
                 user: {
-                    select: { name: true, email: true }
+                    select: { name: true, email: true },
                 },
                 currentCourse: {
-                    select: { title: true }
+                    select: { title: true },
                 },
                 desiredCourse: {
-                    select: { title: true }
+                    select: { title: true },
                 },
                 currentCohort: {
-                    select: { name: true, startDate: true }
+                    select: { name: true, startDate: true },
                 },
                 desiredCohort: {
-                    select: { name: true, startDate: true }
+                    select: { name: true, startDate: true },
                 },
                 processedBy: {
-                    select: { name: true }
-                }
-            }
+                    select: { name: true },
+                },
+            },
         });
         // If approved, generate payment link and send email
         if (status === "APPROVED") {
@@ -305,7 +328,7 @@ const updateChangeRequest = async (req, res) => {
             // Update request with payment link
             await prismadb_1.prismadb.changeRequest.update({
                 where: { id: requestId },
-                data: { paymentLink }
+                data: { paymentLink },
             });
             // Send approval email with payment link
             await (0, mail_1.sendApprovalEmail)(request.user, request, paymentLink);
@@ -317,7 +340,7 @@ const updateChangeRequest = async (req, res) => {
         return res.status(200).json({
             status: "success",
             message: `Request ${status.toLowerCase()} successfully`,
-            data: updatedRequest
+            data: updatedRequest,
         });
     }
     catch (error) {
@@ -342,27 +365,27 @@ const handlePaymentVerification = async (req, res) => {
                     desiredCourse: true,
                     currentCohort: true,
                     desiredCohort: true,
-                    paymentStatus: true
-                }
+                    paymentStatus: true,
+                },
             });
             // Process the actual change
             if (request.type === client_1.RequestType.COURSE_CHANGE) {
-                await processCourseChange(request.userId, request.currentCourseId, request.desiredCourseId, request.paymentStatusId);
+                await processCourseChange(request.userId, request.currentCourseId || "", request.desiredCourseId || "", request.paymentStatusId || "");
             }
             else {
-                await processCohortChange(request.userId, request.currentCohortId, request.desiredCohortId, request.paymentStatusId);
+                await processCohortChange(request.userId, request.currentCohortId || "", request.desiredCohortId || "", request.paymentStatusId || "");
             }
             // Send completion email
             await (0, mail_1.sendCompletionEmail)(request.user, request);
             return res.status(200).json({
                 status: "success",
-                message: "Payment verified and change processed successfully"
+                message: "Payment verified and change processed successfully",
             });
         }
         else {
             return res.status(400).json({
                 status: "error",
-                message: "Payment verification failed"
+                message: "Payment verification failed",
             });
         }
     }
@@ -375,7 +398,9 @@ exports.handlePaymentVerification = handlePaymentVerification;
 // Helper functions
 async function processCourseChange(userId, currentCourseId, desiredCourseId, paymentStatusId) {
     const user = await prismadb_1.prismadb.user.findUnique({ where: { id: userId } });
-    const desiredCourse = await prismadb_1.prismadb.course.findUnique({ where: { id: desiredCourseId } });
+    const desiredCourse = await prismadb_1.prismadb.course.findUnique({
+        where: { id: desiredCourseId },
+    });
     if (!user || !desiredCourse) {
         throw new Error("User or desired course not found");
     }
@@ -383,49 +408,51 @@ async function processCourseChange(userId, currentCourseId, desiredCourseId, pay
         // Update payment status to point to the new course
         prismadb_1.prismadb.paymentStatus.update({
             where: { id: paymentStatusId },
-            data: { courseId: desiredCourseId, cohortId: null }
+            data: { courseId: desiredCourseId, cohortId: null },
         }),
         // Update user's ongoing courses
         prismadb_1.prismadb.user.update({
             where: { id: userId },
             data: {
                 ongoing_courses: {
-                    set: user.ongoing_courses.filter(id => id !== currentCourseId).concat(desiredCourseId)
-                }
-            }
+                    set: user.ongoing_courses
+                        .filter((id) => id !== currentCourseId)
+                        .concat(desiredCourseId),
+                },
+            },
         }),
         // Remove from current cohort if enrolled
         prismadb_1.prismadb.userCohort.updateMany({
             where: {
                 userId: userId,
-                courseId: currentCourseId
+                courseId: currentCourseId,
             },
             data: {
                 isActive: false,
                 isPaymentActive: false,
-                archivedAt: new Date()
-            }
+                archivedAt: new Date(),
+            },
         }),
         // Remove purchase record for old course
         prismadb_1.prismadb.purchase.deleteMany({
             where: {
                 userId: userId,
-                courseId: currentCourseId
-            }
+                courseId: currentCourseId,
+            },
         }),
         // Create new purchase record for desired course
         prismadb_1.prismadb.purchase.create({
             data: {
                 userId: userId,
-                courseId: desiredCourseId
-            }
-        })
+                courseId: desiredCourseId,
+            },
+        }),
     ]);
 }
 async function processCohortChange(userId, currentCohortId, desiredCohortId, paymentStatusId) {
     const desiredCohort = await prismadb_1.prismadb.cohort.findUnique({
         where: { id: desiredCohortId },
-        select: { courseId: true }
+        select: { courseId: true },
     });
     if (!desiredCohort) {
         throw new Error("Desired cohort not found");
@@ -434,19 +461,19 @@ async function processCohortChange(userId, currentCohortId, desiredCohortId, pay
         // Update payment status to point to the new cohort
         prismadb_1.prismadb.paymentStatus.update({
             where: { id: paymentStatusId },
-            data: { cohortId: desiredCohortId }
+            data: { cohortId: desiredCohortId },
         }),
         // Update user cohort relationship
         prismadb_1.prismadb.userCohort.updateMany({
             where: {
                 userId: userId,
-                cohortId: currentCohortId
+                cohortId: currentCohortId,
             },
             data: {
                 isActive: false,
                 archivedAt: new Date(),
-                isPaymentActive: false
-            }
+                isPaymentActive: false,
+            },
         }),
         // Create new user cohort relationship
         prismadb_1.prismadb.userCohort.create({
@@ -455,9 +482,9 @@ async function processCohortChange(userId, currentCohortId, desiredCohortId, pay
                 cohortId: desiredCohortId,
                 courseId: desiredCohort.courseId,
                 isActive: true,
-                isPaymentActive: true
-            }
-        })
+                isPaymentActive: true,
+            },
+        }),
     ]);
 }
 const getChangeRequestsCount = async (req, res) => {
@@ -474,7 +501,7 @@ const getChangeRequestsCount = async (req, res) => {
         // Get counts for all statuses if no specific status is requested
         if (!status && !type) {
             const counts = await prismadb_1.prismadb.changeRequest.groupBy({
-                by: ['status'],
+                by: ["status"],
                 where: whereClause,
                 _count: {
                     id: true,
@@ -494,7 +521,7 @@ const getChangeRequestsCount = async (req, res) => {
             };
             return res.status(200).json({
                 status: "success",
-                data: result
+                data: result,
             });
         }
         // Get count with filters
@@ -506,8 +533,8 @@ const getChangeRequestsCount = async (req, res) => {
             data: {
                 count,
                 ...(status && { status }),
-                ...(type && { type })
-            }
+                ...(type && { type }),
+            },
         });
     }
     catch (error) {
