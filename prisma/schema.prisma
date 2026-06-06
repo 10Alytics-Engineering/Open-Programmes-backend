@@ -87,6 +87,8 @@ model User {
   email                                                              String?                    @unique
   emailVerified                                                      DateTime?
   image                                                              String?
+  imageKey                                                           String?
+  imageFileName                                                      String?
   password                                                           String?
   role                                                               UserRole                   @default(USER)
   access_token                                                       String?
@@ -117,6 +119,7 @@ model User {
   accounts                                                           Account[]
   streamPost                                                         StreamPost[]
   notifications                                                      Notification[]
+  userCourseCohortLeaderBoards                                       CourseCohortLeaderboard[]
   lastLoginDate                                                      DateTime?
   lastNotificationInActivityDate                                     DateTime?
 }
@@ -184,6 +187,7 @@ model Cohort {
   cohortCourses         CohortCourse[]
   paymentStatuses       PaymentStatus[]
   users                 UserCohort[]
+  cohortLeaderBoards    CourseCohortLeaderboard[]
 }
 
 model CohortCourse {
@@ -194,6 +198,8 @@ model CohortCourse {
   description                   String?
   price                         String?
   imageUrl                      String?
+  imageKey                      String?
+  imageFileName                 String?
   course_duration               String?
   course_instructor_name        String?
   course_instructor_image       String?
@@ -236,6 +242,7 @@ model CohortCourseWeek {
   id             String               @id @default(cuid())
   title          String
   iconUrl        String?
+  iconKey        String?
   cohortCourseId String
   isPublished    Boolean              @default(false)
   createdAt      DateTime             @default(now())
@@ -250,6 +257,7 @@ model CohortCourseModule {
   title               String
   description         String?
   iconUrl             String?
+  iconKey             String?
   cohortCourseWeekId  String
   cohortCourseId      String
   createdAt           DateTime             @default(now())
@@ -266,6 +274,8 @@ model CohortProjectVideo {
   title                String
   videoUrl             String?
   thumbnailUrl         String?
+  thumbnailKey         String?
+  
   duration             String?
   cohortCourseModuleId String
   cohortCourseId       String
@@ -279,6 +289,7 @@ model CohortAttachment {
   id                 String           @id @default(cuid())
   name               String
   url                String?
+  fileKey            String?
   cohortCourseWeekId String
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -328,6 +339,8 @@ model Course {
   price                              String?
   discount                           String?
   imageUrl                           String?
+  imageKey                           String?
+  imagefileName                      String?
   slug                               String?
   course_duration                    String?
   course_instructor_name             String?
@@ -361,6 +374,7 @@ model Course {
   tags                               Tag[]
   timetable                          TimeTable[]
   facilitators                       Facilitator[]        @relation("CourseToFacilitator")
+  courseLeaderBoards                 CourseCohortLeaderboard[] 
 }
 
 model CoursePricingPlan {
@@ -381,6 +395,7 @@ model CourseWeek {
   id            String       @id @default(cuid())
   title         String
   iconUrl       String?
+  iconKey       String?
   courseId      String
   isPublished   Boolean      @default(false)
   createdAt     DateTime     @default(now())
@@ -394,6 +409,7 @@ model Attachment {
   id           String     @id @default(cuid())
   name         String
   url          String?
+  fileKey      String?
   courseWeekId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -405,6 +421,7 @@ model Module {
   title         String
   description   String?
   iconUrl       String?
+  iconKey       String?
   courseWeekId  String
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -418,6 +435,7 @@ model ProjectVideo {
   title        String
   videoUrl     String?
   thumbnailUrl String?
+  thumbnailKey  String?
   duration     String?
   moduleId     String
   courseId     String
@@ -494,6 +512,27 @@ model Leaderboard {
   @@unique([userId, quizId])
 }
 
+model CourseCohortLeaderboard {
+  id        String   @id @default(cuid())
+  userId    String
+  cohortId  String
+  courseId  String
+
+  points    Int
+  assignmentPoints Int
+  lessonQuizPoints  Int
+  lessonVideoPoints Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  cohort    Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId, cohortId])
+}
+
 model TimeTable {
   id        String        @id @default(cuid())
   name      String
@@ -556,6 +595,8 @@ model CatalogHeaderTags {
   id       String  @id @default(cuid())
   title    String
   imageUrl String?
+  imageKey String?
+  imageFileName  String?
   courseId String
   course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
@@ -584,6 +625,7 @@ model Tag {
 model SkillsYouWillLearn {
   id       String @id @default(cuid())
   iconUrl  String
+  iconKey  String
   courseId String
   course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 }
@@ -601,6 +643,7 @@ model Blog {
 model BlogImage {
   id        String   @id @default(cuid())
   url       String?
+  key       String?
   blogId    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -651,6 +694,8 @@ model Facilitator {
   email       String  @unique
   phoneNumber String
   imageUrl    String?
+  imageKey    String?
+  imageFileName String?
   bio         String?
   title       String?
   createdAt   DateTime @default(now())
@@ -767,7 +812,8 @@ model AssignmentQuizAnswer {
 model AssignmentAttachment {
   id           String     @id @default(cuid())
   name         String
-  url          String
+  url          String?
+  fileKey      String?
   assignmentId String
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -778,6 +824,8 @@ model AssignmentSubmission {
   id           String     @id @default(cuid())
   content      String?
   fileUrl      String?
+  fileKey      String?
+  fileName     String?
   submittedAt  DateTime   @default(now())
   grade        Int?
   feedback     String?
@@ -851,8 +899,11 @@ model ClassMaterial {
   title            String
   description      String?
   fileUrl          String?
+  fileKey          String?
+  fileName         String?
   fileType         String          @default("pdf")
   imageUrl         String?
+  imageKey         String?
   cohortCourseId   String
   classroomTopicId String?
   createdAt        DateTime        @default(now())
@@ -973,6 +1024,7 @@ model Notification {
   message         String
   details         String?  // JSON string for additional details like course/cohort names
   isRead          Boolean  @default(false)
+  adminOnly       Boolean?    
   relatedUserId   String?  // ID of user who triggered the notification (admin)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -988,7 +1040,33 @@ enum NotificationType {
   COHORT_SWITCHED
   ACCOUNT_SUSPENDED
   ACCOUNT_ACTIVATED
+  
   COURSE_ADDED
+  COURSE_REMOVED
+
+  COURSE_LESSON_VIDEO_ADDED
+  COURSE_LESSON_VIDEO_EDITED
+  COURSE_LESSON_VIDEO_REMOVED
+  
+  COURSE_QUIZ_ADDED
+  COURSE_QUIZ_EDITED
+
+  CLASSROOM_MATERIAL_ADDED
+  CLASSROOM_MATERIAL_REMOVED
+
+  CLASSROOM_RECORDING_ADDED 
+  CLASSROOM_RECORDING_REMOVED
+
+  CLASSROOM_LIVE_CLASS_ADDED
+  CLASSROOM_LIVE_CLASS_REMOVED
+
+  CLASSROOM_TOPIC_ADDED
+  CLASSROOM_TOPIC_REMOVED
+
+  CLASSROOM_ASSIGNMENT_ADDED
+  CLASSROOM_ASSIGNMENT_SUBMITTED
+  CLASSROOM_ASSIGNMENT_GRADED
+  CLASSROOM_ASSIGNMENT_REMOVED
 }
 
 enum UserRole {

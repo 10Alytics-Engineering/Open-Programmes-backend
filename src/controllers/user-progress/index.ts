@@ -21,15 +21,31 @@ export const updateCourseVideoProgress = async (
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const existingProgress = await prismadb.userProgress.findUnique({
-      where: {
-        userId_videoId_courseId: {
-          userId: user.id,
-          videoId,
-          courseId,
+    const [existingProgress, userCohort] = await Promise.all([
+      prismadb.userProgress.findUnique({
+        where: {
+          userId_videoId_courseId: {
+            userId: user.id,
+            videoId,
+            courseId,
+          },
         },
-      },
-    });
+      }),
+
+      prismadb.userCohort.findFirst({
+        where: {
+          isActive: true,
+          userId: user?.id,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    if (!userCohort?.id) {
+      return res
+        .status(404)
+        .json({ status: "error", message: "Active cohort for user not found" });
+    }
 
     const shouldBeCompleted =
       existingProgress?.isCompleted || progressPercentage >= 70;
@@ -65,6 +81,31 @@ export const updateCourseVideoProgress = async (
       },
     });
 
+    if (!existingProgress?.isCompleted && progressPercentage >= 70) {
+      await prismadb.courseCohortLeaderboard.upsert({
+        where: {
+          userId_courseId_cohortId: {
+            cohortId: userCohort?.cohortId,
+            courseId: userCohort?.courseId,
+            userId: user.id,
+          },
+        },
+        create: {
+          assignmentPoints: 0,
+          points: 1,
+          lessonQuizPoints: 0,
+          lessonVideoPoints: 1,
+          cohortId: userCohort?.cohortId,
+          courseId: userCohort?.courseId,
+          userId: user.id,
+        },
+        update: {
+          lessonVideoPoints: { increment: 1 },
+          points: { increment: 1 },
+        },
+      });
+    }
+
     res.status(200).json(progressRecord);
   } catch (error) {
     handleError(error, res);
@@ -82,29 +123,43 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
     }
 
     // Get answer with quiz info using your schema relations
-    const answer = await prismadb.quizAnswer.findUnique({
-      where: { id: quizAnswerId },
-      include: {
-        quiz: {
-          include: {
-            courseModule: true,
+    const [answer, existingAnswer, userCohort] = await Promise.all([
+      prismadb.quizAnswer.findUnique({
+        where: { id: quizAnswerId },
+        include: {
+          quiz: {
+            include: {
+              courseModule: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prismadb.userQuizAnswer.findFirst({
+        where: {
+          userId: user.id,
+          quizAnswerId,
+        },
+      }),
+
+      prismadb.userCohort.findFirst({
+        where: {
+          isActive: true,
+          userId: user?.id,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
 
     if (!answer) return res.status(404).json({ message: "Answer not found" });
 
-    // Check for existing answer
-    const existingAnswer = await prismadb.userQuizAnswer.findFirst({
-      where: {
-        userId: user.id,
-        quizAnswerId,
-      },
-    });
-
     if (existingAnswer) {
       return res.status(400).json({ message: "Already answered this quiz" });
+    }
+
+    if (!userCohort?.id) {
+      return res
+        .status(404)
+        .json({ status: "error", message: "Active cohort for user not found" });
     }
 
     // Record answer
@@ -117,19 +172,25 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
 
     // Update leaderboard if correct
     if (answer.isCorrect) {
-      await prismadb.leaderboard.upsert({
+      await prismadb.courseCohortLeaderboard.upsert({
         where: {
-          userId_quizId: {
+          userId_courseId_cohortId: {
+            cohortId: userCohort?.cohortId,
+            courseId: userCohort?.courseId,
             userId: user.id,
-            quizId: answer.quiz.id,
           },
         },
         create: {
-          userId: user.id,
-          quizId: answer.quiz.id,
+          assignmentPoints: 0,
           points: 1,
+          lessonQuizPoints: 1,
+          lessonVideoPoints: 0,
+          cohortId: userCohort?.cohortId,
+          courseId: userCohort?.courseId,
+          userId: user.id,
         },
         update: {
+          lessonQuizPoints: { increment: 1 },
           points: { increment: 1 },
         },
       });

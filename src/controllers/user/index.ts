@@ -4,8 +4,9 @@ import { UserRole } from "@prisma/client";
 import { sendAccountDeletionEmail } from "./mail";
 import { sendMail } from "../../utils/nodemailer";
 import bcrypt from "bcryptjs";
-import { validateEmail } from "../../hooks/validate-email";
-import { validatePassword } from "../../hooks/validate-password";
+import { NotificationService } from "../../services/notification.service";
+import { NebiantUser } from "../../middleware";
+import { generateSignedFileUrl } from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -364,148 +365,159 @@ export const getUser = async (req: Request, res: Response) => {
     }
 
     // ENRICH COURSE DATA
-    const enrichedCourses = user.course_purchased.map((purchase: any) => {
-      const course = purchase.course;
-      // =========================
-      // VIDEO STATS
-      // =========================
+    const enrichedCourses = await Promise.all(
+      user.course_purchased.map(async (purchase: any) => {
+        const course = purchase.course;
+        // =========================
+        // VIDEO STATS
+        // =========================
 
-      const totalVideos = course.course_videos?.length || 0;
+        const totalVideos = course.course_videos?.length || 0;
 
-      const completedVideoRecords =
-        user.completed_videos?.filter(
-          (video: any) => video?.courseId === course?.id && video.isCompleted,
-        ) || [];
-      const completedVideos = completedVideoRecords.length || 0;
+        const completedVideoRecords =
+          user.completed_videos?.filter(
+            (video: any) => video?.courseId === course?.id && video.isCompleted,
+          ) || [];
+        const completedVideos = completedVideoRecords.length || 0;
 
-      const videoProgressPercentage = completedVideos
-        ? Math.round((completedVideos / totalVideos) * 100)
-        : 0;
-
-      // =========================
-      // QUIZ STATS
-      // =========================
-
-      const allQuizzes = course.course_weeks?.flatMap((week: any) =>
-        week.courseModules?.flatMap((module: any) => module.quizzes),
-      );
-
-      const totalQuizzes = allQuizzes?.length || 0;
-
-      const answeredQuizIds = new Set(
-        user.quiz_answers?.map((item: any) => item.quizAnswer.quizId),
-      );
-
-      const completedQuizzes =
-        allQuizzes?.filter((quiz: any) => answeredQuizIds.has(quiz?.id))
-          .length || 0;
-
-      const quizProgressPercentage =
-        totalQuizzes > 0
-          ? Math.round((completedQuizzes / totalQuizzes) * 100)
+        const videoProgressPercentage = completedVideos
+          ? Math.round((completedVideos / totalVideos) * 100)
           : 0;
 
-      // =========================
-      // LAST ACTIVITY
-      // =========================
-      const quizActivities =
-        user.quiz_answers
-          .filter((quiz: any) => quiz.updatedAt)
-          .map((quiz: any) => quiz.updatedAt) || [];
+        // =========================
+        // QUIZ STATS
+        // =========================
 
-      const courseVideoActivities =
-        user.completed_videos
-          .filter(
-            (video: any) => video.courseId === course.id && video.updatedAt,
-          )
-          .map((video: any) => video.updatedAt) || [];
+        const allQuizzes = course.course_weeks?.flatMap((week: any) =>
+          week.courseModules?.flatMap((module: any) => module.quizzes),
+        );
 
-      const latestActivity =
-        courseVideoActivities.length > 0 || quizActivities.length > 0
-          ? new Date(
-              Math.max(
-                ...quizActivities.map((date: Date) => new Date(date).getTime()),
-                ...courseVideoActivities.map((date: Date) =>
-                  new Date(date).getTime(),
-                ),
-              ),
+        const totalQuizzes = allQuizzes?.length || 0;
+
+        const answeredQuizIds = new Set(
+          user.quiz_answers?.map((item: any) => item.quizAnswer.quizId),
+        );
+
+        const completedQuizzes =
+          allQuizzes?.filter((quiz: any) => answeredQuizIds.has(quiz?.id))
+            .length || 0;
+
+        const quizProgressPercentage =
+          totalQuizzes > 0
+            ? Math.round((completedQuizzes / totalQuizzes) * 100)
+            : 0;
+
+        // =========================
+        // LAST ACTIVITY
+        // =========================
+        const quizActivities =
+          user.quiz_answers
+            .filter((quiz: any) => quiz.updatedAt)
+            .map((quiz: any) => quiz.updatedAt) || [];
+
+        const courseVideoActivities =
+          user.completed_videos
+            .filter(
+              (video: any) => video.courseId === course.id && video.updatedAt,
             )
-          : null;
+            .map((video: any) => video.updatedAt) || [];
 
-      // =========================
-      // PAYMENT
-      // =========================
+        const latestActivity =
+          courseVideoActivities.length > 0 || quizActivities.length > 0
+            ? new Date(
+                Math.max(
+                  ...quizActivities.map((date: Date) =>
+                    new Date(date).getTime(),
+                  ),
+                  ...courseVideoActivities.map((date: Date) =>
+                    new Date(date).getTime(),
+                  ),
+                ),
+              )
+            : null;
 
-      const paymentStatus = user.paymentStatus.find(
-        (payment: any) => payment?.courseId === course?.id,
-      );
-      const paymentInstallments = paymentStatus?.paymentInstallments || [];
+        // =========================
+        // PAYMENT
+        // =========================
 
-      let amountPaid = 0,
-        totalAmount = 0,
-        installmentsPaid = 0,
-        allInstallments = 0;
+        const paymentStatus = user.paymentStatus.find(
+          (payment: any) => payment?.courseId === course?.id,
+        );
+        const paymentInstallments = paymentStatus?.paymentInstallments || [];
 
-      if (!paymentStatus?.paymentPlan?.includes("FULL")) {
-        paymentInstallments.forEach((installment) => {
-          if (installment.paid) {
-            amountPaid += Number(installment.amount || 0);
-            installmentsPaid += 1;
-          }
-          totalAmount += Number(installment.amount || 0);
-          allInstallments += 1;
-        });
-      } else {
-        paymentStatus.transactions.forEach((transaction) => {
-          if (transaction.status === "success") {
-            amountPaid += Number(transaction.amount || 0);
-          }
-          totalAmount += Number(transaction.amount || 0);
-        });
-      }
+        let amountPaid = 0,
+          totalAmount = 0,
+          installmentsPaid = 0,
+          allInstallments = 0;
 
-      let finalStatusOfPayment: string | undefined = paymentStatus?.status;
+        if (!paymentStatus?.paymentPlan?.includes("FULL")) {
+          paymentInstallments.forEach((installment) => {
+            if (installment.paid) {
+              amountPaid += Number(installment.amount || 0);
+              installmentsPaid += 1;
+            }
+            totalAmount += Number(installment.amount || 0);
+            allInstallments += 1;
+          });
+        } else {
+          paymentStatus.transactions.forEach((transaction) => {
+            if (transaction.status === "success") {
+              amountPaid += Number(transaction.amount || 0);
+            }
+            totalAmount += Number(transaction.amount || 0);
+          });
+        }
 
-      if (allInstallments && installmentsPaid < allInstallments) {
-        finalStatusOfPayment = `${installmentsPaid}/${allInstallments} Success`;
-      }
+        let finalStatusOfPayment: string | undefined = paymentStatus?.status;
 
-      const nextInstallment =
-        paymentInstallments.find((installment: any) => !installment.paid) ||
-        null;
+        if (allInstallments && installmentsPaid < allInstallments) {
+          finalStatusOfPayment = `${installmentsPaid}/${allInstallments} Success`;
+        }
 
-      return {
-        ...purchase,
+        const nextInstallment =
+          paymentInstallments.find((installment: any) => !installment.paid) ||
+          null;
 
-        courseStats: {
-          // VIDEO
-          totalVideos,
-          completedVideos,
-          videoProgressPercentage,
+        const courseImageUrl = course.imageKey
+          ? await generateSignedFileUrl(course.imageKey)
+          : course.imageUrl || null;
 
-          // QUIZ
-          totalQuizzes,
-          completedQuizzes,
-          quizProgressPercentage,
+        return {
+          ...purchase,
+          course: {
+            ...course,
+            imageUrl: courseImageUrl,
+          },
+          courseStats: {
+            // VIDEO
+            totalVideos,
+            completedVideos,
+            videoProgressPercentage,
 
-          // ACTIVITY
-          lastActivityAt: latestActivity,
+            // QUIZ
+            totalQuizzes,
+            completedQuizzes,
+            quizProgressPercentage,
 
-          // PAYMENT
-          paymentStatus: finalStatusOfPayment || "UNKNOWN",
+            // ACTIVITY
+            lastActivityAt: latestActivity,
 
-          paymentPlan: paymentStatus?.paymentPlan || "FULL",
+            // PAYMENT
+            paymentStatus: finalStatusOfPayment || "UNKNOWN",
 
-          amountPaid,
+            paymentPlan: paymentStatus?.paymentPlan || "FULL",
 
-          totalAmount,
+            amountPaid,
 
-          nextInstallmentDueDate: nextInstallment?.dueDate || null,
+            totalAmount,
 
-          installments: paymentInstallments,
-        },
-      };
-    });
+            nextInstallmentDueDate: nextInstallment?.dueDate || null,
+
+            installments: paymentInstallments,
+          },
+        };
+      }),
+    );
 
     const userResponse = {
       ...user,
@@ -902,91 +914,175 @@ export const addUserCourse = async (req: Request, res: Response) => {
     const { courseId, cohortId } = req.body;
 
     if (!userId || !courseId) {
-      return res
-        .status(400)
-        .json({ message: "UserId and CourseId are required" });
+      return res.status(400).json({
+        message: "UserId and CourseId are required",
+      });
     }
 
-    const user = await prismadb.user.findUnique({
-      where: { id: userId },
-    });
+    const adminUser = req.user as NebiantUser;
+
+    const [user, course, existingPurchase, fallbackCohort] = await Promise.all([
+      prismadb.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          ongoing_courses: true,
+        },
+      }),
+
+      prismadb.course.findUnique({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+        },
+      }),
+
+      prismadb.purchase.findFirst({
+        where: {
+          userId,
+          courseId,
+        },
+        select: {
+          id: true,
+        },
+      }),
+
+      cohortId
+        ? Promise.resolve(null)
+        : prismadb.cohort.findFirst({
+            where: { courseId },
+            orderBy: { createdAt: "desc" },
+            select: {
+              id: true,
+              name: true,
+              courseId: true,
+            },
+          }),
+    ]);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const course = await prismadb.course.findUnique({
-      where: { id: courseId },
-    });
-
     if (!course) {
       return res.status(404).json({ message: "Course not found" });
     }
 
-    // Checking if user already has this course
-    const existingPurchase = await prismadb.purchase.findFirst({
-      where: {
-        userId,
-        courseId,
-      },
-    });
-
     if (existingPurchase) {
-      return res.status(400).json({ message: "User already has this course" });
+      return res.status(400).json({
+        message: "User already has this course",
+      });
     }
 
-    let courseCohortId = cohortId;
-    // Finding the latest cohort for this course
-    if (!cohortId) {
-      const latestCohort = await prismadb.cohort.findFirst({
-        where: {
+    const selectedCohortId = cohortId || fallbackCohort?.id;
+
+    if (!selectedCohortId) {
+      return res.status(400).json({
+        message: "This course does not have a cohort",
+      });
+    }
+
+    const selectedCohort = cohortId
+      ? await prismadb.cohort.findFirst({
+          where: {
+            id: selectedCohortId,
+            courseId,
+          },
+          select: {
+            id: true,
+            name: true,
+            courseId: true,
+          },
+        })
+      : fallbackCohort;
+
+    if (!selectedCohort) {
+      return res.status(400).json({
+        message: "Selected cohort does not belong to this course",
+      });
+    }
+
+    const shouldAddToOngoing = !user.ongoing_courses.includes(courseId);
+
+    const result = await prismadb.$transaction(async (tx) => {
+      const purchase = await tx.purchase.create({
+        data: {
+          userId,
           courseId,
         },
-        orderBy: {
-          createdAt: "desc",
+      });
+
+      const userCohort = await tx.userCohort.upsert({
+        where: {
+          userId_cohortId_courseId: {
+            userId,
+            cohortId: selectedCohort.id,
+            courseId,
+          },
+        },
+        create: {
+          userId,
+          cohortId: selectedCohort.id,
+          courseId,
+          isPaymentActive: true,
+          isActive: true,
+        },
+        update: {
+          isPaymentActive: true,
+          archivedAt: null,
         },
       });
-      courseCohortId = latestCohort?.id;
-    }
 
-    if (!courseCohortId) {
-      return res
-        .status(400)
-        .json({ message: "This course does not have a cohort" });
-    }
+      const updatedUser = shouldAddToOngoing
+        ? await tx.user.update({
+            where: { id: userId },
+            data: {
+              ongoing_courses: {
+                push: courseId,
+              },
+            },
+            select: {
+              id: true,
+              ongoing_courses: true,
+            },
+          })
+        : null;
 
-    // Add the course to user
-    const purchase = await prismadb.purchase.create({
-      data: {
-        userId,
-        courseId,
-      },
+      return {
+        purchase,
+        userCohort,
+        updatedUser,
+      };
     });
 
-    // Update user's ongoing courses if not included
-    await prismadb.user.update({
-      where: { id: userId },
-      data: {
-        ongoing_courses: {
-          push: courseId,
-        },
-      },
-    });
-    await prismadb.userCohort.create({
-      data: {
-        userId,
-        cohortId: courseCohortId,
+    if (!result?.purchase?.id) {
+      return res.status(400).json({
+        status: "error",
+        message: "Failed to add course to user",
+      });
+    }
+
+    await NotificationService.create({
+      userId,
+      type: "COURSE_ADDED",
+      payload: {
         courseId,
-        isPaymentActive: true,
+        courseTitle: course.title,
+        cohortId,
+        cohortName: selectedCohort.name,
+        actionUrl: `/dashboard/lessons/${courseId}`,
       },
+      relatedUserId: adminUser?.id,
     });
 
     return res.status(200).json({
       status: "success",
       message: "Course added and user enrolled in cohort",
       data: {
-        purchase,
-        cohort: { id: courseCohortId },
+        purchase: result.purchase,
+        cohort: selectedCohort,
+        userCohort: result.userCohort,
       },
     });
   } catch (error) {
@@ -1005,60 +1101,85 @@ export const removeUserCourse = async (req: Request, res: Response) => {
         .json({ message: "UserId and CourseId are required" });
     }
 
-    const user = await prismadb.user.findUnique({
-      where: { id: userId },
-    });
+    const adminUser = req.user as NebiantUser;
+
+    const [user, course, existingPurchase] = await Promise.all([
+      prismadb.user.findUnique({
+        where: { id: userId },
+      }),
+      prismadb.course.findUnique({
+        where: { id: courseId },
+      }),
+      prismadb.purchase.findFirst({
+        where: {
+          userId,
+          courseId,
+        },
+      }),
+    ]);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const course = await prismadb.course.findUnique({
-      where: { id: courseId },
-    });
-
     if (!course) {
       return res.status(404).json({ message: "Course not found" });
     }
-
-    const existingPurchase = await prismadb.purchase.findFirst({
-      where: {
-        userId,
-        courseId,
-      },
-    });
 
     if (!existingPurchase) {
       return res.status(400).json({ message: "User doesn't have this course" });
     }
 
-    // Remove user from any cohorts associated with this course
-    await prismadb.userCohort.deleteMany({
-      where: {
-        userId,
-        courseId,
-      },
+    const result = await prismadb.$transaction(async (tx) => {
+      // Remove user from any cohorts associated with this course
+      await tx.userCohort.deleteMany({
+        where: {
+          userId,
+          courseId,
+        },
+      });
+
+      // Remove the course purchase
+      await tx.purchase.deleteMany({
+        where: {
+          userId,
+          courseId,
+        },
+      });
+
+      // Update user's ongoing and completed courses arrays
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: {
+          ongoing_courses: {
+            set: user.ongoing_courses.filter((id) => id !== courseId),
+          },
+          completed_courses: {
+            set: user.completed_courses.filter((id) => id !== courseId),
+          },
+        },
+      });
+
+      return {
+        updatedUser,
+      };
     });
 
-    // Remove the course purchase
-    await prismadb.purchase.deleteMany({
-      where: {
-        userId,
-        courseId,
-      },
-    });
+    if (!result?.updatedUser) {
+      return res.status(422).json({
+        status: "error",
+        message: "Failed to remove course for user",
+      });
+    }
 
-    // Update user's ongoing and completed courses arrays
-    await prismadb.user.update({
-      where: { id: userId },
-      data: {
-        ongoing_courses: {
-          set: user.ongoing_courses.filter((id) => id !== courseId),
-        },
-        completed_courses: {
-          set: user.completed_courses.filter((id) => id !== courseId),
-        },
+    await NotificationService.create({
+      userId,
+      type: "COURSE_REMOVED",
+      payload: {
+        courseId,
+        courseTitle: course.title,
       },
+      relatedUserId: adminUser?.id,
     });
 
     return res.status(200).json({
@@ -1081,6 +1202,7 @@ export const updateUserCohort = async (req: Request, res: Response) => {
       });
     }
 
+    const adminUser = req.user as NebiantUser;
     const [currentEnrollment, newCohort, user] = await Promise.all([
       prismadb.userCohort.findFirst({
         where: {
@@ -1094,6 +1216,12 @@ export const updateUserCohort = async (req: Request, res: Response) => {
               id: true,
               name: true,
               courseId: true,
+              course: {
+                select: {
+                  id: true,
+                  title: true,
+                },
+              },
             },
           },
         },
@@ -1105,6 +1233,12 @@ export const updateUserCohort = async (req: Request, res: Response) => {
           id: true,
           name: true,
           courseId: true,
+          course: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
         },
       }),
 
@@ -1179,26 +1313,28 @@ export const updateUserCohort = async (req: Request, res: Response) => {
         },
       });
 
-      await tx.notification.create({
-        data: {
-          userId,
-          type: "COHORT_SWITCHED",
-          title: "Cohort Updated",
-          message: `Your cohort has been switched to ${newCohort.name}`,
-          details: JSON.stringify({
-            oldCohortId: currentEnrollment.cohortId,
-            newCohortId: cohortId,
-            courseId,
-            reason,
-          }),
-        },
-      });
-
       return {
         previousCohort: archivedEnrollment,
         newCohort: newEnrollment,
       };
     });
+
+    if (result.newCohort) {
+      await NotificationService.create({
+        userId,
+        type: "COHORT_SWITCHED",
+        payload: {
+          courseId,
+          courseTitle: currentEnrollment.cohort.course.title,
+          cohortId,
+          cohortName: newCohort.name,
+          previousCohortId: currentEnrollment.cohortId,
+          previousCohortName: currentEnrollment.cohort.name,
+          reason,
+        },
+        relatedUserId: adminUser?.id,
+      });
+    }
 
     if (user.email) {
       const html = `
@@ -1445,6 +1581,7 @@ export const switchUserCourse = async (req: Request, res: Response) => {
       newCohortId,
       reason,
     } = req.body;
+    const adminUser = req.user as NebiantUser;
 
     if (
       !userId ||
@@ -1566,20 +1703,22 @@ export const switchUserCourse = async (req: Request, res: Response) => {
     });
 
     // Create notification for course switch
-    await prismadb.notification.create({
-      data: {
-        userId,
-        type: "COURSE_SWITCHED",
-        title: "Course Updated",
-        message: `Your course on ${currentCourse.title} has been switched to ${newCourse.title}`,
-        details: JSON.stringify({
-          newCourseId,
-          newCohortId,
-          courseName: newCourse.title,
-          cohortName: newCohort.name,
-          reason,
-        }),
+    await NotificationService.create({
+      userId,
+      type: "COURSE_SWITCHED",
+      payload: {
+        courseId: newCourse.id,
+        courseTitle: newCourse.title,
+        previousCourseId: currentCourse.id,
+        previousCourseTitle: currentCourse.title,
+        cohortId: newCohort.id,
+        cohortName: newCohort.name,
+        previousCohortId: currentCourseCohort.id,
+        previousCohortName: currentCourseCohort.name,
+        reason,
+        actionUrl: `/dashboard/lessons/${newCourse.id}`,
       },
+      relatedUserId: adminUser?.id,
     });
 
     // Send email notification

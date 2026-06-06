@@ -75,8 +75,8 @@ const handleServerError = (error: any, res: Response) => {
 
 export const createAttachment = async (req: Request, res: Response) => {
   try {
-    const { name, url }: { name: string; url: string } = req.body;
-    const { courseId, weekId  } = req.params;
+    const { name, fileKey }: { name: string; fileKey: string } = req.body;
+    const { courseId, weekId } = req.params;
 
     if (!courseId) {
       return res.status(400).json({ message: "CourseId is required" });
@@ -99,7 +99,7 @@ export const createAttachment = async (req: Request, res: Response) => {
     const attachment = await prismadb.attachment.create({
       data: {
         name,
-        url,
+        fileKey,
         courseWeekId: weekId,
       },
     });

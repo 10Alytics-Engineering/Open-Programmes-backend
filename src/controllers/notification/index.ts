@@ -10,33 +10,49 @@ const handleServerError = (error: any, res: Response) => {
 export const getUserNotifications = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const { limit = 20, offset = 0 } = req.query;
+    const { status, limit = "20", offset = "0" } = req.query;
 
-    if (!userId) {
-      return res.status(400).json({ message: "UserId is required" });
-    }
+    const where: any = {
+      userId,
+      adminOnly: { not: true },
+    };
 
-    // Get notifications
-    const notifications = await prismadb.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: parseInt(limit as string),
-      skip: parseInt(offset as string),
-    });
+    if (status === "read") where.isRead = true;
+    if (status === "unread") where.isRead = false;
 
-    // Get total count
-    const total = await prismadb.notification.count({
-      where: { userId },
-    });
+    const take = Number(limit);
+    const skip = Number(offset);
+
+    const [notifications, total, unreadCount] = await Promise.all([
+      prismadb.notification.findMany({
+        where,
+        orderBy: {
+          createdAt: "desc",
+        },
+        take,
+        skip,
+      }),
+
+      prismadb.notification.count({ where }),
+
+      prismadb.notification.count({
+        where: {
+          ...where,
+          isRead: false,
+        },
+      }),
+    ]);
 
     return res.status(200).json({
       status: "success",
-      data: notifications,
-      pagination: {
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
+      message: null,
+      data: {
+        notifications,
         total,
-        hasMore: parseInt(offset as string) + parseInt(limit as string) < total,
+        unreadCount,
+        limit: take,
+        offset: skip,
+        hasMore: skip + notifications.length < total,
       },
     });
   } catch (error) {
@@ -47,7 +63,7 @@ export const getUserNotifications = async (req: Request, res: Response) => {
 // Get unread notifications count
 export const getUnreadNotificationsCount = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { userId } = req.params;
@@ -75,32 +91,47 @@ export const getUnreadNotificationsCount = async (
 };
 
 // Mark notification as read
-export const markNotificationAsRead = async (req: Request, res: Response) => {
+export const markNotificationsAsRead = async (req: Request, res: Response) => {
   try {
-    const { notificationId } = req.params;
+    const { notificationIds, userId } = req.body;
 
-    if (!notificationId) {
-      return res.status(400).json({ message: "NotificationId is required" });
+    if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
+      return res.status(400).json({
+        message: "notificationIds is required",
+      });
     }
 
-    const notification = await prismadb.notification.update({
-      where: { id: notificationId },
-      data: { isRead: true },
+    if (!userId) {
+      return res.status(400).json({
+        message: "user id is required",
+      });
+    }
+
+    await prismadb.notification.updateMany({
+      where: {
+        userId,
+        id: {
+          in: notificationIds,
+        },
+        isRead: false,
+      },
+      data: {
+        isRead: true,
+      },
     });
 
     return res.status(200).json({
       status: "success",
-      data: notification,
+      message: "Notifications marked as read",
     });
   } catch (error) {
     handleServerError(error, res);
   }
 };
-
 // Mark all notifications as read
 export const markAllNotificationsAsRead = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { userId } = req.params;

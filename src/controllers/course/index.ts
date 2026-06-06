@@ -2,6 +2,10 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { NebiantUser } from "../../middleware/index";
 import { Purchase } from "@prisma/client";
+import {
+  attachSignedUrls,
+  generateSignedFileUrl,
+} from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error("❌ [SERVER_ERROR]:", error);
@@ -36,6 +40,7 @@ export const getCourses = async (req: Request, res: Response) => {
                     id: true,
                     title: true,
                     thumbnailUrl: true,
+                    thumbnailKey: true,
                     duration: true,
                     moduleId: true,
                     courseId: true,
@@ -67,9 +72,15 @@ export const getCourses = async (req: Request, res: Response) => {
       },
     });
 
+    const coursesWithImageUrls = await attachSignedUrls({
+      items: courses,
+      keyField: "imageKey",
+      urlField: "imageUrl",
+    });
+
     return res
       .status(200)
-      .json({ status: "success", message: null, data: courses });
+      .json({ status: "success", message: null, data: coursesWithImageUrls });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -145,6 +156,7 @@ export const getCourse = async (req: Request, res: Response) => {
                     title: true,
                     videoUrl: isCoursePurchased ? true : false,
                     thumbnailUrl: true,
+                    thumbnailKey: true,
                     duration: true,
                     moduleId: true,
                     courseId: true,
@@ -177,6 +189,12 @@ export const getCourse = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Course does not exist" });
     }
 
+    const courseImageUrl = course.imageKey
+      ? await generateSignedFileUrl(course.imageKey || "")
+      : course.imageUrl || "";
+
+    console.log(courseImageUrl);
+
     return res.status(200).json({
       status: "success",
       message: `${
@@ -184,7 +202,7 @@ export const getCourse = async (req: Request, res: Response) => {
         !coursePurchased &&
         "Course purchase not found, weekly attachments and video url is disabled"
       }`,
-      data: course,
+      data: { ...course, imageUrl: courseImageUrl },
     });
   } catch (error) {
     handleServerError(error, res);
@@ -452,6 +470,7 @@ export const getCourseWithoutAuth = async (req: Request, res: Response) => {
                     id: true,
                     title: true,
                     thumbnailUrl: true,
+                    thumbnailKey: true,
                     duration: true,
                     moduleId: true,
                     courseId: true,
@@ -484,10 +503,14 @@ export const getCourseWithoutAuth = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Course does not exist" });
     }
 
+    const courseImageUrl = course.imageKey
+      ? await generateSignedFileUrl(course.imageKey || "")
+      : course.imageUrl || "";
+
     return res.status(200).json({
       status: "success",
       message: null,
-      data: course,
+      data: { ...course, imageUrl: courseImageUrl },
     });
   } catch (error) {
     handleServerError(error, res);
@@ -530,6 +553,7 @@ export const getCourseWithoutAuthWithSlug = async (
                     id: true,
                     title: true,
                     thumbnailUrl: true,
+                    thumbnailKey: true,
                     duration: true,
                     moduleId: true,
                     courseId: true,
@@ -562,10 +586,14 @@ export const getCourseWithoutAuthWithSlug = async (
       return res.status(404).json({ message: "Course does not exist" });
     }
 
+    const courseImageUrl = course.imageKey
+      ? await generateSignedFileUrl(course.imageKey || "")
+      : course.imageUrl || "";
+
     return res.status(200).json({
       status: "success",
       message: null,
-      data: course,
+      data: { ...course, imageUrl: courseImageUrl },
     });
   } catch (error) {
     handleServerError(error, res);

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { BlogImage, Prisma } from "@prisma/client";
+import { generateSignedFileUrl } from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -88,10 +89,24 @@ export const getBlog = async (req: Request, res: Response) => {
       },
     });
 
+    if (!existingBlog?.id)
+      return res.status(404).json({ error: "Blog not found" });
+
+    const images = await Promise.all(
+      existingBlog.images.map(async (image) => {
+        if (image.url) {
+          return image;
+        } else {
+          const url = (await generateSignedFileUrl(image.key || "")) || "";
+          return { ...image, url: url };
+        }
+      }),
+    );
+
     res.status(200).json({
       status: "success",
       message: existingBlog ? null : "Nonexistent Blog!",
-      data: existingBlog,
+      data: { ...existingBlog, images },
     });
   } catch (error) {
     handleServerError(error, res);
@@ -125,7 +140,7 @@ export const createBlog = async (req: Request, res: Response) => {
           images && images.length
             ? {
                 create: images.map((image: BlogImage) => ({
-                  url: image.url,
+                  key: image.key,
                 })),
               }
             : undefined,
@@ -194,7 +209,7 @@ export const updateBlog = async (req: Request, res: Response) => {
           images && images.length
             ? {
                 create: images.map((image: BlogImage) => ({
-                  url: image.url,
+                  key: image.key,
                 })),
               }
             : undefined,

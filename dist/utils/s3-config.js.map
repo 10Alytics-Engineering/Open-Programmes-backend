@@ -1,0 +1,1 @@
+{"version":3,"file":"s3-config.js","sourceRoot":"","sources":["../../src/utils/s3-config.ts"],"names":[],"mappings":";;;AAAA,kDAA8C;AAEjC,QAAA,EAAE,GAAG,IAAI,oBAAQ,CAAC;IAC7B,MAAM,EAAE,OAAO,CAAC,GAAG,CAAC,UAAW;IAC/B,WAAW,EAAE;QACX,WAAW,EAAE,OAAO,CAAC,GAAG,CAAC,iBAAkB;QAC3C,eAAe,EAAE,OAAO,CAAC,GAAG,CAAC,qBAAsB;KACpD;CACF,CAAC,CAAC"}

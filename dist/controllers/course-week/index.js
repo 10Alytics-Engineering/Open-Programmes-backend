@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.unPublishCourseWeek = exports.publishCourseWeek = exports.deleteCourseWeek = exports.updateCourseWeek = exports.createCourseWeek = exports.getCourseWeek = exports.getCourseWeeks = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -20,9 +21,14 @@ const getCourseWeeks = async (req, res) => {
                 createdAt: "asc",
             },
         });
+        const courseWeeksWithImages = await (0, upload_service_1.attachSignedUrls)({
+            items: courseWeeks,
+            keyField: "iconKey",
+            urlField: "iconUrl",
+        });
         return res
             .status(200)
-            .json({ status: "success", message: null, data: courseWeeks });
+            .json({ status: "success", message: null, data: courseWeeksWithImages });
     }
     catch (error) {
         handleServerError(error, res);
@@ -62,9 +68,16 @@ const getCourseWeek = async (req, res) => {
         if (!courseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
+        const iconUrl = courseWeek.iconKey
+            ? await (0, upload_service_1.generateSignedFileUrl)(courseWeek.iconKey || "")
+            : courseWeek.iconUrl || "";
         return res
             .status(200)
-            .json({ status: "success", message: null, data: courseWeek });
+            .json({
+            status: "success",
+            message: null,
+            data: { ...courseWeek, iconUrl },
+        });
     }
     catch (error) {
         handleServerError(error, res);
@@ -126,9 +139,7 @@ const updateCourseWeek = async (req, res) => {
                 ...body,
             },
         });
-        return res
-            .status(200)
-            .json({
+        return res.status(200).json({
             status: "Course week updated",
             message: null,
             data: updatedCourseWeek,
@@ -171,7 +182,9 @@ const deleteCourseWeek = async (req, res) => {
                 },
             });
         });
-        return res.status(200).json({ status: "Course week and related modules deleted" });
+        return res
+            .status(200)
+            .json({ status: "Course week and related modules deleted" });
     }
     catch (error) {
         handleServerError(error, res);
@@ -203,9 +216,7 @@ const publishCourseWeek = async (req, res) => {
                 isPublished: true,
             },
         });
-        return res
-            .status(200)
-            .json({
+        return res.status(200).json({
             status: "Course week updated",
             message: null,
             data: updatedCourseWeek,
@@ -241,9 +252,7 @@ const unPublishCourseWeek = async (req, res) => {
                 isPublished: false,
             },
         });
-        return res
-            .status(200)
-            .json({
+        return res.status(200).json({
             status: "Course week updated",
             message: null,
             data: updatedCourseWeek,

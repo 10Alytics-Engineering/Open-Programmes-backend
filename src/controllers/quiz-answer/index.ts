@@ -13,33 +13,64 @@ export const submitAnswer = async (req: Request, res: Response) => {
       answerId,
     }: { userId: string; quizId: string; answerId: string } = req.body;
 
-    const quiz = await prismadb.quiz.findUnique({
-      where: { id: quizId },
-    });
+    const [quiz, answer, quizAnswered] = await Promise.all([
+      // Check if user already answered this quiz
+      prismadb.quiz.findUnique({
+        where: { id: quizId },
+        include: {
+          courseModule: {
+            select: {
+              CourseWeek: {
+                select: {
+                  courseId: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      // Get the answer to check if it's correct
+      prismadb.quizAnswer.findUnique({
+        where: { id: answerId },
+      }),
+
+      prismadb.userQuizAnswer.findUnique({
+        where: {
+          userId_quizAnswerId: {
+            userId,
+            quizAnswerId: answerId,
+          },
+        },
+      }),
+    ]);
 
     if (!quiz) {
       return res.status(404).json({ message: "Quiz not found" });
     }
 
-    const answer = await prismadb.quizAnswer.findUnique({
-      where: { id: answerId },
-    });
-
     if (!answer) {
       return res.status(404).json({ message: "Answer not found" });
     }
 
-    const quizAnswered = await prismadb.userQuizAnswer.findUnique({
-      where: {
-        userId_quizAnswerId: {
-          userId,
-          quizAnswerId: answerId,
-        },
-      },
-    });
-
     if (quizAnswered) {
       return res.status(403).json({ message: "Quiz already answered by user" });
+    }
+
+    const userCohort = await prismadb.userCohort.findFirst({
+      where: {
+        isActive: true,
+        userId: user?.id,
+        courseId: quiz.courseModule.CourseWeek.courseId,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!userCohort?.id) {
+      return res.status(404).json({
+        status: "error",
+        message: "Active cohort for user not found",
+      });
     }
 
     await prismadb.userQuizAnswer.create({
@@ -53,7 +84,28 @@ export const submitAnswer = async (req: Request, res: Response) => {
 
     // Increment points if the answer is correct
     if (isCorrect) {
-      await incrementPoints(userId, quizId, isCorrect);
+      await prismadb.courseCohortLeaderboard.upsert({
+        where: {
+          userId_courseId_cohortId: {
+            cohortId: userCohort?.cohortId,
+            courseId: userCohort?.courseId,
+            userId: user.id,
+          },
+        },
+        create: {
+          assignmentPoints: 0,
+          points: 1,
+          lessonQuizPoints: 1,
+          lessonVideoPoints: 0,
+          cohortId: userCohort?.cohortId,
+          courseId: userCohort?.courseId,
+          userId: user.id,
+        },
+        update: {
+          lessonQuizPoints: { increment: 1 },
+          points: { increment: 1 },
+        },
+      });
     }
 
     return res
@@ -105,5 +157,5 @@ export const deleteQuizAnswer = async (req: Request, res: Response) => {
     return res
       .status(200)
       .json({ message: "Quiz answer deleted successfully" });
-  } catch (error) { }
+  } catch (error) {}
 };

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteModule = exports.updateModule = exports.createModule = exports.getModule = exports.getModules = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -36,12 +37,17 @@ const getModules = async (req, res) => {
                 },
             },
             orderBy: {
-                createdAt: "asc"
-            }
+                createdAt: "asc",
+            },
+        });
+        const modulesWithIconUrls = await (0, upload_service_1.attachSignedUrls)({
+            items: modules,
+            keyField: "iconKey",
+            urlField: "iconUrl",
         });
         return res
             .status(200)
-            .json({ status: "success", message: null, data: modules });
+            .json({ status: "success", message: null, data: modulesWithIconUrls });
     }
     catch (error) {
         handleServerError(error, res);
@@ -85,9 +91,25 @@ const getModule = async (req, res) => {
         if (!module) {
             return res.status(404).json({ message: "Module does not exist" });
         }
+        const iconUrl = module.iconKey
+            ? await (0, upload_service_1.generateSignedFileUrl)(module.iconKey || "")
+            : module.iconUrl || "";
+        const projectVideosWithThumbnails = await (0, upload_service_1.attachSignedUrls)({
+            items: module.projectVideos,
+            keyField: "thumbnailKey",
+            urlField: "thumbnailUrl",
+        });
         return res
             .status(200)
-            .json({ status: "success", message: null, data: module });
+            .json({
+            status: "success",
+            message: null,
+            data: {
+                ...module,
+                iconUrl,
+                projectVideos: projectVideosWithThumbnails,
+            },
+        });
     }
     catch (error) {
         handleServerError(error, res);

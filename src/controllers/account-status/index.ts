@@ -1,24 +1,29 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
+import { NotificationService } from "../../services/notification.service";
+import { NebiantUser } from "../../middleware";
 
 export const toggleUserAccountStatus = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const { inactive } = req.body;
+    const adminUser = req.user as NebiantUser;
 
     // Validate input
     if (!userId) {
       return res.status(400).json({ error: "User ID is required" });
     }
 
-    if (typeof inactive !== 'boolean') {
-      return res.status(400).json({ error: "Invalid status value. Must be boolean" });
+    if (typeof inactive !== "boolean") {
+      return res
+        .status(400)
+        .json({ error: "Invalid status value. Must be boolean" });
     }
 
     // Check if user exists
     const existingUser = await prismadb.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, inactive: true }
+      select: { id: true, name: true, email: true, inactive: true },
     });
 
     if (!existingUser) {
@@ -34,18 +39,31 @@ export const toggleUserAccountStatus = async (req: Request, res: Response) => {
         name: true,
         email: true,
         inactive: true,
-        updatedAt: true
-      }
+        updatedAt: true,
+      },
     });
 
     // Log the action for audit purposes
-    console.log(`[USER_STATUS_CHANGE] User ${updatedUser.email} account ${inactive ? 'suspended' : 'activated'} at ${new Date().toISOString()}`);
+    console.log(
+      `[USER_STATUS_CHANGE] User ${updatedUser.email} account ${inactive ? "suspended" : "activated"} at ${new Date().toISOString()}`,
+    );
 
-    res.status(200).json({
-      message: `User account ${inactive ? 'suspended' : 'activated'} successfully`,
-      user: updatedUser
+    if (!updatedUser.id) {
+      return res.status(400).json({
+        error: `Failed to ${inactive ? "suspend" : "activate"} user`,
+      });
+    }
+
+    await NotificationService.create({
+      userId,
+      type: inactive ? "ACCOUNT_SUSPENDED" : "ACCOUNT_ACTIVATED",
+      relatedUserId: adminUser?.id,
     });
 
+    res.status(200).json({
+      message: `User account ${inactive ? "suspended" : "activated"} successfully`,
+      user: updatedUser,
+    });
   } catch (error) {
     console.error("[USER_STATUS_TOGGLE_ERROR]", error);
     res.status(500).json({ error: "Internal server error" });
@@ -67,8 +85,8 @@ export const getUserAccountStatus = async (req: Request, res: Response) => {
         name: true,
         email: true,
         inactive: true,
-        updatedAt: true
-      }
+        updatedAt: true,
+      },
     });
 
     if (!user) {
@@ -77,9 +95,8 @@ export const getUserAccountStatus = async (req: Request, res: Response) => {
 
     res.status(200).json({
       user,
-      status: user.inactive ? 'inactive' : 'active'
+      status: user.inactive ? "inactive" : "active",
     });
-
   } catch (error) {
     console.error("[GET_USER_STATUS_ERROR]", error);
     res.status(500).json({ error: "Internal server error" });

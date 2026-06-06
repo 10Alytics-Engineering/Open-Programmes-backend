@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getUserCourseVideos = exports.getCourseVideos = exports.getCourseEngagementOverview = exports.getVideoEngagementDetails = exports.getStudentEngagement = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const upload_service_1 = require("../../services/upload.service");
 const getStudentEngagement = async (req, res) => {
     try {
         const { userId } = req.params;
@@ -116,7 +117,7 @@ const getStudentEngagement = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "Internal server error",
-            data: null
+            data: null,
         });
     }
 };
@@ -304,6 +305,7 @@ const getCourseVideos = async (req, res) => {
                 title: true,
                 duration: true,
                 thumbnailUrl: true,
+                thumbnailKey: true,
                 createdAt: true,
                 courseModule: {
                     select: {
@@ -311,33 +313,41 @@ const getCourseVideos = async (req, res) => {
                         CourseWeek: {
                             select: {
                                 title: true,
-                                courseId: true
-                            }
-                        }
-                    }
-                }
+                                courseId: true,
+                            },
+                        },
+                    },
+                },
             },
             orderBy: {
-                createdAt: 'asc'
-            }
+                createdAt: "asc",
+            },
         });
         if (!videos.length) {
-            return res.status(404).json({ message: "No videos found for this course" });
+            return res
+                .status(404)
+                .json({ message: "No videos found for this course" });
         }
         // Transform the data to a simpler structure
-        const formattedVideos = videos.map(video => ({
+        const formattedVideos = videos.map((video) => ({
             id: video.id,
             title: video.title,
             duration: video.duration,
             thumbnailUrl: video.thumbnailUrl,
+            thumbnailKey: video.thumbnailKey,
             moduleTitle: video.courseModule.title,
             weekTitle: video.courseModule.CourseWeek.title,
-            createdAt: video.createdAt
+            createdAt: video.createdAt,
         }));
+        const videosWithThumbnailUrls = await (0, upload_service_1.attachSignedUrls)({
+            items: formattedVideos,
+            keyField: "thumbnailKey",
+            urlField: "thumbnailUrl",
+        });
         res.status(200).json({
             status: "success",
             message: null,
-            data: formattedVideos,
+            data: videosWithThumbnailUrls,
         });
     }
     catch (error) {
@@ -345,7 +355,7 @@ const getCourseVideos = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "Internal server error",
-            data: null
+            data: null,
         });
     }
 };
@@ -357,42 +367,45 @@ const getUserCourseVideos = async (req, res) => {
         const userProgress = await prismadb_1.prismadb.userProgress.findMany({
             where: {
                 userId,
-                courseId
+                courseId,
             },
             select: {
                 videoId: true,
                 isCompleted: true,
                 updatedAt: true,
-                createdAt: true
+                createdAt: true,
             },
             orderBy: {
-                updatedAt: 'desc' // Show most recently watched first
-            }
+                updatedAt: "desc", // Show most recently watched first
+            },
         });
         if (!userProgress.length) {
-            return res.status(404).json({ message: "No video progress found for this user in the selected course" });
+            return res.status(404).json({
+                message: "No video progress found for this user in the selected course",
+            });
         }
         // Get details for all videos the user has progress for
         const videos = await prismadb_1.prismadb.projectVideo.findMany({
             where: {
-                id: { in: userProgress.map(p => p.videoId) },
-                courseId
+                id: { in: userProgress.map((p) => p.videoId) },
+                courseId,
             },
             include: {
                 courseModule: {
                     include: {
                         CourseWeek: {
                             select: {
-                                title: true
-                            }
-                        }
-                    }
-                }
-            }
+                                title: true,
+                            },
+                        },
+                    },
+                },
+            },
         });
         // Combine the data
-        const formattedVideos = userProgress.map(progress => {
-            const video = videos.find(v => v.id === progress.videoId);
+        const formattedVideos = userProgress
+            .map((progress) => {
+            const video = videos.find((v) => v.id === progress.videoId);
             if (!video)
                 return null;
             return {
@@ -403,9 +416,10 @@ const getUserCourseVideos = async (req, res) => {
                 moduleTitle: video.courseModule.title,
                 weekTitle: video.courseModule.CourseWeek.title,
                 isCompleted: progress.isCompleted,
-                lastWatched: progress.updatedAt
+                lastWatched: progress.updatedAt,
             };
-        }).filter(video => video !== null);
+        })
+            .filter((video) => video !== null);
         res.status(200).json({
             status: "success",
             message: null,
@@ -417,7 +431,7 @@ const getUserCourseVideos = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "Internal server error",
-            data: null
+            data: null,
         });
     }
 };
