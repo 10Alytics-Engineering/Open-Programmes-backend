@@ -9,6 +9,27 @@ import {
 } from "../../utils/liveClassNotifications";
 import { NebiantUser } from "../../middleware";
 import { NotificationService } from "../../services/notification.service";
+import { generateSignedFileUrl } from "../../services/upload.service";
+
+const attachSignedUrlsToMaterial = async (material: any) => {
+  const imageUrl = material.imageKey
+    ? await generateSignedFileUrl(material.imageKey)
+    : material.imageUrl || null;
+
+  const fileUrl = material.fileKey
+    ? await generateSignedFileUrl(material.fileKey)
+    : material.fileUrl || null;
+
+  return {
+    ...material,
+    imageUrl,
+    fileUrl,
+  };
+};
+
+const attachSignedUrlsToMaterials = async (materials: any[] = []) => {
+  return Promise.all(materials.map(attachSignedUrlsToMaterial));
+};
 
 export const getClassroomData = async (req: Request, res: Response) => {
   try {
@@ -132,6 +153,9 @@ export const getClassroomTopics = async (req: Request, res: Response) => {
       }),
     ]);
 
+    const formattedUnassignedMaterials =
+      await attachSignedUrlsToMaterials(unassignedMaterials);
+
     const user = req.user as NebiantUser;
     const userId = user?.id;
     const isAdmin = user?.role === "ADMIN" || user?.role === "COURSE_ADMIN";
@@ -156,52 +180,64 @@ export const getClassroomTopics = async (req: Request, res: Response) => {
     // Process topics to add isCompleted and isLocked status
     let previousTopicCompleted = true; // The first topic is always unlocked
 
-    const processedTopics = topics.map((topic) => {
-      const processedAssignments = topic.assignments.map((a) => ({
-        ...a,
-        isCompleted: submittedAssignmentIds.has(a.id),
-      }));
+    const processedTopics = await Promise.all(
+      topics.map(async (topic) => {
+        const processedAssignments = topic.assignments.map((a) => ({
+          ...a,
+          isCompleted: submittedAssignmentIds.has(a.id),
+        }));
 
-      const processedRecordings = topic.classRecordings.map((r) => ({
-        ...r,
-        isCompleted: completedVideoIds.has(r.id),
-      }));
+        const processedMaterials = await attachSignedUrlsToMaterials(
+          topic.classMaterials,
+        );
 
-      const completeStatuses = [];
-      if (processedRecordings.length) {
-        completeStatuses.push(processedRecordings.every((r) => r.isCompleted));
-      }
+        const processedRecordings = topic.classRecordings.map((r) => ({
+          ...r,
+          isCompleted: completedVideoIds.has(r.id),
+        }));
 
-      if (processedAssignments.length) {
-        completeStatuses.push(processedAssignments.every((a) => a.isCompleted));
-      }
+        const completeStatuses = [];
 
-      const isCompleted =
-        completeStatuses.length && !completeStatuses.includes(false)
-          ? true
-          : false;
+        if (processedRecordings.length) {
+          completeStatuses.push(
+            processedRecordings.every((r) => r.isCompleted),
+          );
+        }
 
-      // A topic is locked if the previous topic was NOT completed
-      // Except for the first topic which is always unlocked
-      const isLocked = false;
+        if (processedAssignments.length) {
+          completeStatuses.push(
+            processedAssignments.every((a) => a.isCompleted),
+          );
+        }
 
-      // Update previousTopicCompleted for the next iteration
-      previousTopicCompleted = isCompleted;
+        const isCompleted =
+          completeStatuses.length && !completeStatuses.includes(false)
+            ? true
+            : false;
 
-      return {
-        ...topic,
-        assignments: processedAssignments,
-        classRecordings: processedRecordings,
-        isCompleted,
-        isLocked: isAdmin ? false : isLocked,
-      };
-    });
+        // A topic is locked if the previous topic was NOT completed
+        // Except for the first topic which is always unlocked
+        const isLocked = false;
+
+        // Update previousTopicCompleted for the next iteration
+        previousTopicCompleted = isCompleted;
+
+        return {
+          ...topic,
+          assignments: processedAssignments,
+          classMaterials: processedMaterials,
+          classRecordings: processedRecordings,
+          isCompleted,
+          isLocked: isAdmin ? false : isLocked,
+        };
+      }),
+    );
 
     res.json({
       topics: processedTopics,
       unassignedItems: {
         assignments: unassignedAssignments,
-        materials: unassignedMaterials,
+        materials: formattedUnassignedMaterials,
         recordings: unassignedRecordings,
         liveClasses: unassignedLiveClasses,
       },

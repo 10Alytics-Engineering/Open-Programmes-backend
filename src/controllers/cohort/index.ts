@@ -136,7 +136,10 @@ export const getCohort = async (req: Request, res: Response) => {
   }
 };
 
-export const getCohortsForChangeRequests = async (req: Request, res: Response) => {
+export const getCohortsForChangeRequests = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const currentDate = new Date();
     const twoMonthsFromNow = new Date();
@@ -231,6 +234,7 @@ export const createCohort = async (req: Request, res: Response) => {
             description: course.description,
             price: course.price,
             imageUrl: course.imageUrl,
+            imageKey: course.imageKey,
             course_duration: course.course_duration,
             course_instructor_name: course.course_instructor_name,
             course_instructor_image: course.course_instructor_image,
@@ -261,7 +265,7 @@ export const createCohort = async (req: Request, res: Response) => {
           const cohortCourseWeek = await prisma.cohortCourseWeek.create({
             data: {
               title: week.title,
-              iconUrl: week.iconUrl,
+              iconKey: week.iconKey,
               cohortCourseId: cohortCourse.id,
               isPublished: week.isPublished,
             },
@@ -272,6 +276,7 @@ export const createCohort = async (req: Request, res: Response) => {
               data: {
                 name: attachment.name,
                 url: attachment.url,
+                fileKey: attachment.fileKey,
                 cohortCourseWeekId: cohortCourseWeek.id,
               },
             });
@@ -283,6 +288,7 @@ export const createCohort = async (req: Request, res: Response) => {
                 title: module.title,
                 description: module.description,
                 iconUrl: module.iconUrl,
+                iconKey: module.iconKey,
                 cohortCourseWeekId: cohortCourseWeek.id,
                 cohortCourseId: cohortCourse.id,
               },
@@ -294,6 +300,7 @@ export const createCohort = async (req: Request, res: Response) => {
                   title: video.title,
                   videoUrl: video.videoUrl,
                   thumbnailUrl: video.thumbnailUrl,
+                  thumbnailKey: video.thumbnailKey,
                   duration: video.duration,
                   cohortCourseModuleId: cohortCourseModule.id,
                   cohortCourseId: cohortCourse.id,
@@ -329,7 +336,7 @@ export const createCohort = async (req: Request, res: Response) => {
       {
         maxWait: 15000, // 15 seconds
         timeout: 60000, // 60 seconds
-      }
+      },
     );
 
     res
@@ -389,7 +396,7 @@ export const deleteCohort = async (req: Request, res: Response) => {
 
 export const updateCohortCourseWeekPublishStatus = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const {
@@ -423,7 +430,7 @@ export const updateCohortCourseWeekPublishStatus = async (
 
 export const updateCohortCourseTimeTable = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const {
@@ -458,12 +465,10 @@ export const updateCohortCourseTimeTable = async (
   }
 };
 
-
 //#region File Upload
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-
 
 const uploadDir = path.resolve(__dirname, "../../../uploads/brochures");
 
@@ -479,7 +484,10 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     // Saving file as cohortId + originalname for uniqueness
-    cb(null, `${req.params.cohortId}_${Date.now()}${path.extname(file.originalname)}`);
+    cb(
+      null,
+      `${req.params.cohortId}_${Date.now()}${path.extname(file.originalname)}`,
+    );
   },
 });
 

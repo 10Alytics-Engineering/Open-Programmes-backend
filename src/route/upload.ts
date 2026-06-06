@@ -1,6 +1,16 @@
 import express from "express";
-import { documentUpload, uploadDocument } from "../controllers/upload";
+import {
+  createS3UploadUrl,
+  documentUpload,
+  uploadDocument,
+} from "../controllers/upload";
 import { isLoggedIn } from "../middleware";
+import multer from "multer";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 export default (router: express.Router) => {
   router.post(
@@ -10,13 +20,22 @@ export default (router: express.Router) => {
       documentUpload.single("file")(req, res, (err) => {
         if (err) {
           if (err.message === "File too large") {
-            return res.status(400).json({ message: "File size must be less than 5MB" });
+            return res
+              .status(400)
+              .json({ message: "File size must be less than 5MB" });
           }
           return res.status(400).json({ message: err.message });
         }
         next();
       });
     },
-    uploadDocument
+    uploadDocument,
+  );
+
+  router.post(
+    "/uploads/s3-url",
+    isLoggedIn,
+    upload.single("file"),
+    createS3UploadUrl,
   );
 };

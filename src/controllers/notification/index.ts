@@ -14,6 +14,7 @@ export const getUserNotifications = async (req: Request, res: Response) => {
 
     const where: any = {
       userId,
+      adminOnly: { not: true },
     };
 
     if (status === "read") where.isRead = true;
@@ -36,7 +37,7 @@ export const getUserNotifications = async (req: Request, res: Response) => {
 
       prismadb.notification.count({
         where: {
-          userId,
+          ...where,
           isRead: false,
         },
       }),

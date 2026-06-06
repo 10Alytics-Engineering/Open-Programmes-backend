@@ -2,9 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.assignFacilitatorToCourse = exports.deleteFacilitator = exports.updateFacilitator = exports.getFacilitators = exports.createFacilitator = void 0;
 const prismadb_1 = require("../../lib/prismadb");
+const upload_service_1 = require("../../services/upload.service");
 const createFacilitator = async (req, res) => {
     try {
-        const { name, email, phoneNumber, imageUrl, bio, title, courseIds } = req.body;
+        const { name, email, phoneNumber, imageKey, bio, title, courseIds } = req.body;
         // Validate input
         if (!name || !email || !phoneNumber) {
             return res
@@ -26,7 +27,7 @@ const createFacilitator = async (req, res) => {
                 name,
                 email,
                 phoneNumber,
-                imageUrl,
+                imageKey,
                 bio,
                 title,
                 courses: {
@@ -60,7 +61,13 @@ const getFacilitators = async (req, res) => {
                 createdAt: "desc",
             },
         });
-        res.status(200).json(facilitators);
+        const facilitatorsWithImages = await (0, upload_service_1.attachSignedUrls)({
+            items: facilitators,
+            keyField: "imageKey",
+            urlField: "imageUrl",
+        });
+        console.log(facilitatorsWithImages);
+        res.status(200).json(facilitatorsWithImages);
     }
     catch (error) {
         console.error("[GET_FACILITATORS_ERROR]", error);
@@ -71,7 +78,7 @@ exports.getFacilitators = getFacilitators;
 const updateFacilitator = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, phoneNumber, imageUrl, bio, title, courseIds } = req.body;
+        const { name, email, phoneNumber, imageKey, bio, title, courseIds } = req.body;
         // Check if facilitator exists
         const existingFacilitator = await prismadb_1.prismadb.facilitator.findUnique({
             where: { id },
@@ -86,7 +93,7 @@ const updateFacilitator = async (req, res) => {
                 name,
                 email,
                 phoneNumber,
-                imageUrl,
+                imageKey,
                 bio,
                 title,
                 courses: {

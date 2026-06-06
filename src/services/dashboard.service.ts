@@ -62,42 +62,40 @@ export const getLearningPathProgress = async ({
   courseId: string;
   cohortId: string;
 }) => {
-  const cohortCourse = await prismadb.cohortCourse.findFirst({
+  const courseWeeks = await prismadb.courseWeek.findMany({
     where: {
       courseId,
-      cohortId,
+    },
+    orderBy: {
+      createdAt: "asc",
     },
     include: {
-      cohortWeeks: {
+      courseModules: {
         orderBy: {
           createdAt: "asc",
         },
         include: {
-          cohortModules: {
-            orderBy: {
-              createdAt: "asc",
-            },
-            include: {
-              cohortProjectVideos: true,
-              cohortQuizzes: true,
-            },
-          },
+          projectVideos: true,
+          quizzes: true,
         },
       },
     },
   });
 
-  if (!cohortCourse) return [];
+  if (!courseWeeks.length) {
+    console.log("CohortCourse found but no cohortWeeks", courseWeeks);
+    return [];
+  }
 
-  const videoIds = cohortCourse.cohortWeeks.flatMap((week) =>
-    week.cohortModules.flatMap((module) =>
-      module.cohortProjectVideos.map((video) => video.id),
+  const videoIds = courseWeeks.flatMap((week) =>
+    week.courseModules.flatMap((module) =>
+      module.projectVideos.map((video) => video.id),
     ),
   );
 
-  const quizIds = cohortCourse.cohortWeeks.flatMap((week) =>
-    week.cohortModules.flatMap((module) =>
-      module.cohortQuizzes.map((quiz) => quiz.id),
+  const quizIds = courseWeeks.flatMap((week) =>
+    week.courseModules.flatMap((module) =>
+      module.quizzes.map((quiz) => quiz.id),
     ),
   );
 
@@ -129,21 +127,21 @@ export const getLearningPathProgress = async ({
   const answeredQuizIds = quizProgress.answeredQuizIds || new Set();
   const correctQuizIds = quizProgress.correctQuizIds || new Set();
 
-  return cohortCourse.cohortWeeks.map((week) => {
-    const modules = week.cohortModules.map((module) => {
-      const totalVideos = module.cohortProjectVideos.length;
+  return courseWeeks.map((week) => {
+    const modules = week.courseModules.map((module) => {
+      const totalVideos = module.projectVideos.length;
 
-      const completedVideos = module.cohortProjectVideos.filter((video) =>
+      const completedVideos = module.projectVideos.filter((video) =>
         completedVideoIds.has(video.id),
       ).length;
 
-      const totalQuizzes = module.cohortQuizzes.length;
+      const totalQuizzes = module.quizzes.length;
 
-      const completedQuizzes = module.cohortQuizzes.filter((quiz) =>
+      const completedQuizzes = module.quizzes.filter((quiz) =>
         answeredQuizIds.has(quiz.id),
       ).length;
 
-      const correctQuizzes = module.cohortQuizzes.filter((quiz) =>
+      const correctQuizzes = module.quizzes.filter((quiz) =>
         correctQuizIds.has(quiz.id),
       ).length;
 

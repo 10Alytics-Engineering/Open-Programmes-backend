@@ -6,6 +6,7 @@ import { sendMail } from "../../utils/nodemailer";
 import bcrypt from "bcryptjs";
 import { NotificationService } from "../../services/notification.service";
 import { NebiantUser } from "../../middleware";
+import { generateSignedFileUrl } from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -364,148 +365,159 @@ export const getUser = async (req: Request, res: Response) => {
     }
 
     // ENRICH COURSE DATA
-    const enrichedCourses = user.course_purchased.map((purchase: any) => {
-      const course = purchase.course;
-      // =========================
-      // VIDEO STATS
-      // =========================
+    const enrichedCourses = await Promise.all(
+      user.course_purchased.map(async (purchase: any) => {
+        const course = purchase.course;
+        // =========================
+        // VIDEO STATS
+        // =========================
 
-      const totalVideos = course.course_videos?.length || 0;
+        const totalVideos = course.course_videos?.length || 0;
 
-      const completedVideoRecords =
-        user.completed_videos?.filter(
-          (video: any) => video?.courseId === course?.id && video.isCompleted,
-        ) || [];
-      const completedVideos = completedVideoRecords.length || 0;
+        const completedVideoRecords =
+          user.completed_videos?.filter(
+            (video: any) => video?.courseId === course?.id && video.isCompleted,
+          ) || [];
+        const completedVideos = completedVideoRecords.length || 0;
 
-      const videoProgressPercentage = completedVideos
-        ? Math.round((completedVideos / totalVideos) * 100)
-        : 0;
-
-      // =========================
-      // QUIZ STATS
-      // =========================
-
-      const allQuizzes = course.course_weeks?.flatMap((week: any) =>
-        week.courseModules?.flatMap((module: any) => module.quizzes),
-      );
-
-      const totalQuizzes = allQuizzes?.length || 0;
-
-      const answeredQuizIds = new Set(
-        user.quiz_answers?.map((item: any) => item.quizAnswer.quizId),
-      );
-
-      const completedQuizzes =
-        allQuizzes?.filter((quiz: any) => answeredQuizIds.has(quiz?.id))
-          .length || 0;
-
-      const quizProgressPercentage =
-        totalQuizzes > 0
-          ? Math.round((completedQuizzes / totalQuizzes) * 100)
+        const videoProgressPercentage = completedVideos
+          ? Math.round((completedVideos / totalVideos) * 100)
           : 0;
 
-      // =========================
-      // LAST ACTIVITY
-      // =========================
-      const quizActivities =
-        user.quiz_answers
-          .filter((quiz: any) => quiz.updatedAt)
-          .map((quiz: any) => quiz.updatedAt) || [];
+        // =========================
+        // QUIZ STATS
+        // =========================
 
-      const courseVideoActivities =
-        user.completed_videos
-          .filter(
-            (video: any) => video.courseId === course.id && video.updatedAt,
-          )
-          .map((video: any) => video.updatedAt) || [];
+        const allQuizzes = course.course_weeks?.flatMap((week: any) =>
+          week.courseModules?.flatMap((module: any) => module.quizzes),
+        );
 
-      const latestActivity =
-        courseVideoActivities.length > 0 || quizActivities.length > 0
-          ? new Date(
-              Math.max(
-                ...quizActivities.map((date: Date) => new Date(date).getTime()),
-                ...courseVideoActivities.map((date: Date) =>
-                  new Date(date).getTime(),
-                ),
-              ),
+        const totalQuizzes = allQuizzes?.length || 0;
+
+        const answeredQuizIds = new Set(
+          user.quiz_answers?.map((item: any) => item.quizAnswer.quizId),
+        );
+
+        const completedQuizzes =
+          allQuizzes?.filter((quiz: any) => answeredQuizIds.has(quiz?.id))
+            .length || 0;
+
+        const quizProgressPercentage =
+          totalQuizzes > 0
+            ? Math.round((completedQuizzes / totalQuizzes) * 100)
+            : 0;
+
+        // =========================
+        // LAST ACTIVITY
+        // =========================
+        const quizActivities =
+          user.quiz_answers
+            .filter((quiz: any) => quiz.updatedAt)
+            .map((quiz: any) => quiz.updatedAt) || [];
+
+        const courseVideoActivities =
+          user.completed_videos
+            .filter(
+              (video: any) => video.courseId === course.id && video.updatedAt,
             )
-          : null;
+            .map((video: any) => video.updatedAt) || [];
 
-      // =========================
-      // PAYMENT
-      // =========================
+        const latestActivity =
+          courseVideoActivities.length > 0 || quizActivities.length > 0
+            ? new Date(
+                Math.max(
+                  ...quizActivities.map((date: Date) =>
+                    new Date(date).getTime(),
+                  ),
+                  ...courseVideoActivities.map((date: Date) =>
+                    new Date(date).getTime(),
+                  ),
+                ),
+              )
+            : null;
 
-      const paymentStatus = user.paymentStatus.find(
-        (payment: any) => payment?.courseId === course?.id,
-      );
-      const paymentInstallments = paymentStatus?.paymentInstallments || [];
+        // =========================
+        // PAYMENT
+        // =========================
 
-      let amountPaid = 0,
-        totalAmount = 0,
-        installmentsPaid = 0,
-        allInstallments = 0;
+        const paymentStatus = user.paymentStatus.find(
+          (payment: any) => payment?.courseId === course?.id,
+        );
+        const paymentInstallments = paymentStatus?.paymentInstallments || [];
 
-      if (!paymentStatus?.paymentPlan?.includes("FULL")) {
-        paymentInstallments.forEach((installment) => {
-          if (installment.paid) {
-            amountPaid += Number(installment.amount || 0);
-            installmentsPaid += 1;
-          }
-          totalAmount += Number(installment.amount || 0);
-          allInstallments += 1;
-        });
-      } else {
-        paymentStatus.transactions.forEach((transaction) => {
-          if (transaction.status === "success") {
-            amountPaid += Number(transaction.amount || 0);
-          }
-          totalAmount += Number(transaction.amount || 0);
-        });
-      }
+        let amountPaid = 0,
+          totalAmount = 0,
+          installmentsPaid = 0,
+          allInstallments = 0;
 
-      let finalStatusOfPayment: string | undefined = paymentStatus?.status;
+        if (!paymentStatus?.paymentPlan?.includes("FULL")) {
+          paymentInstallments.forEach((installment) => {
+            if (installment.paid) {
+              amountPaid += Number(installment.amount || 0);
+              installmentsPaid += 1;
+            }
+            totalAmount += Number(installment.amount || 0);
+            allInstallments += 1;
+          });
+        } else {
+          paymentStatus.transactions.forEach((transaction) => {
+            if (transaction.status === "success") {
+              amountPaid += Number(transaction.amount || 0);
+            }
+            totalAmount += Number(transaction.amount || 0);
+          });
+        }
 
-      if (allInstallments && installmentsPaid < allInstallments) {
-        finalStatusOfPayment = `${installmentsPaid}/${allInstallments} Success`;
-      }
+        let finalStatusOfPayment: string | undefined = paymentStatus?.status;
 
-      const nextInstallment =
-        paymentInstallments.find((installment: any) => !installment.paid) ||
-        null;
+        if (allInstallments && installmentsPaid < allInstallments) {
+          finalStatusOfPayment = `${installmentsPaid}/${allInstallments} Success`;
+        }
 
-      return {
-        ...purchase,
+        const nextInstallment =
+          paymentInstallments.find((installment: any) => !installment.paid) ||
+          null;
 
-        courseStats: {
-          // VIDEO
-          totalVideos,
-          completedVideos,
-          videoProgressPercentage,
+        const courseImageUrl = course.imageKey
+          ? await generateSignedFileUrl(course.imageKey)
+          : course.imageUrl || null;
 
-          // QUIZ
-          totalQuizzes,
-          completedQuizzes,
-          quizProgressPercentage,
+        return {
+          ...purchase,
+          course: {
+            ...course,
+            imageUrl: courseImageUrl,
+          },
+          courseStats: {
+            // VIDEO
+            totalVideos,
+            completedVideos,
+            videoProgressPercentage,
 
-          // ACTIVITY
-          lastActivityAt: latestActivity,
+            // QUIZ
+            totalQuizzes,
+            completedQuizzes,
+            quizProgressPercentage,
 
-          // PAYMENT
-          paymentStatus: finalStatusOfPayment || "UNKNOWN",
+            // ACTIVITY
+            lastActivityAt: latestActivity,
 
-          paymentPlan: paymentStatus?.paymentPlan || "FULL",
+            // PAYMENT
+            paymentStatus: finalStatusOfPayment || "UNKNOWN",
 
-          amountPaid,
+            paymentPlan: paymentStatus?.paymentPlan || "FULL",
 
-          totalAmount,
+            amountPaid,
 
-          nextInstallmentDueDate: nextInstallment?.dueDate || null,
+            totalAmount,
 
-          installments: paymentInstallments,
-        },
-      };
-    });
+            nextInstallmentDueDate: nextInstallment?.dueDate || null,
+
+            installments: paymentInstallments,
+          },
+        };
+      }),
+    );
 
     const userResponse = {
       ...user,

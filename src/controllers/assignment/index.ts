@@ -111,6 +111,15 @@ export const getAssignmentSubmission = async (req: Request, res: Response) => {
   }
 };
 
+const calculateLeaderboardPoints = (points: number, maxPoints: number) => {
+  if (!points || !maxPoints) return 0;
+
+  const percentageValue = (points / maxPoints) * 100;
+  const leaderboardPoints = (percentageValue / 100) * 5;
+
+  return Math.round(leaderboardPoints);
+};
+
 // helper function to handle quiz submissions
 const handleAssignmentQuizSubmission = async (
   assignment: any,
@@ -168,6 +177,8 @@ const handleAssignmentQuizSubmission = async (
     }),
   );
 
+  const leaderboardPoints = calculateLeaderboardPoints(totalScore, maxScore);
+
   // Create quiz submission with answers
   const result = await prismadb.$transaction(async (tx) => {
     const submission = await tx.assignmentQuizSubmission.create({
@@ -185,6 +196,8 @@ const handleAssignmentQuizSubmission = async (
             pointsEarned: result.pointsEarned,
           })),
         },
+        gradedAt: new Date(),
+        submittedAt: new Date(),
       },
       include: {
         assignmentQuizAnswers: {
@@ -209,8 +222,8 @@ const handleAssignmentQuizSubmission = async (
         },
       },
       create: {
-        assignmentPoints: totalScore,
-        points: totalScore,
+        assignmentPoints: leaderboardPoints,
+        points: leaderboardPoints,
         lessonQuizPoints: 0,
         lessonVideoPoints: 0,
         cohortId: assignment.cohortCourse?.cohort?.id,
@@ -218,8 +231,8 @@ const handleAssignmentQuizSubmission = async (
         userId: studentId,
       },
       update: {
-        assignmentPoints: { increment: totalScore || 0 },
-        points: { increment: totalScore || 0 },
+        assignmentPoints: { increment: leaderboardPoints || 0 },
+        points: { increment: leaderboardPoints || 0 },
       },
     });
 
@@ -292,7 +305,7 @@ const handleAssignmentQuizSubmission = async (
 export const submitAssignment = async (req: Request, res: Response) => {
   try {
     const { assignmentId } = req.params;
-    const { content, fileUrl, quizAnswers } = req.body;
+    const { content, fileKey, quizAnswers } = req.body;
     const user = req.user as NebiantUser;
 
     const studentId = user.id;
@@ -363,7 +376,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         assignmentId: assignment.id,
         studentId,
         content: content || null,
-        fileUrl: fileUrl || null,
+        fileKey: fileKey || null,
         submittedAt: new Date(),
       },
       include: {
@@ -489,7 +502,7 @@ export const gradeSubmission = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Submission not found" });
     }
 
-    const maxPoints = assignment.points || 100;
+    const maxPoints = assignment.points || 0;
     if (grade < 0 || grade > maxPoints) {
       return res
         .status(400)
@@ -532,6 +545,8 @@ export const gradeSubmission = async (req: Request, res: Response) => {
 
     const adminUser = req?.user as NebiantUser;
 
+    const leaderboardPoints = calculateLeaderboardPoints(grade, maxPoints);
+
     // Send Notification to the specific student
     try {
       if (submission?.student?.email) {
@@ -571,8 +586,8 @@ export const gradeSubmission = async (req: Request, res: Response) => {
               },
             },
             create: {
-              assignmentPoints: grade,
-              points: grade,
+              assignmentPoints: leaderboardPoints,
+              points: leaderboardPoints,
               lessonQuizPoints: 0,
               lessonVideoPoints: 0,
               cohortId: assignment.cohortCourse?.cohort?.id,
@@ -580,8 +595,8 @@ export const gradeSubmission = async (req: Request, res: Response) => {
               userId: submission.student.id,
             },
             update: {
-              assignmentPoints: { increment: grade || 0 },
-              points: { increment: grade || 0 },
+              assignmentPoints: { increment: leaderboardPoints || 0 },
+              points: { increment: leaderboardPoints || 0 },
             },
           }),
         ]);
@@ -616,6 +631,7 @@ export const gradeQuizSubmission = async (req: Request, res: Response) => {
             select: {
               id: true,
               title: true,
+              points: true,
               cohortCourse: {
                 include: {
                   cohort: { select: { id: true, name: true } },
@@ -640,39 +656,48 @@ export const gradeQuizSubmission = async (req: Request, res: Response) => {
         .json({ status: "error", message: "Assignment submission not found" });
     }
 
-    const userLeadboard = await prismadb.courseCohortLeaderboard.findUnique({
-      where: {
-        userId_courseId_cohortId: {
-          courseId: existingSubmission.assignment.cohortCourse.course.id,
-          cohortId: existingSubmission.assignment.cohortCourse.cohort.id,
-          userId: existingSubmission.studentId,
-        },
-      },
-      select: {
-        id: true,
-        points: true,
-        assignmentPoints: true,
-      },
-    });
-
-    let newAssignmentPoints = parseInt(grade),
-      newTotalPoints = parseInt(grade);
-
-    if (
-      userLeadboard?.id &&
-      userLeadboard?.assignmentPoints &&
-      existingSubmission.totalScore
-    ) {
-      newAssignmentPoints =
-        (userLeadboard.assignmentPoints || 0) -
-        (existingSubmission.totalScore || 0) +
-        parseInt(grade);
-
-      newTotalPoints =
-        userLeadboard.points -
-        (existingSubmission.totalScore || 0) +
-        parseInt(grade);
+    if (existingSubmission?.gradedAt) {
+      return res.status(404).json({
+        status: "error",
+        message: "Assignment submission already graded",
+      });
     }
+
+    // const userLeadboard = await prismadb.courseCohortLeaderboard.findUnique({
+    //   where: {
+    //     userId_courseId_cohortId: {
+    //       courseId: existingSubmission.assignment.cohortCourse.course.id,
+    //       cohortId: existingSubmission.assignment.cohortCourse.cohort.id,
+    //       userId: existingSubmission.studentId,
+    //     },
+    //   },
+    //   select: {
+    //     id: true,
+    //     points: true,
+    //     assignmentPoints: true,
+    //   },
+    // });
+
+    let newPoints = calculateLeaderboardPoints(
+      parseInt(grade),
+      Number(existingSubmission.maxScore || 0),
+    );
+
+    // if (
+    //   userLeadboard?.id &&
+    //   userLeadboard?.assignmentPoints &&
+    //   existingSubmission.totalScore
+    // ) {
+    //   newAssignmentPoints =
+    //     (userLeadboard.assignmentPoints || 0) -
+    //     (existingSubmission.totalScore || 0) +
+    //     parseInt(grade);
+
+    //   newTotalPoints =
+    //     userLeadboard.points -
+    //     (existingSubmission.totalScore || 0) +
+    //     parseInt(grade);
+    // }
 
     const submission = await prismadb.assignmentQuizSubmission.update({
       where: { id: submissionId },
@@ -719,8 +744,8 @@ export const gradeQuizSubmission = async (req: Request, res: Response) => {
           },
         },
         create: {
-          assignmentPoints: parseInt(grade),
-          points: parseInt(grade),
+          assignmentPoints: newPoints,
+          points: newPoints,
           lessonQuizPoints: 0,
           lessonVideoPoints: 0,
           cohortId: existingSubmission.assignment.cohortCourse?.cohort?.id,
@@ -728,8 +753,8 @@ export const gradeQuizSubmission = async (req: Request, res: Response) => {
           userId: existingSubmission.studentId,
         },
         update: {
-          assignmentPoints: newAssignmentPoints,
-          points: newTotalPoints,
+          assignmentPoints: { increment: newPoints },
+          points: { increment: newPoints },
         },
       }),
     ]);

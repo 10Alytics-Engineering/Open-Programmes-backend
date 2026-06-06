@@ -1,5 +1,9 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
+import {
+  attachSignedUrls,
+  generateSignedFileUrl,
+} from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -23,9 +27,15 @@ export const getCourseWeeks = async (req: Request, res: Response) => {
       },
     });
 
+    const courseWeeksWithImages = await attachSignedUrls({
+      items: courseWeeks,
+      keyField: "iconKey",
+      urlField: "iconUrl",
+    });
+
     return res
       .status(200)
-      .json({ status: "success", message: null, data: courseWeeks });
+      .json({ status: "success", message: null, data: courseWeeksWithImages });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -71,9 +81,17 @@ export const getCourseWeek = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Course week does not exist" });
     }
 
+    const iconUrl = courseWeek.iconKey
+      ? await generateSignedFileUrl(courseWeek.iconKey || "")
+      : courseWeek.iconUrl || "";
+
     return res
       .status(200)
-      .json({ status: "success", message: null, data: courseWeek });
+      .json({
+        status: "success",
+        message: null,
+        data: { ...courseWeek, iconUrl },
+      });
   } catch (error) {
     handleServerError(error, res);
   }

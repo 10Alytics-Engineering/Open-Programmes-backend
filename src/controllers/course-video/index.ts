@@ -2,6 +2,10 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { NotificationService } from "../../services/notification.service";
 import { NebiantUser } from "../../middleware/index";
+import {
+  attachSignedUrls,
+  generateSignedFileUrl,
+} from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -45,9 +49,17 @@ export const getCourseVideos = async (req: Request, res: Response) => {
       },
     });
 
-    return res
-      .status(200)
-      .json({ status: "success", message: null, data: courseVideos });
+    const videosWithThumbnailUrls = await attachSignedUrls({
+      items: courseVideos,
+      keyField: "thumbnailKey",
+      urlField: "thumbnailUrl",
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: null,
+      data: videosWithThumbnailUrls,
+    });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -96,9 +108,15 @@ export const getCourseVideo = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Video does not exist" });
     }
 
-    return res
-      .status(200)
-      .json({ status: "success", message: null, data: video });
+    const thumbnailUrl = video.thumbnailKey
+      ? await generateSignedFileUrl(video.thumbnailKey || "")
+      : video.thumbnailUrl || "";
+
+    return res.status(200).json({
+      status: "success",
+      message: null,
+      data: { ...video, thumbnailUrl },
+    });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -109,13 +127,13 @@ export const createCourseVideo = async (req: Request, res: Response) => {
     const {
       title,
       videoUrl,
-      thumbnailUrl,
+      thumbnailKey,
       duration,
       videoType,
     }: {
       title: string;
       videoUrl: string;
-      thumbnailUrl: string;
+      thumbnailKey: string;
       duration: string;
       videoType?: string;
     } = req.body;
@@ -167,7 +185,7 @@ export const createCourseVideo = async (req: Request, res: Response) => {
       data: {
         title,
         videoUrl,
-        thumbnailUrl,
+        thumbnailKey,
         duration,
         videoType: videoType || "VIMEO",
         moduleId,

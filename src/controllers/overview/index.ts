@@ -47,6 +47,7 @@ export const getStudentDashboard = async (req: Request, res: Response) => {
                 id: true,
                 title: true,
                 imageUrl: true,
+                imageKey: true,
               },
             },
           },
@@ -115,6 +116,7 @@ export const getStudentDashboard = async (req: Request, res: Response) => {
       id: purchase.course.id,
       title: purchase.course.title,
       imageUrl: purchase.course.imageUrl,
+      imageKey: purchase.course.imageKey,
       cohorts: user.cohorts
         .filter((item) => item.courseId === purchase.courseId)
         .map((item) => ({

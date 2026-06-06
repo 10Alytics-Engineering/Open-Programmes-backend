@@ -1,9 +1,10 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
+import { attachSignedUrls } from "../../services/upload.service";
 
 export const createFacilitator = async (req: Request, res: Response) => {
   try {
-    const { name, email, phoneNumber, imageUrl, bio, title, courseIds } =
+    const { name, email, phoneNumber, imageKey, bio, title, courseIds } =
       req.body;
 
     // Validate input
@@ -29,7 +30,7 @@ export const createFacilitator = async (req: Request, res: Response) => {
         name,
         email,
         phoneNumber,
-        imageUrl,
+        imageKey,
         bio,
         title,
         courses: {
@@ -64,7 +65,14 @@ export const getFacilitators = async (req: Request, res: Response) => {
       },
     });
 
-    res.status(200).json(facilitators);
+    const facilitatorsWithImages = await attachSignedUrls({
+      items: facilitators,
+      keyField: "imageKey",
+      urlField: "imageUrl",
+    });
+
+    console.log(facilitatorsWithImages);
+    res.status(200).json(facilitatorsWithImages);
   } catch (error) {
     console.error("[GET_FACILITATORS_ERROR]", error);
     res.status(500).json({ error: "Internal server error" });
@@ -74,7 +82,7 @@ export const getFacilitators = async (req: Request, res: Response) => {
 export const updateFacilitator = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, email, phoneNumber, imageUrl, bio, title, courseIds } =
+    const { name, email, phoneNumber, imageKey, bio, title, courseIds } =
       req.body;
 
     // Check if facilitator exists
@@ -92,7 +100,7 @@ export const updateFacilitator = async (req: Request, res: Response) => {
         name,
         email,
         phoneNumber,
-        imageUrl,
+        imageKey,
         bio,
         title,
         courses: {

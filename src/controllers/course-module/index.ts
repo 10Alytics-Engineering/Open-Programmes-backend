@@ -1,5 +1,9 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
+import {
+  attachSignedUrls,
+  generateSignedFileUrl,
+} from "../../services/upload.service";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -41,13 +45,19 @@ export const getModules = async (req: Request, res: Response) => {
         },
       },
       orderBy: {
-        createdAt: "asc"
-      }
+        createdAt: "asc",
+      },
+    });
+
+    const modulesWithIconUrls = await attachSignedUrls({
+      items: modules,
+      keyField: "iconKey",
+      urlField: "iconUrl",
     });
 
     return res
       .status(200)
-      .json({ status: "success", message: null, data: modules });
+      .json({ status: "success", message: null, data: modulesWithIconUrls });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -98,9 +108,27 @@ export const getModule = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Module does not exist" });
     }
 
+    const iconUrl = module.iconKey
+      ? await generateSignedFileUrl(module.iconKey || "")
+      : module.iconUrl || "";
+
+    const projectVideosWithThumbnails = await attachSignedUrls({
+      items: module.projectVideos,
+      keyField: "thumbnailKey",
+      urlField: "thumbnailUrl",
+    });
+
     return res
       .status(200)
-      .json({ status: "success", message: null, data: module });
+      .json({
+        status: "success",
+        message: null,
+        data: {
+          ...module,
+          iconUrl,
+          projectVideos: projectVideosWithThumbnails,
+        },
+      });
   } catch (error) {
     handleServerError(error, res);
   }
