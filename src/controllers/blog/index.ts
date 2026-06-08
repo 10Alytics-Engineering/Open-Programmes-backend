@@ -2,10 +2,63 @@ import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { BlogImage, Prisma } from "@prisma/client";
 import { generateSignedFileUrl } from "../../services/upload.service";
+import { sendBlogNotificationEmail } from "../../mails/blog-mails";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
   res.status(500).json({ message: "Internal Server Error" });
+};
+
+export const sendBlogNotificationsOnce = async (blogId: string) => {
+  try {
+    const blog = await prismadb.blog.findUnique({
+      where: { id: blogId },
+      include: { images: true },
+    });
+
+    if (!blog) {
+      console.log("Blog not found for notification:", blogId);
+      return;
+    }
+
+    const subscribers = await prismadb.emailSubscription.findMany({
+      where: { notifyNewBlogs: true },
+      select: { id: true, email: true, unsubscribeToken: true },
+    });
+
+    if (!subscribers.length) {
+      console.log("No active blog subscribers found");
+      return;
+    }
+
+    // fire-and-forget so request doesn't hang
+    const results = await Promise.allSettled(
+      subscribers.map((subscriber) =>
+        sendBlogNotificationEmail({
+          email: subscriber.email,
+          blogTitle: blog.title,
+          blogId: blog.id,
+          unsubscribeToken: subscriber.unsubscribeToken,
+        }),
+      ),
+    );
+
+    console.log("Blog notification results:", {
+      blogId: blog.id,
+      total: results.length,
+      sent: results.filter((r) => r.status === "fulfilled").length,
+      failed: results.filter((r) => r.status === "rejected").length,
+    });
+
+    await prismadb.blog.update({
+      where: { id: blog.id },
+      data: {
+        notificationSentAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.log("Failed to send blog notifications");
+  }
 };
 
 export const getBlogs = async (req: Request, res: Response) => {
@@ -53,17 +106,39 @@ export const getBlogs = async (req: Request, res: Response) => {
     findOptions.where = where;
 
     const [blogs, total] = await Promise.all([
-      prismadb.blog.findMany(findOptions),
+      prismadb.blog.findMany({ ...findOptions, include: { images: true } }),
 
       prismadb.blog.count({
         where,
       }),
     ]);
 
+    const blogsWithSignedImages = await Promise.all(
+      blogs.map(async (blog: { [key: string]: any }) => {
+        const images = await Promise.all(
+          (blog?.images || []).map(async (image: BlogImage) => {
+            const signedUrl = image.key
+              ? await generateSignedFileUrl(image.key)
+              : image.url || null;
+
+            return {
+              ...image,
+              url: signedUrl,
+            };
+          }),
+        );
+
+        return {
+          ...blog,
+          images,
+        };
+      }),
+    );
+
     res.status(200).json({
       status: "success",
       message: null,
-      data: blogs,
+      data: blogsWithSignedImages,
       pagination: {
         total: total || 0,
         limit: take || 0,
@@ -146,6 +221,10 @@ export const createBlog = async (req: Request, res: Response) => {
             : undefined,
       },
     });
+
+    if (!blog.notificationSentAt) {
+      void sendBlogNotificationsOnce(blog.id);
+    }
 
     res.status(200).json({
       status: "success",
