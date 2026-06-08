@@ -637,6 +637,8 @@ model Blog {
   mins_read String?     @default("2 mins")
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+  notificationSent   Boolean  @default(false)
+  notificationSentAt DateTime?
   images    BlogImage[]
 }
 
@@ -648,6 +650,18 @@ model BlogImage {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   blog      Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+}
+
+model EmailSubscription {
+  id String @id @default(cuid())
+  email String @unique
+
+  notifyNewBlogs Boolean @default(false)
+  unsubscribeToken String @unique @default(cuid())
+  
+  createdAt DateTime @default(now())
+  blogSubscriptionAt DateTime? 
+  blogUnSubscritpionAt DateTime?
 }
 
 model FreeCourseApplication {

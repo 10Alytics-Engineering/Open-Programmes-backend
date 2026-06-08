@@ -36,6 +36,7 @@ import webinar from "./webinar";
 import liveClass from "./live-class";
 import upload from "./upload";
 import notification from "./notification";
+import emailSubscription from "./email-subscription";
 
 const router = express.Router();
 
@@ -77,6 +78,7 @@ export default (): express.Router => {
   liveClass(router);
   upload(router);
   notification(router);
+  emailSubscription(router);
 
   return router;
 };

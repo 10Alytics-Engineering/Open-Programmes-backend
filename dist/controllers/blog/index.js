@@ -1,12 +1,56 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteBlog = exports.updateBlog = exports.createBlog = exports.getBlog = exports.getBlogs = void 0;
+exports.deleteBlog = exports.updateBlog = exports.createBlog = exports.getBlog = exports.getBlogs = exports.sendBlogNotificationsOnce = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const upload_service_1 = require("../../services/upload.service");
+const blog_mails_1 = require("../../mails/blog-mails");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
 };
+const sendBlogNotificationsOnce = async (blogId) => {
+    try {
+        const blog = await prismadb_1.prismadb.blog.findUnique({
+            where: { id: blogId },
+            include: { images: true },
+        });
+        if (!blog) {
+            console.log("Blog not found for notification:", blogId);
+            return;
+        }
+        const subscribers = await prismadb_1.prismadb.emailSubscription.findMany({
+            where: { notifyNewBlogs: true },
+            select: { id: true, email: true, unsubscribeToken: true },
+        });
+        if (!subscribers.length) {
+            console.log("No active blog subscribers found");
+            return;
+        }
+        // fire-and-forget so request doesn't hang
+        const results = await Promise.allSettled(subscribers.map((subscriber) => (0, blog_mails_1.sendBlogNotificationEmail)({
+            email: subscriber.email,
+            blogTitle: blog.title,
+            blogId: blog.id,
+            unsubscribeToken: subscriber.unsubscribeToken,
+        })));
+        console.log("Blog notification results:", {
+            blogId: blog.id,
+            total: results.length,
+            sent: results.filter((r) => r.status === "fulfilled").length,
+            failed: results.filter((r) => r.status === "rejected").length,
+        });
+        await prismadb_1.prismadb.blog.update({
+            where: { id: blog.id },
+            data: {
+                notificationSentAt: new Date(),
+            },
+        });
+    }
+    catch (error) {
+        console.log("Failed to send blog notifications");
+    }
+};
+exports.sendBlogNotificationsOnce = sendBlogNotificationsOnce;
 const getBlogs = async (req, res) => {
     try {
         const { limit, offset, search } = req.query;
@@ -46,15 +90,30 @@ const getBlogs = async (req, res) => {
         }
         findOptions.where = where;
         const [blogs, total] = await Promise.all([
-            prismadb_1.prismadb.blog.findMany(findOptions),
+            prismadb_1.prismadb.blog.findMany({ ...findOptions, include: { images: true } }),
             prismadb_1.prismadb.blog.count({
                 where,
             }),
         ]);
+        const blogsWithSignedImages = await Promise.all(blogs.map(async (blog) => {
+            const images = await Promise.all((blog?.images || []).map(async (image) => {
+                const signedUrl = image.key
+                    ? await (0, upload_service_1.generateSignedFileUrl)(image.key)
+                    : image.url || null;
+                return {
+                    ...image,
+                    url: signedUrl,
+                };
+            }));
+            return {
+                ...blog,
+                images,
+            };
+        }));
         res.status(200).json({
             status: "success",
             message: null,
-            data: blogs,
+            data: blogsWithSignedImages,
             pagination: {
                 total: total || 0,
                 limit: take || 0,
@@ -121,6 +180,9 @@ const createBlog = async (req, res) => {
                     : undefined,
             },
         });
+        if (!blog.notificationSentAt) {
+            void (0, exports.sendBlogNotificationsOnce)(blog.id);
+        }
         res.status(200).json({
             status: "success",
             message: "Blog created successfully",
