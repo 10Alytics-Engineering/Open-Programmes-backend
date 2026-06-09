@@ -24,7 +24,9 @@ const createUser = async (req, res) => {
             return res.status(400).json({ error: "Missing required fields" });
         }
         // Check if user exists
-        const existingUser = await prismadb_1.prismadb.user.findUnique({ where: { email } });
+        const existingUser = await prismadb_1.prismadb.user.findFirst({
+            where: { OR: [{ email }, { phone_number }] },
+        });
         if (existingUser) {
             return res.status(409).json({ error: "User already exists" });
         }
@@ -72,7 +74,7 @@ const createUser = async (req, res) => {
         });
         // Send email with credentials
         await (0, mail_1.sendWelcomeEmail)({
-            email: user.email,
+            email: user.email || "",
             name: user.name,
             password,
             courseId,
@@ -149,7 +151,7 @@ const createBulkUsers = async (req, res) => {
                 });
                 // Send welcome email
                 await (0, mail_1.sendWelcomeEmail)({
-                    email: user.email,
+                    email: user.email || "",
                     name: user.name,
                     password,
                     courseId,

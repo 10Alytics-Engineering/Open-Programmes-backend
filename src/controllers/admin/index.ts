@@ -24,7 +24,10 @@ export const createUser = async (req: Request, res: Response) => {
     }
 
     // Check if user exists
-    const existingUser = await prismadb.user.findUnique({ where: { email } });
+    const existingUser = await prismadb.user.findFirst({
+      where: { OR: [{ email }, { phone_number }] },
+    });
+
     if (existingUser) {
       return res.status(409).json({ error: "User already exists" });
     }
@@ -79,7 +82,7 @@ export const createUser = async (req: Request, res: Response) => {
 
     // Send email with credentials
     await sendWelcomeEmail({
-      email: user.email,
+      email: user.email || "",
       name: user.name,
       password,
       courseId,
@@ -168,7 +171,7 @@ export const createBulkUsers = async (req: Request, res: Response) => {
 
         // Send welcome email
         await sendWelcomeEmail({
-          email: user.email,
+          email: user.email || "",
           name: user.name,
           password,
           courseId,
