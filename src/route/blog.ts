@@ -6,13 +6,12 @@ import {
   getBlogs,
   updateBlog,
 } from "../controllers/blog";
-import { isAdmin, isCourseAdmin } from "../middleware";
+import { isAdmin } from "../middleware";
 
 export default (router: express.Router) => {
   router.get("/blogs", getBlogs);
-  router.post("/blogs", isCourseAdmin, createBlog);
+  router.post("/blogs", isAdmin, createBlog);
   router.get("/blogs/:blogId", getBlog);
-  router.put("/blogs/:blogId", isCourseAdmin, updateBlog);
-  router.delete("/blogs/:blogId", isCourseAdmin, deleteBlog);
+  router.put("/blogs/:blogId", isAdmin, updateBlog);
+  router.delete("/blogs/:blogId", isAdmin, deleteBlog);
 };
-

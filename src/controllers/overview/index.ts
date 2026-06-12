@@ -10,21 +10,66 @@ const handleServerError = (error: any, res: Response) => {
 
 export const getOverview = async (req: Request, res: Response) => {
   try {
-    const courses = await prismadb.course.findMany();
-    const users = await prismadb.user.findMany();
-    const cohorts = await prismadb.cohort.findMany();
-    const blogs = await prismadb.blog.findMany();
+    const user = req.user as NebiantUser;
 
-    const modelOveriew = [
-      { title: "Users", category: users, route: "/users" },
-      { title: "Courses", category: courses, route: "/courses" },
-      { title: "Cohorts", category: cohorts, route: "/cohort" },
-      { title: "Blogs", category: blogs, route: "/blogs" },
+    let courses: any[] = [];
+    let users: any[] = [];
+    let cohorts: any[] = [];
+    let blogs: any[] = [];
+
+    const queries: Promise<any>[] = [];
+
+    if (["SUPER_ADMIN", "COURSE_ADMIN"].includes(user.role)) {
+      queries.push(
+        prismadb.course.findMany().then((data) => {
+          courses = data;
+        }),
+      );
+
+      queries.push(
+        prismadb.cohort.findMany().then((data) => {
+          cohorts = data;
+        }),
+      );
+    }
+
+    if (["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      queries.push(
+        prismadb.user.findMany().then((data) => {
+          users = data;
+        }),
+      );
+
+      queries.push(
+        prismadb.blog.findMany().then((data) => {
+          blogs = data;
+        }),
+      );
+    }
+
+    await Promise.all(queries);
+
+    const modelOverview = [
+      ...(users.length
+        ? [{ title: "Users", category: users, route: "/users" }]
+        : []),
+
+      ...(courses.length
+        ? [{ title: "Courses", category: courses, route: "/courses" }]
+        : []),
+
+      ...(cohorts.length
+        ? [{ title: "Cohorts", category: cohorts, route: "/cohort" }]
+        : []),
+
+      ...(blogs.length
+        ? [{ title: "Blogs", category: blogs, route: "/blogs" }]
+        : []),
     ];
 
     res
       .status(200)
-      .json({ status: "success", message: null, data: modelOveriew });
+      .json({ status: "success", message: null, data: modelOverview });
   } catch (error) {
     handleServerError(error, res);
   }

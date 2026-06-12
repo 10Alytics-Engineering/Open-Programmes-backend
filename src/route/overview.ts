@@ -7,7 +7,7 @@ import {
 } from "../controllers/overview";
 
 export default (router: express.Router) => {
-  router.get("/overview", isCourseAdmin, getOverview);
+  router.get("/overview", isLoggedIn, getOverview);
   router.get("/dashboard/student", isLoggedIn, getStudentDashboard);
   router.get(
     "/dashboard/student/course-context",

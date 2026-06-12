@@ -7,11 +7,11 @@ import {
   getAllNotifications,
   markNotificationsAsRead,
 } from "../controllers/notification";
-import { isAuthorized } from "../middleware/index";
+import { isAdmin, isAuthorized } from "../middleware/index";
 
 export default (router: express.Router) => {
   // Admin: recent notifications
-  router.get("/notifications", getAllNotifications);
+  router.get("/notifications", isAdmin, getAllNotifications);
   router.get(
     "/users/:userId/notifications",
     isAuthorized,
