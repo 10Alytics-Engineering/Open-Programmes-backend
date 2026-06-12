@@ -66,7 +66,6 @@ const getFacilitators = async (req, res) => {
             keyField: "imageKey",
             urlField: "imageUrl",
         });
-        console.log(facilitatorsWithImages);
         res.status(200).json(facilitatorsWithImages);
     }
     catch (error) {

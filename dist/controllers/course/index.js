@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCourseCohorts = exports.getCourseWithoutAuthWithSlug = exports.getCourseWithoutAuth = exports.deleteCourse = exports.updateCourse = exports.createCourse = exports.getCourse = exports.getCourses = void 0;
+exports.unpublishCourse = exports.publishCourse = exports.getCoursePublishChecklist = exports.getCourseCohorts = exports.getCourseWithoutAuthWithSlug = exports.getCourseWithoutAuth = exports.deleteCourse = exports.updateCourse = exports.createCourse = exports.getCourse = exports.getCourses = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
@@ -13,7 +13,15 @@ const handleServerError = (error, res) => {
 };
 const getCourses = async (req, res) => {
     try {
+        const { published } = req.query || {};
+        let where = {};
+        if (published === "true") {
+            where = {
+                publishStatus: "PUBLISHED",
+            };
+        }
         const courses = await prismadb_1.prismadb.course.findMany({
+            where,
             include: {
                 skills_you_will_learn: true,
                 learning_Outcomes: true,
@@ -171,13 +179,24 @@ const getCourse = async (req, res) => {
         const courseImageUrl = course.imageKey
             ? await (0, upload_service_1.generateSignedFileUrl)(course.imageKey || "")
             : course.imageUrl || "";
-        console.log(courseImageUrl);
+        const courseWeeks = await Promise.all(course.course_weeks.map(async (week) => {
+            const attachments = await Promise.all((week.attachments || []).map(async (attachment) => ({
+                ...attachment,
+                url: attachment.fileKey
+                    ? await (0, upload_service_1.generateSignedFileUrl)(attachment.fileKey)
+                    : attachment.url || null,
+            })));
+            return {
+                ...week,
+                attachments,
+            };
+        }));
         return res.status(200).json({
             status: "success",
             message: `${user?.role === "USER" &&
                 !coursePurchased &&
                 "Course purchase not found, weekly attachments and video url is disabled"}`,
-            data: { ...course, imageUrl: courseImageUrl },
+            data: { ...course, course_weeks: courseWeeks, imageUrl: courseImageUrl },
         });
     }
     catch (error) {
@@ -578,4 +597,107 @@ const getCourseCohorts = async (req, res) => {
     }
 };
 exports.getCourseCohorts = getCourseCohorts;
+const getCoursePublishChecklist = (course) => {
+    const checks = [
+        {
+            key: "title",
+            label: "Course title",
+            completed: !!course.title,
+        },
+        {
+            key: "description",
+            label: "Course description",
+            completed: !!course.description,
+        },
+        {
+            key: "price",
+            label: "Course price",
+            completed: !!course.price,
+        },
+        {
+            key: "image",
+            label: "Course image",
+            completed: !!course.imageUrl || !!course.imageKey,
+        },
+        {
+            key: "plans",
+            label: "Course Price Plans",
+            completed: course.pricingPlans?.length > 0,
+        },
+    ];
+    return {
+        checks,
+        canPublish: checks.every((item) => item.completed),
+    };
+};
+exports.getCoursePublishChecklist = getCoursePublishChecklist;
+const publishCourse = async (req, res) => {
+    try {
+        const { courseId } = req.params;
+        const user = req.user;
+        if (!courseId) {
+            return res.status(404).json({ message: "Course ID is required" });
+        }
+        const course = await prismadb_1.prismadb.course.findUnique({
+            where: { id: courseId },
+            include: { pricingPlans: true },
+        });
+        if (!course) {
+            return res.status(404).json({ message: "Course not found" });
+        }
+        const checklist = (0, exports.getCoursePublishChecklist)(course);
+        if (!checklist.canPublish) {
+            return res.status(400).json({
+                message: "Course is missing required publishing fields",
+                checklist: checklist.checks,
+            });
+        }
+        const updatedCourse = await prismadb_1.prismadb.course.update({
+            where: { id: courseId },
+            data: {
+                publishStatus: "PUBLISHED",
+                publishedAt: new Date(),
+                publishedById: user?.id,
+            },
+        });
+        if (updatedCourse.id) {
+            return res.status(200).json({
+                status: "success",
+                message: "Course published successfully",
+                data: updatedCourse,
+            });
+        }
+    }
+    catch (error) {
+        handleServerError(error, res);
+    }
+};
+exports.publishCourse = publishCourse;
+const unpublishCourse = async (req, res) => {
+    try {
+        const { courseId } = req.params;
+        if (!courseId) {
+            return res.status(404).json({ message: "Course ID is required" });
+        }
+        const updatedCourse = await prismadb_1.prismadb.course.update({
+            where: { id: courseId },
+            data: {
+                publishStatus: "DRAFT",
+                publishedAt: null,
+                publishedById: null,
+            },
+        });
+        if (updatedCourse.id) {
+            return res.status(200).json({
+                status: "success",
+                message: "Course moved to draft",
+                data: updatedCourse,
+            });
+        }
+    }
+    catch (error) {
+        handleServerError(error, res);
+    }
+};
+exports.unpublishCourse = unpublishCourse;
 //# sourceMappingURL=index.js.map

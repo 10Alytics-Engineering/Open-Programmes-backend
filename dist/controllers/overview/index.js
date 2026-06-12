@@ -9,19 +9,46 @@ const handleServerError = (error, res) => {
 };
 const getOverview = async (req, res) => {
     try {
-        const courses = await prismadb_1.prismadb.course.findMany();
-        const users = await prismadb_1.prismadb.user.findMany();
-        const cohorts = await prismadb_1.prismadb.cohort.findMany();
-        const blogs = await prismadb_1.prismadb.blog.findMany();
-        const modelOveriew = [
-            { title: "Users", category: users, route: "/users" },
-            { title: "Courses", category: courses, route: "/courses" },
-            { title: "Cohorts", category: cohorts, route: "/cohort" },
-            { title: "Blogs", category: blogs, route: "/blogs" },
+        const user = req.user;
+        let courses = [];
+        let users = [];
+        let cohorts = [];
+        let blogs = [];
+        const queries = [];
+        if (["SUPER_ADMIN", "COURSE_ADMIN"].includes(user.role)) {
+            queries.push(prismadb_1.prismadb.course.findMany().then((data) => {
+                courses = data;
+            }));
+            queries.push(prismadb_1.prismadb.cohort.findMany().then((data) => {
+                cohorts = data;
+            }));
+        }
+        if (["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+            queries.push(prismadb_1.prismadb.user.findMany().then((data) => {
+                users = data;
+            }));
+            queries.push(prismadb_1.prismadb.blog.findMany().then((data) => {
+                blogs = data;
+            }));
+        }
+        await Promise.all(queries);
+        const modelOverview = [
+            ...(users.length
+                ? [{ title: "Users", category: users, route: "/users" }]
+                : []),
+            ...(courses.length
+                ? [{ title: "Courses", category: courses, route: "/courses" }]
+                : []),
+            ...(cohorts.length
+                ? [{ title: "Cohorts", category: cohorts, route: "/cohort" }]
+                : []),
+            ...(blogs.length
+                ? [{ title: "Blogs", category: blogs, route: "/blogs" }]
+                : []),
         ];
         res
             .status(200)
-            .json({ status: "success", message: null, data: modelOveriew });
+            .json({ status: "success", message: null, data: modelOverview });
     }
     catch (error) {
         handleServerError(error, res);
