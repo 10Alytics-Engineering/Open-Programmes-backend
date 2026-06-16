@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
-import excel from 'exceljs';
+import excel from "exceljs";
 
 export async function createProgramLead(req: Request, res: Response) {
   try {
@@ -66,7 +66,6 @@ export async function createProgramLead(req: Request, res: Response) {
   }
 }
 
-
 export async function getProgramLeads(req: Request, res: Response) {
   try {
     const { programType } = req.query;
@@ -76,7 +75,7 @@ export async function getProgramLeads(req: Request, res: Response) {
     const leads = await prismadb.programLeads.findMany({
       where: whereClause,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
 
@@ -90,7 +89,7 @@ export async function getProgramLeads(req: Request, res: Response) {
 export async function getProgramLeadsCount(req: Request, res: Response) {
   try {
     const counts = await prismadb.programLeads.groupBy({
-      by: ['programType'],
+      by: ["programType"],
       _count: {
         programType: true,
       },
@@ -112,30 +111,30 @@ export async function exportProgramLeads(req: Request, res: Response) {
     const leads = await prismadb.programLeads.findMany({
       where: whereClause,
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
 
     // Create workbook
     const workbook = new excel.Workbook();
-    const worksheet = workbook.addWorksheet('Program Leads');
+    const worksheet = workbook.addWorksheet("Program Leads");
 
     // Add headers
     worksheet.columns = [
-      { header: 'ID', key: 'id', width: 10 },
-      { header: 'First Name', key: 'firstName', width: 20 },
-      { header: 'Last Name', key: 'lastName', width: 20 },
-      { header: 'Email', key: 'email', width: 30 },
-      { header: 'Phone', key: 'phoneNumber', width: 20 },
-      { header: 'Gender', key: 'gender', width: 10 },
-      { header: 'Program Type', key: 'programType', width: 20 },
-      { header: 'Heard About', key: 'hearAbout', width: 30 },
-      { header: 'Other Source', key: 'otherSource', width: 30 },
-      { header: 'Created At', key: 'createdAt', width: 20 },
+      { header: "ID", key: "id", width: 10 },
+      { header: "First Name", key: "firstName", width: 20 },
+      { header: "Last Name", key: "lastName", width: 20 },
+      { header: "Email", key: "email", width: 30 },
+      { header: "Phone", key: "phoneNumber", width: 20 },
+      { header: "Gender", key: "gender", width: 10 },
+      { header: "Program Type", key: "programType", width: 20 },
+      { header: "Heard About", key: "hearAbout", width: 30 },
+      { header: "Other Source", key: "otherSource", width: 30 },
+      { header: "Created At", key: "createdAt", width: 20 },
     ];
 
     // Add data
-    leads.forEach(lead => {
+    leads.forEach((lead) => {
       worksheet.addRow({
         id: lead.id,
         firstName: lead.firstName,
@@ -145,19 +144,19 @@ export async function exportProgramLeads(req: Request, res: Response) {
         gender: lead.gender,
         programType: lead.programType,
         hearAbout: lead.hearAbout,
-        otherSource: lead.otherSource || '',
-        createdAt: lead.createdAt.toISOString(),
+        otherSource: lead.otherSource || "",
+        createdAt: lead?.createdAt?.toISOString(),
       });
     });
 
     // Set response headers
     res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
     res.setHeader(
-      'Content-Disposition',
-      `attachment; filename=program-leads-${programType || 'all'}-${new Date().toISOString()}.xlsx`
+      "Content-Disposition",
+      `attachment; filename=program-leads-${programType || "all"}-${new Date().toISOString()}.xlsx`,
     );
 
     // Send the workbook
