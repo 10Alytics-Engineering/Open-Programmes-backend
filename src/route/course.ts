@@ -1,10 +1,5 @@
 import express from "express";
-import {
-  isAdmin,
-  isCourseAdmin,
-  isLoggedIn,
-  isSuperAdmin,
-} from "../middleware";
+import { isCourseAdmin, isLoggedIn, isSuperAdmin } from "../middleware";
 import {
   createCourse,
   deleteCourse,
