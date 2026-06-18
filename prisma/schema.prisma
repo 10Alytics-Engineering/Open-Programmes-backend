@@ -120,6 +120,7 @@ model User {
   streamPost                                                         StreamPost[]
   notifications                                                      Notification[]
   userCourseCohortLeaderBoards                                       CourseCohortLeaderboard[]
+  publishedCourses                                                   Course[]
   lastLoginDate                                                      DateTime?
   lastNotificationInActivityDate                                     DateTime?
 }
@@ -358,6 +359,12 @@ model Course {
   createdAt                          DateTime             @default(now())
   updatedAt                          DateTime             @updatedAt
   syllabus                           String?
+
+  publishStatus                      CoursePublishStatus  @default(DRAFT)
+  publishedAt                        DateTime?
+  publishedById                      String?
+  publisher                          User?     @relation(fields: [publishedById], references: [id])
+
   catalog_header_tags                CatalogHeaderTags[]
   currentChangeRequests              ChangeRequest[]      @relation("CurrentCourse")
   desiredChangeRequests              ChangeRequest[]      @relation("DesiredCourse")
@@ -1086,6 +1093,7 @@ enum NotificationType {
 enum UserRole {
   ADMIN
   COURSE_ADMIN
+  SUPER_ADMIN
   USER
 }
 
@@ -1133,4 +1141,9 @@ enum PaymentSource {
 enum AssignmentType {
   REGULAR
   QUIZ
+}
+
+enum CoursePublishStatus {
+  DRAFT
+  PUBLISHED
 }

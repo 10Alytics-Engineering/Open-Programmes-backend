@@ -71,7 +71,6 @@ export const getFacilitators = async (req: Request, res: Response) => {
       urlField: "imageUrl",
     });
 
-    console.log(facilitatorsWithImages);
     res.status(200).json(facilitatorsWithImages);
   } catch (error) {
     console.error("[GET_FACILITATORS_ERROR]", error);

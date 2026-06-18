@@ -9,7 +9,18 @@ const handleServerError = (error: any, res: Response) => {
 
 export const getCohorts = async (req: Request, res: Response) => {
   try {
+    const { publishedCourses } = req.query;
+
+    const where: any = {};
+
+    if (publishedCourses === "true") {
+      where.course = {
+        publishStatus: "PUBLISHED",
+      };
+    }
+
     const cohorts = await prismadb.cohort.findMany({
+      where,
       include: {
         course: {
           include: {

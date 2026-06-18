@@ -18,7 +18,17 @@ const handleServerError = (error: any, res: Response) => {
 
 export const getCourses = async (req: Request, res: Response) => {
   try {
+    const { published } = req.query || {};
+
+    let where = {};
+    if (published === "true") {
+      where = {
+        publishStatus: "PUBLISHED",
+      };
+    }
+
     const courses = await prismadb.course.findMany({
+      where,
       include: {
         skills_you_will_learn: true,
         learning_Outcomes: true,
@@ -192,8 +202,23 @@ export const getCourse = async (req: Request, res: Response) => {
     const courseImageUrl = course.imageKey
       ? await generateSignedFileUrl(course.imageKey || "")
       : course.imageUrl || "";
+    const courseWeeks = await Promise.all(
+      course.course_weeks.map(async (week: any) => {
+        const attachments = await Promise.all(
+          (week.attachments || []).map(async (attachment: any) => ({
+            ...attachment,
+            url: attachment.fileKey
+              ? await generateSignedFileUrl(attachment.fileKey)
+              : attachment.url || null,
+          })),
+        );
 
-    console.log(courseImageUrl);
+        return {
+          ...week,
+          attachments,
+        };
+      }),
+    );
 
     return res.status(200).json({
       status: "success",
@@ -202,7 +227,7 @@ export const getCourse = async (req: Request, res: Response) => {
         !coursePurchased &&
         "Course purchase not found, weekly attachments and video url is disabled"
       }`,
-      data: { ...course, imageUrl: courseImageUrl },
+      data: { ...course, course_weeks: courseWeeks, imageUrl: courseImageUrl },
     });
   } catch (error) {
     handleServerError(error, res);
@@ -637,6 +662,118 @@ export const getCourseCohorts = async (req: Request, res: Response) => {
       message: null,
       data: cohorts,
     });
+  } catch (error) {
+    handleServerError(error, res);
+  }
+};
+
+export const getCoursePublishChecklist = (course: any) => {
+  const checks = [
+    {
+      key: "title",
+      label: "Course title",
+      completed: !!course.title,
+    },
+    {
+      key: "description",
+      label: "Course description",
+      completed: !!course.description,
+    },
+    {
+      key: "price",
+      label: "Course price",
+      completed: !!course.price,
+    },
+    {
+      key: "image",
+      label: "Course image",
+      completed: !!course.imageUrl || !!course.imageKey,
+    },
+    {
+      key: "plans",
+      label: "Course Price Plans",
+      completed: course.pricingPlans?.length > 0,
+    },
+  ];
+
+  return {
+    checks,
+    canPublish: checks.every((item) => item.completed),
+  };
+};
+
+export const publishCourse = async (req: Request, res: Response) => {
+  try {
+    const { courseId } = req.params;
+    const user = req.user as NebiantUser;
+
+    if (!courseId) {
+      return res.status(404).json({ message: "Course ID is required" });
+    }
+
+    const course = await prismadb.course.findUnique({
+      where: { id: courseId },
+      include: { pricingPlans: true },
+    });
+
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    const checklist = getCoursePublishChecklist(course);
+
+    if (!checklist.canPublish) {
+      return res.status(400).json({
+        message: "Course is missing required publishing fields",
+        checklist: checklist.checks,
+      });
+    }
+
+    const updatedCourse = await prismadb.course.update({
+      where: { id: courseId },
+      data: {
+        publishStatus: "PUBLISHED",
+        publishedAt: new Date(),
+        publishedById: user?.id,
+      },
+    });
+
+    if (updatedCourse.id) {
+      return res.status(200).json({
+        status: "success",
+        message: "Course published successfully",
+        data: updatedCourse,
+      });
+    }
+  } catch (error) {
+    handleServerError(error, res);
+  }
+};
+
+export const unpublishCourse = async (req: Request, res: Response) => {
+  try {
+    const { courseId } = req.params;
+
+    if (!courseId) {
+      return res.status(404).json({ message: "Course ID is required" });
+    }
+
+    const updatedCourse = await prismadb.course.update({
+      where: { id: courseId },
+      data: {
+        publishStatus: "DRAFT",
+        publishedAt: null,
+        publishedById: null,
+      },
+    });
+
+    if (updatedCourse.id) {
+      return res.status(200).json({
+        status: "success",
+        message: "Course moved to draft",
+        data: updatedCourse,
+      });
+    }
   } catch (error) {
     handleServerError(error, res);
   }

@@ -116,7 +116,8 @@ export const isAuthorized = (
       if (
         user?.id === requestedUserId ||
         user?.role === "ADMIN" ||
-        user?.role === "COURSE_ADMIN"
+        user?.role === "COURSE_ADMIN" ||
+        user?.role === "SUPER_ADMIN"
       ) {
         next();
       } else {
@@ -143,7 +144,7 @@ export const isCourseAdmin = (
         "Role:",
         user?.role,
       );
-      if (user?.role === "COURSE_ADMIN" || user?.role === "ADMIN") {
+      if (user?.role === "COURSE_ADMIN" || user?.role === "SUPER_ADMIN") {
         console.log("✅ [isCourseAdmin] Access granted");
         next();
       } else {
@@ -167,7 +168,30 @@ export const isAdmin = (req: Request, res: Response, next: NextFunction) => {
   try {
     isLoggedIn(req, res, () => {
       const user = req.user as NebiantUser;
-      if (user?.role === "ADMIN") {
+      if (user?.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+        next();
+      } else {
+        return res
+          .status(403)
+          .json({ message: "Not authorized, Admin access only!" })
+          .end();
+      }
+    });
+  } catch (error) {
+    console.error("[ISADMIN]:", error);
+    res.status(500).end();
+  }
+};
+
+export const isSuperAdmin = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    isLoggedIn(req, res, () => {
+      const user = req.user as NebiantUser;
+      if (user?.role === "SUPER_ADMIN") {
         next();
       } else {
         return res
