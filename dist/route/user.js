@@ -18,5 +18,6 @@ exports.default = (router) => {
     router.patch("/users/:userId/update-role", index_1.isSuperAdmin, user_1.updateUserRole);
     router.delete("/users/:userId", index_1.isAuthorized, user_1.deleteUser);
     router.delete("/users/:userId/remove-course", index_1.isAdmin, user_1.removeUserCourse);
+    router.get("/users/:userId/lesson-courses", index_1.isLoggedIn, user_1.getAllUserCourses);
 };
 //# sourceMappingURL=user.js.map
