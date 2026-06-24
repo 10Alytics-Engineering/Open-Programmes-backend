@@ -210,7 +210,7 @@ export const registerForFreeCourseAccessFromMarketing = async (
         email,
         firstName,
         courseTitle: course.title,
-        accessUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/free-courses/${courseId}`,
+        accessUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/lessons/${courseId}`,
       }),
     ]);
 

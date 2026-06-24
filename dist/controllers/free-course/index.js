@@ -167,7 +167,7 @@ const registerForFreeCourseAccessFromMarketing = async (req, res) => {
                 email,
                 firstName,
                 courseTitle: course.title,
-                accessUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/free-courses/${courseId}`,
+                accessUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/lessons/${courseId}`,
             }),
         ]);
         return res.status(201).json({

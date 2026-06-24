@@ -908,6 +908,228 @@ export const updateUserRole = async (req: Request, res: Response) => {
   }
 };
 
+export const getAllUserCourses = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as NebiantUser;
+
+    if (!user?.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const dbUser = await prismadb.user.findUnique({
+      where: { id: user.id },
+      include: {
+        completed_videos: true,
+        quiz_answers: {
+          include: {
+            quizAnswer: {
+              include: {
+                quiz: true,
+              },
+            },
+          },
+        },
+        course_purchased: {
+          include: {
+            course: {
+              include: {
+                course_videos: true,
+                course_weeks: {
+                  include: {
+                    courseModules: {
+                      include: {
+                        quizzes: {
+                          include: {
+                            answers: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const paidCourses = await Promise.all(
+      dbUser.course_purchased.map(async (purchase: any) => {
+        const course = purchase.course;
+
+        const totalVideos = course.course_videos?.length || 0;
+
+        const completedVideos =
+          dbUser.completed_videos?.filter(
+            (v: any) => v.courseId === course.id && v.isCompleted,
+          ).length || 0;
+
+        const allQuizzes =
+          course.course_weeks?.flatMap((week: any) =>
+            week.courseModules?.flatMap((module: any) => module.quizzes || []),
+          ) || [];
+
+        const answeredQuizIds = new Set(
+          dbUser.quiz_answers?.map((item: any) => item.quizAnswer.quizId),
+        );
+
+        const completedQuizzes = allQuizzes.filter((quiz: any) =>
+          answeredQuizIds.has(quiz.id),
+        ).length;
+
+        const courseImageUrl = course.imageKey
+          ? await generateSignedFileUrl(course.imageKey)
+          : course.imageUrl || null;
+
+        return {
+          ...purchase,
+          accessType: "PAID",
+          course: {
+            ...course,
+            imageUrl: courseImageUrl,
+          },
+          courseStats: {
+            totalVideos,
+            completedVideos,
+            videoProgressPercentage:
+              totalVideos > 0
+                ? Math.round((completedVideos / totalVideos) * 100)
+                : 0,
+
+            totalQuizzes: allQuizzes.length,
+            completedQuizzes,
+            quizProgressPercentage:
+              allQuizzes.length > 0
+                ? Math.round((completedQuizzes / allQuizzes.length) * 100)
+                : 0,
+
+            paymentStatus: "FULL_ACCESS",
+          },
+        };
+      }),
+    );
+
+    const paidCourseIds = paidCourses.map((item: any) => item.courseId);
+
+    const freeRegistrations =
+      await prismadb.freeCourseAccessRegistration.findMany({
+        where: {
+          accessGranted: true,
+          courseId: {
+            notIn: paidCourseIds,
+          },
+          OR: [
+            { userId: dbUser.id },
+            ...(dbUser.email
+              ? [{ email: dbUser.email.toLowerCase().trim() }]
+              : []),
+          ],
+        },
+        include: {
+          course: {
+            include: {
+              course_weeks: {
+                include: {
+                  courseModules: {
+                    where: {
+                      isFree: true,
+                    },
+                    include: {
+                      projectVideos: true,
+                      quizzes: {
+                        include: {
+                          answers: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+    const freeCourses = await Promise.all(
+      freeRegistrations.map(async (registration: any) => {
+        const course = registration.course;
+
+        const freeModules =
+          course.course_weeks?.flatMap((week: any) => week.courseModules) || [];
+
+        const freeVideos = freeModules.flatMap(
+          (module: any) => module.projectVideos || [],
+        );
+
+        const freeQuizzes = freeModules.flatMap(
+          (module: any) => module.quizzes || [],
+        );
+
+        const completedVideos =
+          dbUser.completed_videos?.filter(
+            (v: any) =>
+              v.courseId === course.id &&
+              v.isCompleted &&
+              freeVideos.some((video: any) => video.id === v.videoId),
+          ).length || 0;
+
+        const answeredQuizIds = new Set(
+          dbUser.quiz_answers?.map((item: any) => item.quizAnswer.quizId),
+        );
+
+        const completedQuizzes = freeQuizzes.filter((quiz: any) =>
+          answeredQuizIds.has(quiz.id),
+        ).length;
+
+        const courseImageUrl = course.imageKey
+          ? await generateSignedFileUrl(course.imageKey)
+          : course.imageUrl || null;
+
+        return {
+          id: registration.id,
+          userId: dbUser.id,
+          courseId: course.id,
+          accessType: "FREE",
+          course: {
+            ...course,
+            imageUrl: courseImageUrl,
+          },
+          courseStats: {
+            totalVideos: freeVideos.length,
+            completedVideos,
+            videoProgressPercentage:
+              freeVideos.length > 0
+                ? Math.round((completedVideos / freeVideos.length) * 100)
+                : 0,
+
+            totalQuizzes: freeQuizzes.length,
+            completedQuizzes,
+            quizProgressPercentage:
+              freeQuizzes.length > 0
+                ? Math.round((completedQuizzes / freeQuizzes.length) * 100)
+                : 0,
+
+            paymentStatus: "FREE_ACCESS",
+            lastActivityAt: registration.createdAt,
+          },
+        };
+      }),
+    );
+
+    return res.status(200).json({
+      status: "success",
+      data: [...paidCourses, ...freeCourses],
+    });
+  } catch (error) {
+    handleServerError(error, res);
+  }
+};
+
 export const addUserCourse = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
