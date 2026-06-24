@@ -7,6 +7,7 @@ exports.default = (router) => {
     router.get("/courses/:courseId/weeks/:weekId/modules/:moduleId", course_module_1.getModule);
     router.post("/courses/:courseId/weeks/:weekId/modules", middleware_1.isCourseAdmin, course_module_1.createModule);
     router.patch("/courses/:courseId/weeks/:weekId/modules/:moduleId", middleware_1.isCourseAdmin, course_module_1.updateModule);
+    router.patch("/courses/:courseId/weeks/:weekId/modules/:moduleId/free-status", middleware_1.isCourseAdmin, course_module_1.updateModuleFreeStatus);
     router.delete("/courses/:courseId/weeks/:weekId/modules/:moduleId", middleware_1.isCourseAdmin, course_module_1.deleteModule);
 };
 //# sourceMappingURL=course-module.js.map
