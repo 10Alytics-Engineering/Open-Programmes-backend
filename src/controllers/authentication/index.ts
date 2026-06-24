@@ -142,6 +142,7 @@ export async function googleAuth(req: Request, res: Response) {
       image,
       token, // ID Token
       accessToken, // Access Token (for custom button flow)
+      syncFreeCourseRegistration,
     }: {
       email: string;
       name: string;
@@ -149,6 +150,7 @@ export async function googleAuth(req: Request, res: Response) {
       image?: string;
       token?: string;
       accessToken?: string;
+      syncFreeCourseRegistration?: boolean;
     } = req.body;
 
     if (!email || !googleId) {
@@ -227,6 +229,17 @@ export async function googleAuth(req: Request, res: Response) {
           password: "",
         },
       });
+
+      if (syncFreeCourseRegistration) {
+        await prismadb.freeCourseAccessRegistration.updateMany({
+          where: {
+            email: normalizedEmail,
+          },
+          data: {
+            userId: user.id,
+          },
+        });
+      }
 
       console.log(`[GOOGLE_AUTH]: Created new user: ${normalizedEmail}`);
 
@@ -367,8 +380,9 @@ export async function account(req: Request, res: Response) {
 
 export async function register(req: Request, res: Response) {
   try {
-    const { name, password, phone_number } = req.body;
-    const email: string = req.body.email?.toLowerCase();
+    const { name, password, phone_number, syncFreeCourseRegistration } =
+      req.body;
+    const email: string = req.body.email?.toLowerCase().trim();
 
     if (!name || !email || !password || !phone_number) {
       return res.status(400).json({ message: "Fill in credentials!" });
@@ -427,6 +441,17 @@ export async function register(req: Request, res: Response) {
         phone_number,
       },
     });
+
+    if (user?.id && syncFreeCourseRegistration) {
+      await prismadb.freeCourseAccessRegistration.updateMany({
+        where: {
+          email,
+        },
+        data: {
+          userId: user.id,
+        },
+      });
+    }
 
     // const verificationToken = await generateVerificationToken(email);
 

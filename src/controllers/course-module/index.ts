@@ -118,17 +118,15 @@ export const getModule = async (req: Request, res: Response) => {
       urlField: "thumbnailUrl",
     });
 
-    return res
-      .status(200)
-      .json({
-        status: "success",
-        message: null,
-        data: {
-          ...module,
-          iconUrl,
-          projectVideos: projectVideosWithThumbnails,
-        },
-      });
+    return res.status(200).json({
+      status: "success",
+      message: null,
+      data: {
+        ...module,
+        iconUrl,
+        projectVideos: projectVideosWithThumbnails,
+      },
+    });
   } catch (error) {
     handleServerError(error, res);
   }
@@ -248,13 +246,111 @@ export const deleteModule = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Course week does not exist" });
     }
 
-    await prismadb.module.delete({
+    await prismadb.$transaction(async (tx) => {
+      await tx.module.delete({
+        where: {
+          id: moduleId,
+        },
+      });
+
+      const freeModulesCount = await tx.module.count({
+        where: {
+          isFree: true,
+          CourseWeek: {
+            courseId,
+          },
+        },
+      });
+
+      await tx.course.update({
+        where: {
+          id: courseId,
+        },
+        data: {
+          hasFreeModules: freeModulesCount > 0,
+        },
+      });
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Deleted course module successfully",
+    });
+  } catch (error) {
+    handleServerError(error, res);
+  }
+};
+
+export const updateModuleFreeStatus = async (req: Request, res: Response) => {
+  const { courseId, moduleId } = req.params;
+  const { isFree } = req.body;
+
+  console.log({ isFree });
+
+  if (!courseId || !moduleId) {
+    return res.status(400).json({
+      message: "Course id and module id are required",
+    });
+  }
+
+  if (typeof isFree !== "boolean") {
+    return res.status(400).json({
+      message: "isFree must be true or false",
+    });
+  }
+
+  try {
+    const courseModule = await prismadb.module.findFirst({
       where: {
         id: moduleId,
+        CourseWeek: {
+          courseId,
+        },
       },
     });
 
-    return res.status(200).json({ status: "Module deleted" });
+    if (!courseModule) {
+      return res.status(404).json({
+        message: "Module not found",
+      });
+    }
+
+    const updatedModule = await prismadb.$transaction(async (tx) => {
+      const module = await tx.module.update({
+        where: {
+          id: moduleId,
+        },
+        data: {
+          isFree,
+        },
+      });
+
+      const freeModulesCount = await tx.module.count({
+        where: {
+          isFree: true,
+          CourseWeek: {
+            courseId,
+          },
+        },
+      });
+
+      await tx.course.update({
+        where: {
+          id: courseId,
+        },
+        data: {
+          hasFreeModules: freeModulesCount > 0,
+        },
+      });
+
+      return module;
+    });
+
+    return res.status(200).json({
+      status: "success",
+      message: "Module free status updated successfully",
+      data: updatedModule,
+    });
   } catch (error) {
     handleServerError(error, res);
   }
