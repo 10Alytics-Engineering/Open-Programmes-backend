@@ -123,6 +123,7 @@ model User {
   publishedCourses                                                   Course[]
   lastLoginDate                                                      DateTime?
   lastNotificationInActivityDate                                     DateTime?
+  freeCourseAccessRegistrations                                      FreeCourseAccessRegistration[]
 }
 
 model ChangeRequest {
@@ -360,6 +361,8 @@ model Course {
   updatedAt                          DateTime             @updatedAt
   syllabus                           String?
 
+  hasFreeModules                     Boolean              @default(false)
+
   publishStatus                      CoursePublishStatus  @default(DRAFT)
   publishedAt                        DateTime?
   publishedById                      String?
@@ -382,6 +385,7 @@ model Course {
   timetable                          TimeTable[]
   facilitators                       Facilitator[]        @relation("CourseToFacilitator")
   courseLeaderBoards                 CourseCohortLeaderboard[] 
+  freeRegistrations                  FreeCourseAccessRegistration[]
 }
 
 model CoursePricingPlan {
@@ -430,6 +434,7 @@ model Module {
   iconUrl       String?
   iconKey       String?
   courseWeekId  String
+  isFree        Boolean        @default(false)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   CourseWeek    CourseWeek     @relation(fields: [courseWeekId], references: [id], onDelete: Cascade)
@@ -1055,6 +1060,33 @@ model Notification {
   @@index([isRead])
   @@index([createdAt])
 }
+
+model FreeCourseAccessRegistration {
+  id String @id @default(cuid())
+
+  firstName String
+  lastName String
+  email String
+  gender String
+  phoneNumber String
+
+  hearAbout Json?
+  otherSource String?
+
+  courseId String
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessGranted Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, courseId])
+}
+
 
 enum NotificationType {
   COURSE_SWITCHED

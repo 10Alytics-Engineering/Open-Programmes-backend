@@ -6,6 +6,7 @@ import {
   getModule,
   getModules,
   updateModule,
+  updateModuleFreeStatus,
 } from "../controllers/course-module";
 
 export default (router: express.Router) => {
@@ -14,16 +15,23 @@ export default (router: express.Router) => {
   router.post(
     "/courses/:courseId/weeks/:weekId/modules",
     isCourseAdmin,
-    createModule
+    createModule,
   );
   router.patch(
     "/courses/:courseId/weeks/:weekId/modules/:moduleId",
     isCourseAdmin,
-    updateModule
+    updateModule,
   );
+
+  router.patch(
+    "/courses/:courseId/weeks/:weekId/modules/:moduleId/free-status",
+    isCourseAdmin,
+    updateModuleFreeStatus,
+  );
+
   router.delete(
     "/courses/:courseId/weeks/:weekId/modules/:moduleId",
     isCourseAdmin,
-    deleteModule
+    deleteModule,
   );
 };

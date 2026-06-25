@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { User } from "@prisma/client";
+import { NebiantUser } from "../../middleware";
+import { getCourseAccess } from "../../utils/course-access";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -8,6 +10,93 @@ const handleServerError = (error: any, res: Response) => {
     message: "Internal Server Error",
     UPDATE_USER_COURSE_STATUS: error,
   });
+};
+
+export const getCourseLessonAccess = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as NebiantUser;
+    const { courseId } = req.params;
+
+    if (!user?.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const access = await getCourseAccess({
+      userId: user.id,
+      email: user.email,
+      courseId,
+    });
+
+    if (access.accessType === "NONE") {
+      return res.status(403).json({
+        message: "You do not have access to this course",
+      });
+    }
+
+    const course = await prismadb.course.findUnique({
+      where: { id: courseId },
+      include: {
+        course_weeks: {
+          orderBy: {
+            createdAt: "asc",
+          },
+          include: {
+            attachments: true,
+            courseModules: {
+              orderBy: {
+                createdAt: "asc",
+              },
+              include: {
+                projectVideos: true,
+                quizzes: {
+                  include: {
+                    answers: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!course) {
+      return res.status(404).json({ message: "Course not found" });
+    }
+
+    const formattedCourse = {
+      ...course,
+      accessType: access.accessType,
+      canAccessFullCourse: access.accessType === "PAID",
+      course_weeks: course.course_weeks.map((week: any) => ({
+        ...week,
+        courseModules: week.courseModules.map((module: any) => {
+          const isLocked = access.accessType === "FREE" && !module.isFree;
+
+          return {
+            ...module,
+            isLocked,
+            canAccess: !isLocked,
+            projectVideos: module.projectVideos.map((video: any) => ({
+              ...video,
+              isLocked,
+            })),
+            quizzes: module.quizzes.map((quiz: any) => ({
+              ...quiz,
+              isLocked,
+            })),
+          };
+        }),
+      })),
+    };
+
+    return res.status(200).json({
+      status: "success",
+      data: formattedCourse,
+    });
+  } catch (error) {
+    handleServerError(error, res);
+  }
 };
 
 export const addToOngoing = async (req: Request, res: Response) => {
@@ -64,7 +153,7 @@ export const addToCompleted = async (req: Request, res: Response) => {
     }
 
     const updatedOngoingCourses = existingUser.ongoing_courses.filter(
-      (id) => id !== courseId
+      (id) => id !== courseId,
     );
 
     await prismadb.user.update({

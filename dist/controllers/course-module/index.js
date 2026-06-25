@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteModule = exports.updateModule = exports.createModule = exports.getModule = exports.getModules = void 0;
+exports.updateModuleFreeStatus = exports.deleteModule = exports.updateModule = exports.createModule = exports.getModule = exports.getModules = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const upload_service_1 = require("../../services/upload.service");
 const handleServerError = (error, res) => {
@@ -99,9 +99,7 @@ const getModule = async (req, res) => {
             keyField: "thumbnailKey",
             urlField: "thumbnailUrl",
         });
-        return res
-            .status(200)
-            .json({
+        return res.status(200).json({
             status: "success",
             message: null,
             data: {
@@ -212,16 +210,103 @@ const deleteModule = async (req, res) => {
         if (!existingCourseWeek) {
             return res.status(404).json({ message: "Course week does not exist" });
         }
-        await prismadb_1.prismadb.module.delete({
-            where: {
-                id: moduleId,
-            },
+        await prismadb_1.prismadb.$transaction(async (tx) => {
+            await tx.module.delete({
+                where: {
+                    id: moduleId,
+                },
+            });
+            const freeModulesCount = await tx.module.count({
+                where: {
+                    isFree: true,
+                    CourseWeek: {
+                        courseId,
+                    },
+                },
+            });
+            await tx.course.update({
+                where: {
+                    id: courseId,
+                },
+                data: {
+                    hasFreeModules: freeModulesCount > 0,
+                },
+            });
         });
-        return res.status(200).json({ status: "Module deleted" });
+        return res.status(200).json({
+            status: "success",
+            message: "Deleted course module successfully",
+        });
     }
     catch (error) {
         handleServerError(error, res);
     }
 };
 exports.deleteModule = deleteModule;
+const updateModuleFreeStatus = async (req, res) => {
+    const { courseId, moduleId } = req.params;
+    const { isFree } = req.body;
+    console.log({ isFree });
+    if (!courseId || !moduleId) {
+        return res.status(400).json({
+            message: "Course id and module id are required",
+        });
+    }
+    if (typeof isFree !== "boolean") {
+        return res.status(400).json({
+            message: "isFree must be true or false",
+        });
+    }
+    try {
+        const courseModule = await prismadb_1.prismadb.module.findFirst({
+            where: {
+                id: moduleId,
+                CourseWeek: {
+                    courseId,
+                },
+            },
+        });
+        if (!courseModule) {
+            return res.status(404).json({
+                message: "Module not found",
+            });
+        }
+        const updatedModule = await prismadb_1.prismadb.$transaction(async (tx) => {
+            const module = await tx.module.update({
+                where: {
+                    id: moduleId,
+                },
+                data: {
+                    isFree,
+                },
+            });
+            const freeModulesCount = await tx.module.count({
+                where: {
+                    isFree: true,
+                    CourseWeek: {
+                        courseId,
+                    },
+                },
+            });
+            await tx.course.update({
+                where: {
+                    id: courseId,
+                },
+                data: {
+                    hasFreeModules: freeModulesCount > 0,
+                },
+            });
+            return module;
+        });
+        return res.status(200).json({
+            status: "success",
+            message: "Module free status updated successfully",
+            data: updatedModule,
+        });
+    }
+    catch (error) {
+        handleServerError(error, res);
+    }
+};
+exports.updateModuleFreeStatus = updateModuleFreeStatus;
 //# sourceMappingURL=index.js.map

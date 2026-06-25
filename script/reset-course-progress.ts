@@ -11,6 +11,7 @@ async function main() {
       where: {
         userId: {
           in: [
+            "cmqsgyb0t00024030z7lefgoo",
             "cmpx1gia3000ndausace4jumf",
             // "cmp3z4y2h000cbhe58boegtiv",
             // "cmows6g0o007oz4i0875ifdm5",
@@ -23,6 +24,7 @@ async function main() {
         id: {
           in: [
             "cmpx1gia3000ndausace4jumf",
+            "cmqsgyb0t00024030z7lefgoo",
             // "cmp3z4y2h000cbhe58boegtiv",
             // "cmows6g0o007oz4i0875ifdm5",
           ],
@@ -38,19 +40,19 @@ async function main() {
   // const startOfDay = new Date();
   // startOfDay.setHours(0, 0, 0, 0);
 
-  const test = await prisma.userProgress.findMany({
-    where: {
-      userId: {
-        in: [
-          "cmpx1gia3000ndausace4jumf",
-          // "cmp3z4y2h000cbhe58boegtiv",
-          // "cmows6g0o007oz4i0875ifdm5",
-        ],
-      },
-    },
-  });
+  // const test = await prisma.userProgress.findMany({
+  //   where: {
+  //     userId: {
+  //       in: [
+  //         "cmpx1gia3000ndausace4jumf",
+  //         // "cmp3z4y2h000cbhe58boegtiv",
+  //         // "cmows6g0o007oz4i0875ifdm5",
+  //       ],
+  //     },
+  //   },
+  // });
 
-  console.log({ test });
+  // console.log({ test });
 
   console.log("All course progress reset successfully.");
 }

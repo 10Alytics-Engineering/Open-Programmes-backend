@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import { NebiantUser } from "../../middleware";
+import { getCourseAccess } from "../../utils/course-access";
 
 const handleError = (error: any, res: Response) => {
   console.error("Error:", error);
@@ -21,7 +22,7 @@ export const updateCourseVideoProgress = async (
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const [existingProgress, userCohort] = await Promise.all([
+    const [existingProgress, userCohort, video] = await Promise.all([
       prismadb.userProgress.findUnique({
         where: {
           userId_videoId_courseId: {
@@ -39,12 +40,45 @@ export const updateCourseVideoProgress = async (
         },
         orderBy: { createdAt: "desc" },
       }),
+
+      prismadb.projectVideo.findFirst({
+        where: {
+          id: videoId,
+          courseId,
+        },
+        include: {
+          courseModule: true,
+        },
+      }),
     ]);
 
-    if (!userCohort?.id) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Active cohort for user not found" });
+    const access = await getCourseAccess({
+      userId: user.id,
+      email: user.email,
+      courseId,
+    });
+
+    if (access.accessType === "NONE") {
+      return res.status(403).json({
+        message: "You do not have access to this course",
+      });
+    } else if (access.accessType === "PAID") {
+      if (!userCohort?.id) {
+        return res.status(404).json({
+          status: "error",
+          message: "Active cohort for user not found",
+        });
+      }
+    }
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    if (access.accessType === "FREE" && !video.courseModule.isFree) {
+      return res.status(403).json({
+        message: "This video requires full course access",
+      });
     }
 
     const shouldBeCompleted =
@@ -81,7 +115,11 @@ export const updateCourseVideoProgress = async (
       },
     });
 
-    if (!existingProgress?.isCompleted && progressPercentage >= 70) {
+    if (
+      !existingProgress?.isCompleted &&
+      progressPercentage >= 70 &&
+      userCohort?.id
+    ) {
       await prismadb.courseCohortLeaderboard.upsert({
         where: {
           userId_courseId_cohortId: {
@@ -129,11 +167,16 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
         include: {
           quiz: {
             include: {
-              courseModule: true,
+              courseModule: {
+                include: {
+                  CourseWeek: true,
+                },
+              },
             },
           },
         },
       }),
+
       prismadb.userQuizAnswer.findFirst({
         where: {
           userId: user.id,
@@ -144,7 +187,7 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
       prismadb.userCohort.findFirst({
         where: {
           isActive: true,
-          userId: user?.id,
+          userId: user.id,
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -152,14 +195,37 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
 
     if (!answer) return res.status(404).json({ message: "Answer not found" });
 
-    if (existingAnswer) {
-      return res.status(400).json({ message: "Already answered this quiz" });
+    const courseId = answer.quiz.courseModule.CourseWeek.courseId;
+
+    const access = await getCourseAccess({
+      userId: user.id,
+      email: user.email,
+      courseId,
+    });
+
+    if (access.accessType === "NONE") {
+      return res.status(403).json({
+        message: "You do not have access to this course",
+      });
     }
 
-    if (!userCohort?.id) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Active cohort for user not found" });
+    if (access.accessType === "PAID") {
+      if (!userCohort?.id) {
+        return res.status(404).json({
+          status: "error",
+          message: "Active cohort for user not found",
+        });
+      }
+    }
+
+    if (access.accessType === "FREE" && !answer.quiz.courseModule.isFree) {
+      return res.status(403).json({
+        message: "This quiz requires full course access",
+      });
+    }
+
+    if (existingAnswer) {
+      return res.status(400).json({ message: "Already answered this quiz" });
     }
 
     // Record answer
@@ -171,7 +237,7 @@ export const submitQuizAnswer = async (req: Request, res: Response) => {
     });
 
     // Update leaderboard if correct
-    if (answer.isCorrect) {
+    if (answer.isCorrect && userCohort?.id) {
       await prismadb.courseCohortLeaderboard.upsert({
         where: {
           userId_courseId_cohortId: {

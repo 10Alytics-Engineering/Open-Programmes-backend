@@ -15,8 +15,14 @@ import {
   getUserCourseProgress,
   switchUserCourse,
   switchUserCohort,
+  getAllUserCourses,
 } from "../controllers/user";
-import { isAdmin, isAuthorized, isSuperAdmin } from "../middleware/index";
+import {
+  isAdmin,
+  isAuthorized,
+  isLoggedIn,
+  isSuperAdmin,
+} from "../middleware/index";
 
 export default (router: express.Router) => {
   router.get("/users", getUsers);
@@ -38,4 +44,5 @@ export default (router: express.Router) => {
   router.patch("/users/:userId/update-role", isSuperAdmin, updateUserRole);
   router.delete("/users/:userId", isAuthorized, deleteUser);
   router.delete("/users/:userId/remove-course", isAdmin, removeUserCourse);
+  router.get("/users/:userId/lesson-courses", isLoggedIn, getAllUserCourses);
 };
