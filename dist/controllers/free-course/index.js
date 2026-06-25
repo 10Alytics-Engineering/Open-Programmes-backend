@@ -173,7 +173,7 @@ const registerForFreeCourseAccessFromMarketing = async (req, res) => {
                 courseTitle: course.title,
                 accessUrl: user?.id
                     ? `${process.env.NEXT_PUBLIC_APP_URL}/login?${params.toString()}`
-                    : `${process.env.NEXT_PUBLIC_APP_URL}//signup?${params.toString()}`,
+                    : `${process.env.NEXT_PUBLIC_APP_URL}/signup?${params.toString()}`,
             }),
         ]);
         return res.status(201).json({

@@ -216,7 +216,7 @@ export const registerForFreeCourseAccessFromMarketing = async (
         courseTitle: course.title,
         accessUrl: user?.id
           ? `${process.env.NEXT_PUBLIC_APP_URL}/login?${params.toString()}`
-          : `${process.env.NEXT_PUBLIC_APP_URL}//signup?${params.toString()}`,
+          : `${process.env.NEXT_PUBLIC_APP_URL}/signup?${params.toString()}`,
       }),
     ]);
 
