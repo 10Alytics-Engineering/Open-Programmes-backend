@@ -159,6 +159,10 @@ const registerForFreeCourseAccessFromMarketing = async (req, res) => {
                 message: "An error occured while registring for course.",
             });
         }
+        const callbackUrl = `/dashboard/lessons/${courseId}`;
+        const params = new URLSearchParams({
+            callbackUrl,
+        });
         await Promise.all([
             // sync google sheet
             googleSheets_1.FreeCourseAccessSheetsService.syncRegistration(registration, course),
@@ -167,13 +171,16 @@ const registerForFreeCourseAccessFromMarketing = async (req, res) => {
                 email,
                 firstName,
                 courseTitle: course.title,
-                accessUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/lessons/${courseId}`,
+                accessUrl: user?.id
+                    ? `${process.env.NEXT_PUBLIC_APP_URL}/login?${params.toString()}`
+                    : `${process.env.NEXT_PUBLIC_APP_URL}/signup?${params.toString()}`,
             }),
         ]);
         return res.status(201).json({
             status: "success",
             message: "Registration successful",
             data: registration,
+            hasAccount: !!user,
         });
     }
     catch (error) {

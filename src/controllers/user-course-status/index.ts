@@ -37,9 +37,15 @@ export const getCourseLessonAccess = async (req: Request, res: Response) => {
       where: { id: courseId },
       include: {
         course_weeks: {
+          orderBy: {
+            createdAt: "asc",
+          },
           include: {
             attachments: true,
             courseModules: {
+              orderBy: {
+                createdAt: "asc",
+              },
               include: {
                 projectVideos: true,
                 quizzes: {

@@ -202,6 +202,10 @@ export const registerForFreeCourseAccessFromMarketing = async (
       });
     }
 
+    const callbackUrl = `/dashboard/lessons/${courseId}`;
+    const params = new URLSearchParams({
+      callbackUrl,
+    });
     await Promise.all([
       // sync google sheet
       FreeCourseAccessSheetsService.syncRegistration(registration, course),
@@ -210,7 +214,9 @@ export const registerForFreeCourseAccessFromMarketing = async (
         email,
         firstName,
         courseTitle: course.title,
-        accessUrl: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/lessons/${courseId}`,
+        accessUrl: user?.id
+          ? `${process.env.NEXT_PUBLIC_APP_URL}/login?${params.toString()}`
+          : `${process.env.NEXT_PUBLIC_APP_URL}/signup?${params.toString()}`,
       }),
     ]);
 
@@ -218,6 +224,7 @@ export const registerForFreeCourseAccessFromMarketing = async (
       status: "success",
       message: "Registration successful",
       data: registration,
+      hasAccount: !!user,
     });
   } catch (error) {
     handleServerError(error, res);
