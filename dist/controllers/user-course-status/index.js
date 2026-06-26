@@ -56,26 +56,29 @@ const getCourseLessonAccess = async (req, res) => {
         if (!course) {
             return res.status(404).json({ message: "Course not found" });
         }
+        const isFreeAccess = access.accessType === "FREE";
         const formattedCourse = {
             ...course,
             accessType: access.accessType,
             canAccessFullCourse: access.accessType === "PAID",
             course_weeks: course.course_weeks.map((week) => ({
                 ...week,
+                attachments: isFreeAccess ? [] : week.attachments,
                 courseModules: week.courseModules.map((module) => {
-                    const isLocked = access.accessType === "FREE" && !module.isFree;
+                    const moduleHasFreeVideo = module.projectVideos.some((video) => video.isFree);
+                    const moduleLocked = isFreeAccess && !module.isFree && !moduleHasFreeVideo;
                     return {
                         ...module,
-                        isLocked,
-                        canAccess: !isLocked,
-                        projectVideos: module.projectVideos.map((video) => ({
-                            ...video,
-                            isLocked,
-                        })),
-                        quizzes: module.quizzes.map((quiz) => ({
-                            ...quiz,
-                            isLocked,
-                        })),
+                        isLocked: moduleLocked,
+                        canAccess: !moduleLocked,
+                        quizzes: isFreeAccess ? [] : module.quizzes,
+                        projectVideos: module.projectVideos.map((video) => {
+                            const canAccessVideo = access.accessType === "PAID" || module.isFree || video.isFree;
+                            return {
+                                ...video,
+                                isLocked: !canAccessVideo,
+                            };
+                        }),
                     };
                 }),
             })),

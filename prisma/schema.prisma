@@ -449,6 +449,8 @@ model ProjectVideo {
   thumbnailUrl String?
   thumbnailKey  String?
   duration     String?
+  isFree       Boolean  @default(false)
+
   moduleId     String
   courseId     String
   createdAt    DateTime @default(now())

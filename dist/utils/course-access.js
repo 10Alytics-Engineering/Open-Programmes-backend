@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getCourseAccess = void 0;
+exports.refreshCourseFreeAccessStatus = exports.getCourseAccess = void 0;
 const prismadb_1 = require("../lib/prismadb");
 const getCourseAccess = async ({ userId, email, courseId, }) => {
     const cleanedEmail = email?.toLowerCase().trim();
@@ -26,4 +26,31 @@ const getCourseAccess = async ({ userId, email, courseId, }) => {
     };
 };
 exports.getCourseAccess = getCourseAccess;
+const refreshCourseFreeAccessStatus = async (tx, courseId) => {
+    const [freeModulesCount, freeVideosCount] = await Promise.all([
+        tx.module.count({
+            where: {
+                isFree: true,
+                CourseWeek: {
+                    courseId,
+                },
+            },
+        }),
+        tx.projectVideo.count({
+            where: {
+                isFree: true,
+                courseId,
+            },
+        }),
+    ]);
+    await tx.course.update({
+        where: {
+            id: courseId,
+        },
+        data: {
+            hasFreeModules: freeModulesCount > 0 || freeVideosCount > 0,
+        },
+    });
+};
+exports.refreshCourseFreeAccessStatus = refreshCourseFreeAccessStatus;
 //# sourceMappingURL=course-access.js.map

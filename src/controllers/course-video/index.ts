@@ -6,6 +6,7 @@ import {
   attachSignedUrls,
   generateSignedFileUrl,
 } from "../../services/upload.service";
+import { refreshCourseFreeAccessStatus } from "../../utils/course-access";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -130,12 +131,14 @@ export const createCourseVideo = async (req: Request, res: Response) => {
       thumbnailKey,
       duration,
       videoType,
+      isFree,
     }: {
       title: string;
       videoUrl: string;
       thumbnailKey: string;
       duration: string;
       videoType?: string;
+      isFree: boolean;
     } = req.body;
 
     const { courseId, weekId, moduleId } = req.params;
@@ -181,21 +184,29 @@ export const createCourseVideo = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Module does not exist" });
     }
 
-    const courseVideo = await prismadb.projectVideo.create({
-      data: {
-        title,
-        videoUrl,
-        thumbnailKey,
-        duration,
-        videoType: videoType || "VIMEO",
-        moduleId,
-        courseId,
-      },
-      select: {
-        id: true,
-        title: true,
-        videoType: true,
-      },
+    const courseVideo = await prismadb.$transaction(async (tx) => {
+      const video = await tx.projectVideo.create({
+        data: {
+          title,
+          videoUrl,
+          thumbnailKey,
+          duration,
+          videoType: videoType || "VIMEO",
+          isFree: !!isFree,
+          moduleId,
+          courseId,
+        },
+        select: {
+          id: true,
+          title: true,
+          videoType: true,
+          isFree: true,
+        },
+      });
+
+      await refreshCourseFreeAccessStatus(tx, courseId);
+
+      return video;
     });
 
     if (!courseVideo.id) {
@@ -313,13 +324,19 @@ export const updateCourseVideo = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Video does not exist" });
     }
 
-    const updatedVideo = await prismadb.projectVideo.update({
-      where: {
-        id: videoId,
-      },
-      data: {
-        ...body,
-      },
+    const updatedVideo = await prismadb.$transaction(async (tx) => {
+      const video = await tx.projectVideo.update({
+        where: {
+          id: videoId,
+        },
+        data: {
+          ...body,
+        },
+      });
+
+      await refreshCourseFreeAccessStatus(tx, courseId);
+
+      return video;
     });
 
     if (!updatedVideo.id) {
@@ -432,12 +449,16 @@ export const deleteCourseVideo = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Video does not exist" });
     }
 
-    const deletedVideo = await prismadb.projectVideo.delete({
-      where: {
-        id: videoId,
-        moduleId,
-        courseId,
-      },
+    const deletedVideo = await prismadb.$transaction(async (tx) => {
+      const video = await tx.projectVideo.delete({
+        where: {
+          id: videoId,
+        },
+      });
+
+      await refreshCourseFreeAccessStatus(tx, courseId);
+
+      return video;
     });
 
     if (!deletedVideo.id) {
