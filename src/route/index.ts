@@ -37,6 +37,7 @@ import liveClass from "./live-class";
 import upload from "./upload";
 import notification from "./notification";
 import emailSubscription from "./email-subscription";
+import japaSession from "./japa-session";
 
 const router = express.Router();
 
@@ -79,6 +80,7 @@ export default (): express.Router => {
   upload(router);
   notification(router);
   emailSubscription(router);
+  japaSession(router);
 
   return router;
 };
