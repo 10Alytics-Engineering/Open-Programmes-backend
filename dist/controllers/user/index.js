@@ -859,9 +859,6 @@ const getAllUserCourses = async (req, res) => {
                         course_weeks: {
                             include: {
                                 courseModules: {
-                                    where: {
-                                        isFree: true,
-                                    },
                                     include: {
                                         projectVideos: true,
                                         quizzes: {
@@ -880,7 +877,13 @@ const getAllUserCourses = async (req, res) => {
         const freeCourses = await Promise.all(freeRegistrations.map(async (registration) => {
             const course = registration.course;
             const freeModules = course.course_weeks?.flatMap((week) => week.courseModules) || [];
-            const freeVideos = freeModules.flatMap((module) => module.projectVideos || []);
+            const freeVideos = freeModules.flatMap((module) => {
+                const videos = module.projectVideos || [];
+                if (module.isFree) {
+                    return videos;
+                }
+                return videos.filter((video) => video.isFree);
+            });
             const freeQuizzes = freeModules.flatMap((module) => module.quizzes || []);
             const completedVideos = dbUser.completed_videos?.filter((v) => v.courseId === course.id &&
                 v.isCompleted &&

@@ -4,6 +4,7 @@ import {
   attachSignedUrls,
   generateSignedFileUrl,
 } from "../../services/upload.service";
+import { refreshCourseFreeAccessStatus } from "../../utils/course-access";
 
 const handleServerError = (error: any, res: Response) => {
   console.error({ error_server: error });
@@ -253,23 +254,7 @@ export const deleteModule = async (req: Request, res: Response) => {
         },
       });
 
-      const freeModulesCount = await tx.module.count({
-        where: {
-          isFree: true,
-          CourseWeek: {
-            courseId,
-          },
-        },
-      });
-
-      await tx.course.update({
-        where: {
-          id: courseId,
-        },
-        data: {
-          hasFreeModules: freeModulesCount > 0,
-        },
-      });
+      await refreshCourseFreeAccessStatus(tx, courseId);
     });
 
     return res.status(200).json({
@@ -284,8 +269,6 @@ export const deleteModule = async (req: Request, res: Response) => {
 export const updateModuleFreeStatus = async (req: Request, res: Response) => {
   const { courseId, moduleId } = req.params;
   const { isFree } = req.body;
-
-  console.log({ isFree });
 
   if (!courseId || !moduleId) {
     return res.status(400).json({
@@ -325,23 +308,7 @@ export const updateModuleFreeStatus = async (req: Request, res: Response) => {
         },
       });
 
-      const freeModulesCount = await tx.module.count({
-        where: {
-          isFree: true,
-          CourseWeek: {
-            courseId,
-          },
-        },
-      });
-
-      await tx.course.update({
-        where: {
-          id: courseId,
-        },
-        data: {
-          hasFreeModules: freeModulesCount > 0,
-        },
-      });
+      await refreshCourseFreeAccessStatus(tx, courseId);
 
       return module;
     });

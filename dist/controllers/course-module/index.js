@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateModuleFreeStatus = exports.deleteModule = exports.updateModule = exports.createModule = exports.getModule = exports.getModules = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const upload_service_1 = require("../../services/upload.service");
+const course_access_1 = require("../../utils/course-access");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -216,22 +217,7 @@ const deleteModule = async (req, res) => {
                     id: moduleId,
                 },
             });
-            const freeModulesCount = await tx.module.count({
-                where: {
-                    isFree: true,
-                    CourseWeek: {
-                        courseId,
-                    },
-                },
-            });
-            await tx.course.update({
-                where: {
-                    id: courseId,
-                },
-                data: {
-                    hasFreeModules: freeModulesCount > 0,
-                },
-            });
+            await (0, course_access_1.refreshCourseFreeAccessStatus)(tx, courseId);
         });
         return res.status(200).json({
             status: "success",
@@ -246,7 +232,6 @@ exports.deleteModule = deleteModule;
 const updateModuleFreeStatus = async (req, res) => {
     const { courseId, moduleId } = req.params;
     const { isFree } = req.body;
-    console.log({ isFree });
     if (!courseId || !moduleId) {
         return res.status(400).json({
             message: "Course id and module id are required",
@@ -280,22 +265,7 @@ const updateModuleFreeStatus = async (req, res) => {
                     isFree,
                 },
             });
-            const freeModulesCount = await tx.module.count({
-                where: {
-                    isFree: true,
-                    CourseWeek: {
-                        courseId,
-                    },
-                },
-            });
-            await tx.course.update({
-                where: {
-                    id: courseId,
-                },
-                data: {
-                    hasFreeModules: freeModulesCount > 0,
-                },
-            });
+            await (0, course_access_1.refreshCourseFreeAccessStatus)(tx, courseId);
             return module;
         });
         return res.status(200).json({

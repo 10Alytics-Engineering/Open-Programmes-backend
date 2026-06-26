@@ -34,3 +34,35 @@ export const getCourseAccess = async ({
     accessType: purchase ? "PAID" : freeRegistration ? "FREE" : "NONE",
   };
 };
+
+export const refreshCourseFreeAccessStatus = async (
+  tx: any,
+  courseId: string,
+) => {
+  const [freeModulesCount, freeVideosCount] = await Promise.all([
+    tx.module.count({
+      where: {
+        isFree: true,
+        CourseWeek: {
+          courseId,
+        },
+      },
+    }),
+
+    tx.projectVideo.count({
+      where: {
+        isFree: true,
+        courseId,
+      },
+    }),
+  ]);
+
+  await tx.course.update({
+    where: {
+      id: courseId,
+    },
+    data: {
+      hasFreeModules: freeModulesCount > 0 || freeVideosCount > 0,
+    },
+  });
+};
