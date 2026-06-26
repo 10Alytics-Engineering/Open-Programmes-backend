@@ -75,7 +75,11 @@ export const updateCourseVideoProgress = async (
       return res.status(404).json({ message: "Video not found" });
     }
 
-    if (access.accessType === "FREE" && !video.courseModule.isFree) {
+    if (
+      access.accessType === "FREE" &&
+      !video.isFree &&
+      !video.courseModule.isFree
+    ) {
       return res.status(403).json({
         message: "This video requires full course access",
       });

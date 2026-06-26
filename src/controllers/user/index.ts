@@ -1036,9 +1036,6 @@ export const getAllUserCourses = async (req: Request, res: Response) => {
               course_weeks: {
                 include: {
                   courseModules: {
-                    where: {
-                      isFree: true,
-                    },
                     include: {
                       projectVideos: true,
                       quizzes: {
@@ -1062,9 +1059,15 @@ export const getAllUserCourses = async (req: Request, res: Response) => {
         const freeModules =
           course.course_weeks?.flatMap((week: any) => week.courseModules) || [];
 
-        const freeVideos = freeModules.flatMap(
-          (module: any) => module.projectVideos || [],
-        );
+        const freeVideos = freeModules.flatMap((module: any) => {
+          const videos = module.projectVideos || [];
+
+          if (module.isFree) {
+            return videos;
+          }
+
+          return videos.filter((video: any) => video.isFree);
+        });
 
         const freeQuizzes = freeModules.flatMap(
           (module: any) => module.quizzes || [],

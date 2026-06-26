@@ -4,6 +4,7 @@ exports.getCourseVideosByCourseId = exports.deleteCourseVideo = exports.updateCo
 const prismadb_1 = require("../../lib/prismadb");
 const notification_service_1 = require("../../services/notification.service");
 const upload_service_1 = require("../../services/upload.service");
+const course_access_1 = require("../../utils/course-access");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
     res.status(500).json({ message: "Internal Server Error" });
@@ -104,7 +105,7 @@ const getCourseVideo = async (req, res) => {
 exports.getCourseVideo = getCourseVideo;
 const createCourseVideo = async (req, res) => {
     try {
-        const { title, videoUrl, thumbnailKey, duration, videoType, } = req.body;
+        const { title, videoUrl, thumbnailKey, duration, videoType, isFree, } = req.body;
         const { courseId, weekId, moduleId } = req.params;
         if (!courseId) {
             return res.status(400).json({ message: "CourseId is required" });
@@ -140,21 +141,27 @@ const createCourseVideo = async (req, res) => {
         if (!existingModule) {
             return res.status(404).json({ message: "Module does not exist" });
         }
-        const courseVideo = await prismadb_1.prismadb.projectVideo.create({
-            data: {
-                title,
-                videoUrl,
-                thumbnailKey,
-                duration,
-                videoType: videoType || "VIMEO",
-                moduleId,
-                courseId,
-            },
-            select: {
-                id: true,
-                title: true,
-                videoType: true,
-            },
+        const courseVideo = await prismadb_1.prismadb.$transaction(async (tx) => {
+            const video = await tx.projectVideo.create({
+                data: {
+                    title,
+                    videoUrl,
+                    thumbnailKey,
+                    duration,
+                    videoType: videoType || "VIMEO",
+                    isFree: !!isFree,
+                    moduleId,
+                    courseId,
+                },
+                select: {
+                    id: true,
+                    title: true,
+                    videoType: true,
+                    isFree: true,
+                },
+            });
+            await (0, course_access_1.refreshCourseFreeAccessStatus)(tx, courseId);
+            return video;
         });
         if (!courseVideo.id) {
             return res.status(422).json({
@@ -252,13 +259,17 @@ const updateCourseVideo = async (req, res) => {
         if (!existingVideo) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        const updatedVideo = await prismadb_1.prismadb.projectVideo.update({
-            where: {
-                id: videoId,
-            },
-            data: {
-                ...body,
-            },
+        const updatedVideo = await prismadb_1.prismadb.$transaction(async (tx) => {
+            const video = await tx.projectVideo.update({
+                where: {
+                    id: videoId,
+                },
+                data: {
+                    ...body,
+                },
+            });
+            await (0, course_access_1.refreshCourseFreeAccessStatus)(tx, courseId);
+            return video;
         });
         if (!updatedVideo.id) {
             return res.status(422).json({
@@ -351,12 +362,14 @@ const deleteCourseVideo = async (req, res) => {
         if (!existingVideo) {
             return res.status(404).json({ message: "Video does not exist" });
         }
-        const deletedVideo = await prismadb_1.prismadb.projectVideo.delete({
-            where: {
-                id: videoId,
-                moduleId,
-                courseId,
-            },
+        const deletedVideo = await prismadb_1.prismadb.$transaction(async (tx) => {
+            const video = await tx.projectVideo.delete({
+                where: {
+                    id: videoId,
+                },
+            });
+            await (0, course_access_1.refreshCourseFreeAccessStatus)(tx, courseId);
+            return video;
         });
         if (!deletedVideo.id) {
             return res.status(422).json({
