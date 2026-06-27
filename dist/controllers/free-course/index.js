@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerForFreeCourseAccessFromMarketing = exports.exportFreeCourseApplicantsPDF = exports.getFreeCourseApplicants = exports.applyForCourse = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const pdfkit_1 = __importDefault(require("pdfkit"));
-const free_course_registration_1 = require("../../mails/free-course-registration");
+const free_course_registration_mails_1 = require("../../mails/free-course-registration-mails");
 const googleSheets_1 = require("../../utils/googleSheets");
 const handleServerError = (error, res) => {
     console.error({ error_server: error });
@@ -167,7 +167,7 @@ const registerForFreeCourseAccessFromMarketing = async (req, res) => {
             // sync google sheet
             googleSheets_1.FreeCourseAccessSheetsService.syncRegistration(registration, course),
             // send email
-            (0, free_course_registration_1.sendFreeCourseAccessEmail)({
+            (0, free_course_registration_mails_1.sendFreeCourseAccessEmail)({
                 email,
                 firstName,
                 courseTitle: course.title,

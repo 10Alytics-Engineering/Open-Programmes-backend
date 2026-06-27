@@ -1089,6 +1089,28 @@ model FreeCourseAccessRegistration {
   @@unique([email, courseId])
 }
 
+model JapaSessionRegistration {
+  id String @id @default(cuid())
+
+  fullName String
+  email String @unique
+  phoneNumber String
+  currentCountry String
+  targetCountry String
+  profession String
+  hearAbout String
+
+  wantsEarlyAccess Boolean @default(false)
+  wantsConsultation Boolean @default(false)
+
+  syncedToGoogleSheet Boolean @default(false)
+  googleSheetSyncedAt DateTime?
+  googleSheetError String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 
 enum NotificationType {
   COURSE_SWITCHED
