@@ -642,3 +642,180 @@ export class FreeCourseAccessSheetsService {
     }
   }
 }
+
+const JAPA_SESSION_HEADERS = [
+  "Full Name",
+  "Email",
+  "Phone Number",
+  "Current Country",
+  "Target Country",
+  "Profession",
+  "Hear About",
+  "Wants Early Access",
+  "Wants Consultation",
+  "Submitted At",
+];
+
+export class JapaSessionSheetsService {
+  private static auth: JWT | null = null;
+
+  private static getAuth() {
+    if (this.auth) return this.auth;
+
+    const configJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+    if (!configJson) {
+      throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is missing");
+    }
+
+    const credentials = configJson.trim().startsWith("{")
+      ? JSON.parse(configJson)
+      : JSON.parse(Buffer.from(configJson, "base64").toString("utf8"));
+
+    this.auth = new JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: SCOPES,
+    });
+
+    return this.auth;
+  }
+
+  private static quoteSheetName(name: string) {
+    return `'${name.replace(/'/g, "''")}'`;
+  }
+
+  private static getColumnLetter(index: number) {
+    let letter = "";
+    let temp = index;
+
+    while (temp > 0) {
+      const remainder = (temp - 1) % 26;
+      letter = String.fromCharCode(65 + remainder) + letter;
+      temp = Math.floor((temp - 1) / 26);
+    }
+
+    return letter;
+  }
+
+  private static async ensureHeaders({
+    sheets,
+    spreadsheetId,
+    sheetName,
+  }: any) {
+    const quotedSheet = this.quoteSheetName(sheetName);
+    const lastColumn = this.getColumnLetter(JAPA_SESSION_HEADERS.length);
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${quotedSheet}!A1:${lastColumn}1`,
+    });
+
+    const existingHeaders = response.data.values?.[0] || [];
+
+    if (!existingHeaders.length) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${quotedSheet}!A1`,
+        valueInputOption: "RAW",
+        requestBody: {
+          values: [JAPA_SESSION_HEADERS],
+        },
+      });
+    }
+  }
+
+  private static async ensureSheetExists({
+    sheets,
+    spreadsheetId,
+    sheetName,
+  }: {
+    sheets: any;
+    spreadsheetId: string;
+    sheetName: string;
+  }) {
+    const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+
+    const exists = spreadsheet.data.sheets?.some(
+      (sheet: any) => sheet.properties?.title === sheetName,
+    );
+
+    if (exists) return;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: sheetName,
+              },
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  public static async syncRegistration(registration: any) {
+    try {
+      const spreadsheetId =
+        process.env.GOOGLE_SHEETS_JAPA_SESSION_SPREADSHEET_ID;
+      const sheetName =
+        process.env.GOOGLE_SHEETS_JAPA_SESSION_SHEET_NAME ||
+        "Japa Session Registrations";
+
+      if (!spreadsheetId) {
+        return { success: false, error: "Spreadsheet ID missing" };
+      }
+
+      const sheets = google.sheets({
+        version: "v4",
+        auth: this.getAuth(),
+      });
+
+      await this.ensureSheetExists({
+        sheets,
+        spreadsheetId,
+        sheetName,
+      });
+
+      await this.ensureHeaders({
+        sheets,
+        spreadsheetId,
+        sheetName,
+      });
+
+      const quotedSheet = this.quoteSheetName(sheetName);
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${quotedSheet}!A1`,
+        valueInputOption: "RAW",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: {
+          values: [
+            [
+              registration.fullName,
+              registration.email,
+              registration.phoneNumber,
+              registration.currentCountry,
+              registration.targetCountry,
+              registration.profession,
+              registration.hearAbout,
+              registration.wantsEarlyAccess ? "YES" : "NO",
+              registration.wantsConsultation ? "YES" : "NO",
+              new Date(registration.createdAt).toLocaleString("en-GB"),
+            ],
+          ],
+        },
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("[JAPA_SESSION_SHEETS]: Sync failed:", error.message);
+      return { success: false, error: error.message };
+    }
+  }
+}

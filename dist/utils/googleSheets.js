@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FreeCourseAccessSheetsService = exports.GoogleSheetsSyncService = void 0;
+exports.JapaSessionSheetsService = exports.FreeCourseAccessSheetsService = exports.GoogleSheetsSyncService = void 0;
 const googleapis_1 = require("googleapis");
 const google_auth_library_1 = require("google-auth-library");
 const dotenv = __importStar(require("dotenv"));
@@ -538,4 +538,141 @@ class FreeCourseAccessSheetsService {
 }
 exports.FreeCourseAccessSheetsService = FreeCourseAccessSheetsService;
 FreeCourseAccessSheetsService.auth = null;
+const JAPA_SESSION_HEADERS = [
+    "Full Name",
+    "Email",
+    "Phone Number",
+    "Current Country",
+    "Target Country",
+    "Profession",
+    "Hear About",
+    "Wants Early Access",
+    "Wants Consultation",
+    "Submitted At",
+];
+class JapaSessionSheetsService {
+    static getAuth() {
+        if (this.auth)
+            return this.auth;
+        const configJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+        if (!configJson) {
+            throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is missing");
+        }
+        const credentials = configJson.trim().startsWith("{")
+            ? JSON.parse(configJson)
+            : JSON.parse(Buffer.from(configJson, "base64").toString("utf8"));
+        this.auth = new google_auth_library_1.JWT({
+            email: credentials.client_email,
+            key: credentials.private_key,
+            scopes: SCOPES,
+        });
+        return this.auth;
+    }
+    static quoteSheetName(name) {
+        return `'${name.replace(/'/g, "''")}'`;
+    }
+    static getColumnLetter(index) {
+        let letter = "";
+        let temp = index;
+        while (temp > 0) {
+            const remainder = (temp - 1) % 26;
+            letter = String.fromCharCode(65 + remainder) + letter;
+            temp = Math.floor((temp - 1) / 26);
+        }
+        return letter;
+    }
+    static async ensureHeaders({ sheets, spreadsheetId, sheetName, }) {
+        const quotedSheet = this.quoteSheetName(sheetName);
+        const lastColumn = this.getColumnLetter(JAPA_SESSION_HEADERS.length);
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${quotedSheet}!A1:${lastColumn}1`,
+        });
+        const existingHeaders = response.data.values?.[0] || [];
+        if (!existingHeaders.length) {
+            await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range: `${quotedSheet}!A1`,
+                valueInputOption: "RAW",
+                requestBody: {
+                    values: [JAPA_SESSION_HEADERS],
+                },
+            });
+        }
+    }
+    static async ensureSheetExists({ sheets, spreadsheetId, sheetName, }) {
+        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+        const exists = spreadsheet.data.sheets?.some((sheet) => sheet.properties?.title === sheetName);
+        if (exists)
+            return;
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+                requests: [
+                    {
+                        addSheet: {
+                            properties: {
+                                title: sheetName,
+                            },
+                        },
+                    },
+                ],
+            },
+        });
+    }
+    static async syncRegistration(registration) {
+        try {
+            const spreadsheetId = process.env.GOOGLE_SHEETS_JAPA_SESSION_SPREADSHEET_ID;
+            const sheetName = process.env.GOOGLE_SHEETS_JAPA_SESSION_SHEET_NAME ||
+                "Japa Session Registrations";
+            if (!spreadsheetId) {
+                return { success: false, error: "Spreadsheet ID missing" };
+            }
+            const sheets = googleapis_1.google.sheets({
+                version: "v4",
+                auth: this.getAuth(),
+            });
+            await this.ensureSheetExists({
+                sheets,
+                spreadsheetId,
+                sheetName,
+            });
+            await this.ensureHeaders({
+                sheets,
+                spreadsheetId,
+                sheetName,
+            });
+            const quotedSheet = this.quoteSheetName(sheetName);
+            await sheets.spreadsheets.values.append({
+                spreadsheetId,
+                range: `${quotedSheet}!A1`,
+                valueInputOption: "RAW",
+                insertDataOption: "INSERT_ROWS",
+                requestBody: {
+                    values: [
+                        [
+                            registration.fullName,
+                            registration.email,
+                            registration.phoneNumber,
+                            registration.currentCountry,
+                            registration.targetCountry,
+                            registration.profession,
+                            registration.hearAbout,
+                            registration.wantsEarlyAccess ? "YES" : "NO",
+                            registration.wantsConsultation ? "YES" : "NO",
+                            new Date(registration.createdAt).toLocaleString("en-GB"),
+                        ],
+                    ],
+                },
+            });
+            return { success: true };
+        }
+        catch (error) {
+            console.error("[JAPA_SESSION_SHEETS]: Sync failed:", error.message);
+            return { success: false, error: error.message };
+        }
+    }
+}
+exports.JapaSessionSheetsService = JapaSessionSheetsService;
+JapaSessionSheetsService.auth = null;
 //# sourceMappingURL=googleSheets.js.map

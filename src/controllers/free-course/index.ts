@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prismadb } from "../../lib/prismadb";
 import PDFDocument from "pdfkit";
-import { sendFreeCourseAccessEmail } from "../../mails/free-course-registration";
+import { sendFreeCourseAccessEmail } from "../../mails/free-course-registration-mails";
 import { FreeCourseAccessSheetsService } from "../../utils/googleSheets";
 
 const handleServerError = (error: any, res: Response) => {
