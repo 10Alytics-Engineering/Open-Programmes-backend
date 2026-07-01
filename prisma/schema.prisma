@@ -77,6 +77,10 @@ model PaymentStatus {
   user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions         PaymentTransaction[]
   paystackTransactions PaystackTransaction[]
+  expectedAmount       Float?
+  currency             String?  @default("NGN")
+  notes                String?
+  manuallyCreated      Boolean  @default(false)
 
   @@unique([userId, courseId])
 }
