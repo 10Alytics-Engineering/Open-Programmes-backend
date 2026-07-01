@@ -10,6 +10,21 @@ const START_BUTTON_PUBLIC_KEY = process.env.START_BUTTON_PUBLIC_KEY;
 
 export type CurrrencyType = "GHS" | "NGN" | "ZAR" | "KES" | "UGX" | "RWF";
 
+export type PaymentPlan =
+  | (typeof PAYMENT_PLANS)[keyof typeof PAYMENT_PLANS]
+  | null;
+
+export const PAYMENT_PLANS = {
+  FULL_PAYMENT: "FULL_PAYMENT",
+  TWO_INSTALLMENTS: "TWO_INSTALLMENTS",
+  THREE_INSTALLMENTS: "THREE_INSTALLMENTS",
+  FOUR_INSTALLMENTS: "FOUR_INSTALLMENTS",
+  FIVE_INSTALLMENTS: "FIVE_INSTALLMENTS",
+  // Legacy
+  FIRST_HALF_COMPLETE: "FIRST_HALF_COMPLETE",
+  SECOND_HALF_PAYMENT: "SECOND_HALF_PAYMENT",
+} as const;
+
 export type PAYMENT_GATEWAY = "STRIPE" | "PAYSTACK" | "START_BUTTON";
 
 export const currenciesInfo = {
@@ -43,16 +58,6 @@ export const currenciesInfo = {
     symbol: "FRw",
     channels: ["mobile_money"],
   },
-  // XOF: {
-  //   name: "XOF",
-  //   symbol: "CFA",
-  //   channels: ["mobile_money"],
-  // },
-  // XAF: {
-  //   name: "XAF",
-  //   symbol: "FCFA",
-  //   channels: ["mobile_money"],
-  // },
 };
 
 export const generatePaymentLink = async (

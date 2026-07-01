@@ -10,7 +10,7 @@ import {
 import {
   generatePaymentLink,
   verifyPaystackPayment,
-} from "../../utils/paymentService";
+} from "../../utils/payment-config";
 import { RequestStatus, RequestType } from "@prisma/client";
 
 export const createChangeRequest = async (req: Request, res: Response) => {
@@ -34,11 +34,9 @@ export const createChangeRequest = async (req: Request, res: Response) => {
       type === RequestType.COURSE_CHANGE &&
       (!currentCourseId || !desiredCourseId)
     ) {
-      return res
-        .status(400)
-        .json({
-          message: "Course change requires current and desired course IDs",
-        });
+      return res.status(400).json({
+        message: "Course change requires current and desired course IDs",
+      });
     }
 
     if (

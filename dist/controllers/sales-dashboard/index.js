@@ -40,8 +40,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const prismadb_1 = require("../../lib/prismadb");
 const date_fns_1 = require("date-fns");
-const paymentService_1 = require("../../utils/paymentService");
+const payment_config_1 = require("../../utils/payment-config");
 const client_1 = require("@prisma/client");
+const payment_helpers_1 = require("../../helpers/payment-helpers");
 const salesDashboardApp = express_1.default.Router();
 salesDashboardApp.use(express_1.default.json());
 // Helper function to convert BigInt to Number for JSON serialization
@@ -1061,7 +1062,15 @@ const withPlanCompletion = (rows) => rows.map((t) => {
 // 6. List all transactions
 salesDashboardApp.get("/transactions", async (req, res) => {
     try {
-        const { duration = "all", gateway, status } = req.query; // Default to all for list page unless specified
+        const { duration = "all", gateway, status, query, page = "1", limit = "20", } = req.query;
+        const pageNumber = Math.max(Number(page) || 1, 1);
+        const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+        const skip = (pageNumber - 1) * take;
+        /**
+         * -------------------------------------------------------
+         * Duration filter
+         * -------------------------------------------------------
+         */
         let dateFilter = {};
         if (duration !== "all") {
             let startDate = new Date();
@@ -1072,7 +1081,7 @@ salesDashboardApp.get("/transactions", async (req, res) => {
                 startDate.setDate(startDate.getDate() - 90);
             }
             else {
-                startDate.setDate(startDate.getDate() - 7); // Default 7d
+                startDate.setDate(startDate.getDate() - 7);
             }
             startDate.setHours(0, 0, 0, 0);
             dateFilter = {
@@ -1081,226 +1090,315 @@ salesDashboardApp.get("/transactions", async (req, res) => {
                 },
             };
         }
-        const TX_STATUS_VALUES = ["success", "pending", "failed"];
+        /**
+         * -------------------------------------------------------
+         * Transaction status filter
+         * -------------------------------------------------------
+         * Keep this route transaction-focused.
+         * Payment plan states like overdue/in_progress/abandoned
+         * should be handled by /payment-plans.
+         * -------------------------------------------------------
+         */
+        const TX_STATUS_VALUES = ["success", "pending", "failed", "expired"];
         let txStatusFilter = {};
-        if (typeof status === "string" && TX_STATUS_VALUES.includes(status)) {
-            if (status === "failed") {
-                txStatusFilter = { status: { in: ["failed", "expired"] } };
-            }
-            else {
-                txStatusFilter = { status };
-            }
-        }
-        const PLAN_STATUS_VALUES = [
-            "paid_in_full",
-            "in_progress",
-            "overdue",
-            "abandoned",
-        ];
-        let planStatusFilter = null;
-        if (typeof status === "string" && PLAN_STATUS_VALUES.includes(status)) {
-            // Build the WHERE clause for this status. Each clause asserts the plan
-            // matches *this* bucket AND doesn't qualify for any higher-priority bucket.
-            // Priority order matches the dashboard CASE statement:
-            //   paid_in_full > overdue > in_progress > abandoned
-            // This keeps the dashboard counts and the click-through results in sync.
-            const isPaidInFull = client_1.Prisma.sql `
-        status_text != 'EXPIRED' AND (
-          ("paymentPlan" = 'FULL_PAYMENT' AND has_success_tx)
-          OR (total_count > 0 AND paid_count = total_count)
-        )
-      `;
-            const isOverdue = client_1.Prisma.sql `
-        status_text != 'EXPIRED' AND overdue_count > 0
-      `;
-            const isInProgress = client_1.Prisma.sql `
-        status_text != 'EXPIRED'
-        AND "paymentPlan" != 'FULL_PAYMENT'
-        AND "paymentPlan" IS NOT NULL
-        AND total_count > 0
-        AND paid_count > 0
-        AND paid_count < total_count
-        AND overdue_count = 0
-      `;
-            const isAbandoned = client_1.Prisma.sql `
-        (
-          ("paymentPlan" = 'FULL_PAYMENT' AND tx_count > 0 AND NOT has_success_tx AND NOT has_pending_tx)
-          OR ("paymentPlan" != 'FULL_PAYMENT' AND "paymentPlan" IS NOT NULL AND NOT has_success_tx AND NOT has_pending_tx)
-        )
-      `;
-            let classificationSql;
-            if (status === "paid_in_full") {
-                // Highest priority — no exclusions needed.
-                classificationSql = isPaidInFull;
-            }
-            else if (status === "overdue") {
-                // Excludes paid_in_full.
-                classificationSql = client_1.Prisma.sql `NOT (${isPaidInFull}) AND ${isOverdue}`;
-            }
-            else if (status === "in_progress") {
-                // Excludes paid_in_full and overdue.
-                classificationSql = client_1.Prisma.sql `
-          NOT (${isPaidInFull})
-          AND NOT (${isOverdue})
-          AND ${isInProgress}
-        `;
-            }
-            else if (status === "abandoned") {
-                // Excludes everything above it.
-                classificationSql = client_1.Prisma.sql `
-          NOT (${isPaidInFull})
-          AND ${isAbandoned}
-        `;
-            }
-            else {
-                // Defensive fallback — should be unreachable since we checked PLAN_STATUS_VALUES.
-                classificationSql = client_1.Prisma.sql `FALSE`;
-            }
-            const matchingPlans = await prismadb_1.prismadb.$queryRaw `
-    WITH ps_state AS (
-      SELECT
-        ps.id,
-        ps.status::text AS status_text,
-        ps."paymentPlan",
-        (
-          EXISTS (SELECT 1 FROM "PaystackTransaction" pt
-                  WHERE pt."paymentStatusId" = ps.id AND pt.status = 'success')
-          OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
-                     WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'success')
-        ) AS has_success_tx,
-        (
-          EXISTS (SELECT 1 FROM "PaystackTransaction" pt
-                  WHERE pt."paymentStatusId" = ps.id AND pt.status = 'pending')
-          OR EXISTS (SELECT 1 FROM "PaymentTransaction" pmt
-                     WHERE pmt."paymentStatusId" = ps.id AND pmt.status = 'pending')
-        ) AS has_pending_tx,
-        (
-          (SELECT COUNT(*) FROM "PaystackTransaction" pt WHERE pt."paymentStatusId" = ps.id)
-          +
-          (SELECT COUNT(*) FROM "PaymentTransaction" pmt WHERE pmt."paymentStatusId" = ps.id)
-        ) AS tx_count,
-        COUNT(pi.id) FILTER (WHERE pi.paid = false AND pi."dueDate" < NOW()) AS overdue_count,
-        COUNT(pi.id) FILTER (WHERE pi.paid = true) AS paid_count,
-        COUNT(pi.id) AS total_count
-      FROM "PaymentStatus" ps
-      LEFT JOIN "PaymentInstallment" pi ON pi."paymentStatusId" = ps.id
-      GROUP BY ps.id, ps.status, ps."paymentPlan"
-    )
-    SELECT id FROM ps_state WHERE ${classificationSql}
-  `;
-            planStatusFilter = matchingPlans.map((p) => p.id);
-            if (planStatusFilter.length === 0) {
-                return res.json({
-                    transactions: [],
-                    count: 0,
-                    countBySource: { paystack: 0, unified: 0 },
+        if (typeof status === "string" && status !== "all") {
+            if (!TX_STATUS_VALUES.includes(status)) {
+                return res.status(400).json({
+                    error: "Invalid transaction status. Use success, pending, failed, expired or all.",
                 });
             }
+            if (status === "failed") {
+                txStatusFilter = {
+                    status: {
+                        in: ["failed", "expired"],
+                    },
+                };
+            }
+            else {
+                txStatusFilter = {
+                    status,
+                };
+            }
         }
-        if (gateway &&
-            gateway !== "PAYSTACK" &&
-            gateway !== "STRIPE" &&
-            gateway !== "START_BUTTON") {
-            return res
-                .status(400)
-                .json({ error: "Invalid payment gateway specified" });
+        /**
+         * -------------------------------------------------------
+         * Gateway validation
+         * -------------------------------------------------------
+         */
+        const validGateways = ["PAYSTACK", "STRIPE", "START_BUTTON"];
+        if (typeof gateway === "string" &&
+            gateway !== "all" &&
+            !validGateways.includes(gateway)) {
+            return res.status(400).json({
+                error: "Invalid payment gateway specified",
+            });
         }
+        /**
+         * -------------------------------------------------------
+         * Search filter
+         * -------------------------------------------------------
+         * Allows search by:
+         * - transaction reference
+         * - user name/email/phone
+         * - course title
+         * -------------------------------------------------------
+         */
+        let searchFilter = {};
+        if (typeof query === "string" && query.trim()) {
+            const search = query.trim();
+            const [matchingUsers, matchingCourses] = await Promise.all([
+                prismadb_1.prismadb.user.findMany({
+                    where: {
+                        OR: [
+                            {
+                                name: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                            {
+                                email: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                            {
+                                phone_number: {
+                                    contains: search,
+                                    mode: "insensitive",
+                                },
+                            },
+                        ],
+                    },
+                    select: {
+                        id: true,
+                    },
+                }),
+                prismadb_1.prismadb.course.findMany({
+                    where: {
+                        title: {
+                            contains: search,
+                            mode: "insensitive",
+                        },
+                    },
+                    select: {
+                        id: true,
+                    },
+                }),
+            ]);
+            const userIds = matchingUsers.map((user) => user.id);
+            const courseIds = matchingCourses.map((course) => course.id);
+            searchFilter = {
+                OR: [
+                    {
+                        transactionRef: {
+                            contains: search,
+                            mode: "insensitive",
+                        },
+                    },
+                    ...(userIds.length
+                        ? [
+                            {
+                                userId: {
+                                    in: userIds,
+                                },
+                            },
+                        ]
+                        : []),
+                    ...(courseIds.length
+                        ? [
+                            {
+                                courseId: {
+                                    in: courseIds,
+                                },
+                            },
+                        ]
+                        : []),
+                ],
+            };
+        }
+        /**
+         * -------------------------------------------------------
+         * Fetch both transaction sources
+         * -------------------------------------------------------
+         *
+         * PaystackTransaction is legacy/specialized.
+         * PaymentTransaction is unified.
+         *
+         * If gateway is PAYSTACK, fetch:
+         * - PaystackTransaction rows
+         * - PaymentTransaction rows where paymentGateway = PAYSTACK
+         *
+         * If gateway is START_BUTTON/STRIPE/PAYSTACK, only fetch unified rows.
+         * -------------------------------------------------------
+         */
+        const shouldFetchPaystackTable = gateway === undefined || gateway === "all" || gateway === "PAYSTACK";
+        const unifiedGatewayFilter = typeof gateway === "string" && gateway !== "all"
+            ? {
+                paymentGateway: gateway,
+            }
+            : {};
         const [paystackRows, paymentRows] = await Promise.all([
-            gateway === "PAYSTACK" || gateway === undefined
+            shouldFetchPaystackTable
                 ? prismadb_1.prismadb.paystackTransaction.findMany({
                     where: {
                         ...dateFilter,
                         ...txStatusFilter,
-                        ...(planStatusFilter
-                            ? { paymentStatusId: { in: planStatusFilter } }
-                            : {}),
+                        ...searchFilter,
                     },
                     include: transactionInclude,
-                    orderBy: { paymentDate: "desc" },
+                    orderBy: [
+                        {
+                            paymentDate: "desc",
+                        },
+                        {
+                            createdAt: "desc",
+                        },
+                    ],
                 })
                 : Promise.resolve([]),
             prismadb_1.prismadb.paymentTransaction.findMany({
                 where: {
                     ...dateFilter,
-                    ...(gateway && { paymentGateway: gateway }),
+                    ...unifiedGatewayFilter,
                     ...txStatusFilter,
-                    ...(planStatusFilter
-                        ? { paymentStatusId: { in: planStatusFilter } }
-                        : {}),
+                    ...searchFilter,
                 },
                 include: transactionInclude,
-                orderBy: { paymentDate: "desc" },
+                orderBy: [
+                    {
+                        paymentDate: "desc",
+                    },
+                    {
+                        createdAt: "desc",
+                    },
+                ],
             }),
         ]);
-        // Tag each row with its source so the frontend can disambiguate.
+        /**
+         * -------------------------------------------------------
+         * Tag source
+         * -------------------------------------------------------
+         */
         const tagged = [
-            ...paystackRows.map((t) => ({ ...t, source: "paystack" })),
-            ...paymentRows.map((t) => ({ ...t, source: "unified" })),
+            ...paystackRows.map((transaction) => ({
+                ...transaction,
+                source: "paystack",
+                paymentGateway: "PAYSTACK",
+            })),
+            ...paymentRows.map((transaction) => ({
+                ...transaction,
+                source: "unified",
+            })),
         ];
-        // Check if we need to manually fill in some user/course data
-        const missingDataTransactions = tagged.filter((t) => !t.paymentStatus);
+        /**
+         * -------------------------------------------------------
+         * Enrich missing paymentStatus
+         * -------------------------------------------------------
+         * Some old rows may not have paymentStatusId, but they still
+         * have userId/courseId. This keeps the UI stable.
+         * -------------------------------------------------------
+         */
+        const missingDataTransactions = tagged.filter((transaction) => !transaction.paymentStatus);
+        let enrichedTransactions = tagged;
         if (missingDataTransactions.length > 0) {
             const userIds = [
-                ...new Set(missingDataTransactions.map((t) => t.userId)),
+                ...new Set(missingDataTransactions
+                    .map((transaction) => transaction.userId)
+                    .filter(Boolean)),
             ];
             const courseIds = [
-                ...new Set(missingDataTransactions.map((t) => t.courseId)),
+                ...new Set(missingDataTransactions
+                    .map((transaction) => transaction.courseId)
+                    .filter(Boolean)),
             ];
             const [users, courses] = await Promise.all([
-                prismadb_1.prismadb.user.findMany({
-                    where: { id: { in: userIds } },
-                    select: { id: true, name: true, email: true, phone_number: true },
-                }),
-                prismadb_1.prismadb.course.findMany({
-                    where: { id: { in: courseIds } },
-                    select: { id: true, title: true },
-                }),
-            ]);
-            const userMap = new Map(users.map((u) => [u.id, u]));
-            const courseMap = new Map(courses.map((c) => [c.id, c]));
-            const enrichedTransactions = tagged.map((t) => {
-                if (!t.paymentStatus) {
-                    return {
-                        ...t,
-                        paymentStatus: {
-                            user: userMap.get(t.userId) || null,
-                            course: courseMap.get(t.courseId) || null,
-                            status: t.status,
-                            paymentPlan: t.paymentPlan,
-                            createdAt: t.createdAt,
-                            updatedAt: t.updatedAt,
-                            paymentInstallments: [],
+                userIds.length
+                    ? prismadb_1.prismadb.user.findMany({
+                        where: {
+                            id: {
+                                in: userIds,
+                            },
                         },
-                    };
-                }
-                return t;
-            });
-            const sorted = (0, paymentService_1.sortByPaymentDateDesc)(withPlanCompletion(enrichedTransactions));
-            return res.json({
-                transactions: sorted,
-                count: sorted.length,
-                countBySource: {
-                    paystack: sorted.filter((t) => t.source === "paystack").length +
-                        sorted.filter((t) => t.source === "unified" && t.paymentGateway === "PAYSTACK").length,
-                    stripe: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "STRIPE").length,
-                    startButton: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "START_BUTTON").length,
-                },
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone_number: true,
+                        },
+                    })
+                    : Promise.resolve([]),
+                courseIds.length
+                    ? prismadb_1.prismadb.course.findMany({
+                        where: {
+                            id: {
+                                in: courseIds,
+                            },
+                        },
+                        select: {
+                            id: true,
+                            title: true,
+                            price: true,
+                        },
+                    })
+                    : Promise.resolve([]),
+            ]);
+            const userMap = new Map(users.map((user) => [user.id, user]));
+            const courseMap = new Map(courses.map((course) => [course.id, course]));
+            enrichedTransactions = tagged.map((transaction) => {
+                if (transaction.paymentStatus)
+                    return transaction;
+                return {
+                    ...transaction,
+                    paymentStatus: {
+                        id: transaction.paymentStatusId || null,
+                        user: userMap.get(transaction.userId) || null,
+                        course: courseMap.get(transaction.courseId) || null,
+                        cohort: null,
+                    },
+                };
             });
         }
-        const sorted = (0, paymentService_1.sortByPaymentDateDesc)(withPlanCompletion(tagged));
-        res.json({
-            transactions: sorted,
-            count: sorted.length,
-            countBySource: {
-                paystack: sorted.filter((t) => t.source === "paystack").length +
-                    sorted.filter((t) => t.source === "unified" && t.paymentGateway === "PAYSTACK").length,
-                startButton: sorted.filter((t) => t.source === "unified" && t.paymentGateway === "START_BUTTON").length,
+        /**
+         * -------------------------------------------------------
+         * Sort, paginate, count
+         * -------------------------------------------------------
+         */
+        const sorted = (0, payment_config_1.sortByPaymentDateDesc)(withPlanCompletion(enrichedTransactions));
+        const total = sorted.length;
+        const totalPages = Math.ceil(total / take);
+        const paginated = sorted.slice(skip, skip + take);
+        const countBySource = {
+            paystack: sorted.filter((transaction) => transaction.source === "paystack")
+                .length +
+                sorted.filter((transaction) => transaction.source === "unified" &&
+                    transaction.paymentGateway === "PAYSTACK").length,
+            stripe: sorted.filter((transaction) => transaction.source === "unified" &&
+                transaction.paymentGateway === "STRIPE").length,
+            startButton: sorted.filter((transaction) => transaction.source === "unified" &&
+                transaction.paymentGateway === "START_BUTTON").length,
+        };
+        return res.json({
+            transactions: paginated,
+            count: paginated.length,
+            total,
+            countBySource,
+            pagination: {
+                page: pageNumber,
+                limit: take,
+                total,
+                totalPages,
+                hasNextPage: pageNumber < totalPages,
+                hasPrevPage: pageNumber > 1,
             },
         });
     }
     catch (error) {
         console.error("Error fetching transactions:", error);
-        res.status(500).json({ error: "Failed to fetch transactions" });
+        res.status(500).json({
+            error: "Failed to fetch transactions",
+            details: error instanceof Error ? error.message : "Unknown error",
+        });
     }
 });
 // 7. Single transaction details
@@ -1310,10 +1408,35 @@ salesDashboardApp.get("/transactions/:id", async (req, res) => {
         const { source } = req.query;
         let transaction = null;
         let txSource = null;
+        const include = {
+            paymentStatus: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone_number: true,
+                        },
+                    },
+                    course: true,
+                    cohort: true,
+                    paymentInstallments: {
+                        orderBy: { installmentNumber: "asc" },
+                    },
+                    paystackTransactions: {
+                        orderBy: { createdAt: "desc" },
+                    },
+                    transactions: {
+                        orderBy: { createdAt: "desc" },
+                    },
+                },
+            },
+        };
         if (source === "paystack") {
             transaction = await prismadb_1.prismadb.paystackTransaction.findUnique({
                 where: { id },
-                include: transactionDetailInclude,
+                include,
             });
             if (transaction)
                 txSource = "paystack";
@@ -1321,22 +1444,15 @@ salesDashboardApp.get("/transactions/:id", async (req, res) => {
         else if (source === "unified") {
             transaction = await prismadb_1.prismadb.paymentTransaction.findUnique({
                 where: { id },
-                include: transactionDetailInclude,
+                include,
             });
             if (transaction)
                 txSource = "unified";
         }
         else {
-            // No source hint — try both in parallel and take whichever hits.
             const [paystackTx, paymentTx] = await Promise.all([
-                prismadb_1.prismadb.paystackTransaction.findUnique({
-                    where: { id },
-                    include: transactionDetailInclude,
-                }),
-                prismadb_1.prismadb.paymentTransaction.findUnique({
-                    where: { id },
-                    include: transactionDetailInclude,
-                }),
+                prismadb_1.prismadb.paystackTransaction.findUnique({ where: { id }, include }),
+                prismadb_1.prismadb.paymentTransaction.findUnique({ where: { id }, include }),
             ]);
             if (paystackTx) {
                 transaction = paystackTx;
@@ -1350,39 +1466,60 @@ salesDashboardApp.get("/transactions/:id", async (req, res) => {
         if (!transaction) {
             return res.status(404).json({ error: "Transaction not found" });
         }
-        // const paymentInstallments = await prismadb.paymentInstallment.findMany({
-        //   where: {
-        //     paymentStatusId: transaction.paymentStatusId,
-        //   },
-        //   orderBy: { installmentNumber: "asc" },
-        // });
-        // Manual enrichment if paymentStatus is null
-        if (!transaction.paymentStatus) {
+        const metadata = (0, payment_helpers_1.parseMetadata)(transaction.metadata);
+        const paymentStatus = transaction.paymentStatus;
+        let matchedInstallment = null;
+        if (paymentStatus?.paymentInstallments?.length) {
+            if (metadata.installmentNumber) {
+                matchedInstallment =
+                    paymentStatus.paymentInstallments.find((i) => Number(i.installmentNumber) ===
+                        Number(metadata.installmentNumber)) ?? null;
+            }
+            if (!matchedInstallment) {
+                matchedInstallment =
+                    paymentStatus.paymentInstallments.find((i) => Number(i.amount) === Number(transaction.amount) && i.paid) ?? null;
+            }
+        }
+        if (!paymentStatus) {
             const [user, course] = await Promise.all([
                 prismadb_1.prismadb.user.findUnique({
                     where: { id: transaction.userId },
-                    select: { id: true, name: true, email: true, phone_number: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone_number: true,
+                    },
                 }),
                 prismadb_1.prismadb.course.findUnique({
                     where: { id: transaction.courseId },
-                    select: { id: true, title: true },
                 }),
             ]);
-            const enrichedTransaction = {
+            return res.json({
                 ...transaction,
+                source: txSource,
+                metadataParsed: metadata,
+                isInstallmentPayment: Boolean(metadata.installmentNumber),
+                matchedInstallment: null,
                 paymentStatus: {
-                    user: user || null,
-                    course: course || null,
+                    user,
+                    course,
+                    cohort: null,
                     status: transaction.status,
                     paymentPlan: transaction.paymentPlan,
-                    createdAt: transaction.createdAt,
-                    updatedAt: transaction.updatedAt,
                     paymentInstallments: [],
                 },
-            };
-            return res.json({ ...enrichedTransaction });
+            });
         }
-        res.json({ ...transaction });
+        const plan = (0, payment_helpers_1.serializePaymentPlan)(paymentStatus);
+        return res.json({
+            ...transaction,
+            source: txSource,
+            metadataParsed: metadata,
+            isInstallmentPayment: Boolean(matchedInstallment || metadata.installmentNumber),
+            matchedInstallment,
+            paymentStatus: plan,
+        });
     }
     catch (error) {
         console.error("Error fetching transaction detail:", error);
@@ -1418,6 +1555,405 @@ salesDashboardApp.post("/export-to-sheets", async (req, res) => {
             success: false,
             error: "Failed to export data to Google Sheets",
         });
+    }
+});
+salesDashboardApp.get("/payment-plans/create-options", async (_req, res) => {
+    try {
+        const [users, courses] = await Promise.all([
+            prismadb_1.prismadb.user.findMany({
+                where: {
+                    role: "USER",
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone_number: true,
+                },
+                orderBy: {
+                    name: "asc",
+                },
+            }),
+            prismadb_1.prismadb.course.findMany({
+                select: {
+                    id: true,
+                    title: true,
+                    price: true,
+                    discount: true,
+                    pricingPlans: {
+                        orderBy: {
+                            installmentsCount: "asc",
+                        },
+                    },
+                    cohorts: {
+                        select: {
+                            id: true,
+                            name: true,
+                            startDate: true,
+                            endDate: true,
+                        },
+                        orderBy: {
+                            startDate: "desc",
+                        },
+                    },
+                },
+                orderBy: {
+                    title: "asc",
+                },
+            }),
+        ]);
+        res.json({
+            users,
+            courses,
+        });
+    }
+    catch (error) {
+        console.error("Error fetching create payment plan options:", error);
+        res.status(500).json({
+            error: "Failed to fetch payment plan create options",
+        });
+    }
+});
+salesDashboardApp.get("/payment-plans/preview", async (req, res) => {
+    try {
+        const { courseId, cohortId, planType } = req.query;
+        if (!courseId || !planType) {
+            return res.status(400).json({
+                error: "courseId and planType are required",
+            });
+        }
+        const course = await prismadb_1.prismadb.course.findUnique({
+            where: {
+                id: String(courseId),
+            },
+            include: {
+                pricingPlans: true,
+            },
+        });
+        if (!course) {
+            return res.status(404).json({
+                error: "Course not found",
+            });
+        }
+        const pricingPlan = course.pricingPlans.find((plan) => plan.planType === String(planType));
+        if (!pricingPlan) {
+            return res.status(404).json({
+                error: "Pricing plan not found for selected course",
+            });
+        }
+        const cohort = cohortId
+            ? await prismadb_1.prismadb.cohort.findUnique({
+                where: {
+                    id: String(cohortId),
+                },
+            })
+            : null;
+        const installments = (0, payment_helpers_1.buildInstallmentSchedule)({
+            amountPerInstallment: pricingPlan.amountPerInstallment,
+            installmentsCount: pricingPlan.installmentsCount,
+            cohortStartDate: cohort?.startDate || null,
+        });
+        const expectedAmount = pricingPlan.installmentsCount > 1
+            ? pricingPlan.amountPerInstallment * pricingPlan.installmentsCount
+            : pricingPlan.amountPerInstallment || Number(course.price || 0);
+        res.json({
+            course,
+            cohort,
+            pricingPlan,
+            expectedAmount,
+            installments,
+        });
+    }
+    catch (error) {
+        console.error("Error previewing payment plan:", error);
+        res.status(500).json({
+            error: "Failed to preview payment plan",
+        });
+    }
+});
+salesDashboardApp.get("/payment-plans", async (req, res) => {
+    try {
+        const { query, userId, courseId, status, dateFrom, dateTo, page = "1", limit = "20", } = req.query;
+        const pageNumber = Math.max(Number(page) || 1, 1);
+        const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+        const skip = (pageNumber - 1) * take;
+        const where = {};
+        if (typeof userId === "string" && userId) {
+            where.userId = userId;
+        }
+        if (typeof courseId === "string" && courseId) {
+            where.courseId = courseId;
+        }
+        if (typeof status === "string" && status && status !== "all") {
+            where.status = status;
+        }
+        if (typeof dateFrom === "string" || typeof dateTo === "string") {
+            where.createdAt = {
+                ...(typeof dateFrom === "string" && dateFrom
+                    ? { gte: new Date(dateFrom) }
+                    : {}),
+                ...(typeof dateTo === "string" && dateTo
+                    ? { lte: new Date(dateTo) }
+                    : {}),
+            };
+        }
+        if (typeof query === "string" && query.trim()) {
+            where.OR = [
+                {
+                    user: {
+                        name: {
+                            contains: query.trim(),
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    user: {
+                        email: {
+                            contains: query.trim(),
+                            mode: "insensitive",
+                        },
+                    },
+                },
+                {
+                    course: {
+                        title: {
+                            contains: query.trim(),
+                            mode: "insensitive",
+                        },
+                    },
+                },
+            ];
+        }
+        const include = {
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone_number: true,
+                },
+            },
+            course: true,
+            cohort: true,
+            paymentInstallments: {
+                orderBy: { installmentNumber: "asc" },
+            },
+            paystackTransactions: true,
+            transactions: true,
+        };
+        const [rows, total] = await Promise.all([
+            prismadb_1.prismadb.paymentStatus.findMany({
+                where,
+                include,
+                orderBy: {
+                    createdAt: "desc",
+                },
+                skip,
+                take,
+            }),
+            prismadb_1.prismadb.paymentStatus.count({
+                where,
+            }),
+        ]);
+        const totalPages = Math.ceil(total / take);
+        res.json({
+            paymentPlans: rows.map(payment_helpers_1.serializePaymentPlan),
+            pagination: {
+                page: pageNumber,
+                limit: take,
+                total,
+                totalPages,
+                hasNextPage: pageNumber < totalPages,
+                hasPrevPage: pageNumber > 1,
+            },
+        });
+    }
+    catch (error) {
+        console.error("Error fetching payment plans:", error);
+        res.status(500).json({
+            error: "Failed to fetch payment plans",
+        });
+    }
+});
+salesDashboardApp.get("/payment-plans/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const paymentPlan = await prismadb_1.prismadb.paymentStatus.findUnique({
+            where: { id },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone_number: true,
+                    },
+                },
+                course: true,
+                cohort: true,
+                paymentInstallments: {
+                    orderBy: { installmentNumber: "asc" },
+                },
+                paystackTransactions: {
+                    orderBy: { createdAt: "desc" },
+                },
+                transactions: {
+                    orderBy: { createdAt: "desc" },
+                },
+            },
+        });
+        if (!paymentPlan) {
+            return res.status(404).json({ error: "Payment plan not found" });
+        }
+        res.json((0, payment_helpers_1.serializePaymentPlan)(paymentPlan));
+    }
+    catch (error) {
+        console.error("Error fetching payment plan detail:", error);
+        res.status(500).json({ error: "Failed to fetch payment plan detail" });
+    }
+});
+salesDashboardApp.post("/payment-plans", async (req, res) => {
+    try {
+        const { userId, courseId, cohortId, planType, notes } = req.body;
+        if (!userId || !courseId || !planType) {
+            return res.status(400).json({
+                error: "userId, courseId and planType are required",
+            });
+        }
+        const [user, course, existingPaymentStatus] = await Promise.all([
+            prismadb_1.prismadb.user.findUnique({
+                where: { id: userId },
+            }),
+            prismadb_1.prismadb.course.findUnique({
+                where: { id: courseId },
+                include: {
+                    pricingPlans: true,
+                },
+            }),
+            prismadb_1.prismadb.paymentStatus.findUnique({
+                where: {
+                    userId_courseId: {
+                        userId,
+                        courseId,
+                    },
+                },
+            }),
+        ]);
+        if (!user) {
+            return res.status(404).json({
+                error: "User not found",
+            });
+        }
+        if (!course) {
+            return res.status(404).json({
+                error: "Course not found",
+            });
+        }
+        if (existingPaymentStatus) {
+            return res.status(409).json({
+                error: "This user already has a payment plan for this course",
+                paymentStatusId: existingPaymentStatus.id,
+            });
+        }
+        const pricingPlan = course.pricingPlans.find((plan) => plan.planType === planType);
+        if (!pricingPlan) {
+            return res.status(404).json({
+                error: "Pricing plan not found for selected course",
+            });
+        }
+        let cohort = null;
+        if (cohortId) {
+            cohort = await prismadb_1.prismadb.cohort.findUnique({
+                where: {
+                    id: cohortId,
+                },
+            });
+            if (!cohort) {
+                return res.status(404).json({
+                    error: "Cohort not found",
+                });
+            }
+        }
+        const installments = (0, payment_helpers_1.buildInstallmentSchedule)({
+            amountPerInstallment: pricingPlan.amountPerInstallment,
+            installmentsCount: pricingPlan.installmentsCount,
+            cohortStartDate: cohort?.startDate || null,
+        });
+        const expectedAmount = pricingPlan.installmentsCount > 1
+            ? pricingPlan.amountPerInstallment * pricingPlan.installmentsCount
+            : pricingPlan.amountPerInstallment || Number(course.price || 0);
+        const paymentStatus = await prismadb_1.prismadb.paymentStatus.create({
+            data: {
+                userId,
+                courseId,
+                cohortId: cohortId || null,
+                paymentPlan: planType,
+                paymentType: planType,
+                expectedAmount,
+                notes,
+                manuallyCreated: true,
+                desiredStartDate: cohort?.startDate || null,
+                status: pricingPlan.installmentsCount > 1
+                    ? "BALANCE_HALF_PAYMENT"
+                    : "PENDING_SEAT_CONFIRMATION",
+                paymentInstallments: installments.length > 0
+                    ? {
+                        create: installments.map((item) => ({
+                            amount: item.amount,
+                            dueDate: item.dueDate,
+                            installmentNumber: item.installmentNumber,
+                            paid: false,
+                        })),
+                    }
+                    : undefined,
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone_number: true,
+                    },
+                },
+                course: true,
+                cohort: true,
+                paymentInstallments: {
+                    orderBy: {
+                        installmentNumber: "asc",
+                    },
+                },
+                paystackTransactions: true,
+                transactions: true,
+            },
+        });
+        res.status(201).json((0, payment_helpers_1.serializePaymentPlan)(paymentStatus));
+    }
+    catch (error) {
+        console.error("Error creating payment plan:", error);
+        res.status(500).json({
+            error: "Failed to create payment plan",
+        });
+    }
+});
+salesDashboardApp.patch("/payment-installments/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { amount, dueDate, paid } = req.body;
+        const installment = await prismadb_1.prismadb.paymentInstallment.update({
+            where: { id },
+            data: {
+                ...(amount !== undefined ? { amount: Number(amount) } : {}),
+                ...(dueDate !== undefined ? { dueDate: new Date(dueDate) } : {}),
+                ...(paid !== undefined ? { paid: Boolean(paid) } : {}),
+            },
+        });
+        res.json(installment);
+    }
+    catch (error) {
+        console.error("Error updating installment:", error);
+        res.status(500).json({ error: "Failed to update installment" });
     }
 });
 exports.default = salesDashboardApp;

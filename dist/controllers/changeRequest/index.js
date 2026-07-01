@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getChangeRequestsCount = exports.handlePaymentVerification = exports.updateChangeRequest = exports.getAllChangeRequests = exports.getUserChangeRequests = exports.createChangeRequest = void 0;
 const prismadb_1 = require("../../lib/prismadb");
 const mail_1 = require("./mail");
-const paymentService_1 = require("../../utils/paymentService");
+const payment_config_1 = require("../../utils/payment-config");
 const client_1 = require("@prisma/client");
 const createChangeRequest = async (req, res) => {
     try {
@@ -15,9 +15,7 @@ const createChangeRequest = async (req, res) => {
         // Validate based on request type
         if (type === client_1.RequestType.COURSE_CHANGE &&
             (!currentCourseId || !desiredCourseId)) {
-            return res
-                .status(400)
-                .json({
+            return res.status(400).json({
                 message: "Course change requires current and desired course IDs",
             });
         }
@@ -323,7 +321,7 @@ const updateChangeRequest = async (req, res) => {
         });
         // If approved, generate payment link and send email
         if (status === "APPROVED") {
-            const paymentLink = await (0, paymentService_1.generatePaymentLink)(request.user.id, "change_request", requestId, 50000, // 50,000 in kobo (₦500)
+            const paymentLink = await (0, payment_config_1.generatePaymentLink)(request.user.id, "change_request", requestId, 50000, // 50,000 in kobo (₦500)
             `${request.type === client_1.RequestType.COURSE_CHANGE ? "Course Change" : "Deferment"} Fee`);
             // Update request with payment link
             await prismadb_1.prismadb.changeRequest.update({
@@ -353,7 +351,7 @@ const handlePaymentVerification = async (req, res) => {
     try {
         const { reference, requestId } = req.body;
         // Verify payment with Paystack
-        const verification = await (0, paymentService_1.verifyPaystackPayment)(reference);
+        const verification = await (0, payment_config_1.verifyPaystackPayment)(reference);
         if (verification.status === "success") {
             // Update request status to completed
             const request = await prismadb_1.prismadb.changeRequest.update({

@@ -6,28 +6,23 @@ import { Prisma, PaymentStatusType } from "@prisma/client";
 import jwt from "jsonwebtoken";
 import {
   sendPurchaseConfirmationMail,
-  sendPaymentReminder,
   sendPaymentConfirmation,
-  sendSecondHalfReminder,
   sendAccountDeactivationNotification,
   sendWrongfulDeactivationAlert,
   sendPaymentConfirmationEmail,
 } from "./mail";
 import cron from "node-cron";
-import {
-  startOfMonth,
-  endOfMonth,
-  addMonths,
-  isWithinInterval,
-  format,
-} from "date-fns";
+import { addMonths, format } from "date-fns";
 import {
   convertNairaToOtherCurrency,
   currenciesInfo,
   CurrrencyType,
   initiateStartButtonPayment,
+  PAYMENT_GATEWAY,
+  PAYMENT_PLANS,
+  PaymentPlan,
   verifyStartButtonTransaction,
-} from "../../utils/paymentService";
+} from "../../utils/payment-config";
 import { NotificationService } from "../../services/notification.service";
 
 if (!process.env.PAYSTACK_SECRET_KEY) {
@@ -44,49 +39,12 @@ paymentApp.use((req, res, next) => {
   next();
 });
 
-// Define payment plans as constants
-const PAYMENT_PLANS = {
-  FULL_PAYMENT: "FULL_PAYMENT",
-  TWO_INSTALLMENTS: "TWO_INSTALLMENTS",
-  THREE_INSTALLMENTS: "THREE_INSTALLMENTS",
-  FOUR_INSTALLMENTS: "FOUR_INSTALLMENTS",
-  FIVE_INSTALLMENTS: "FIVE_INSTALLMENTS",
-  // Legacy
-  FIRST_HALF_COMPLETE: "FIRST_HALF_COMPLETE",
-  SECOND_HALF_PAYMENT: "SECOND_HALF_PAYMENT",
-} as const;
-
-type PAYMENT_GATEWAY = "STRIPE" | "PAYSTACK" | "START_BUTTON";
-
-type PaymentPlan = (typeof PAYMENT_PLANS)[keyof typeof PAYMENT_PLANS] | null;
+const logPaymentError = (message: string, data: any = {}) => {
+  console.error(`[PAYMENT_ERROR] ${message}`, JSON.stringify(data, null, 2));
+};
 
 // Constants from environment
 const TOTAL_COURSE_FEE = Number(process.env.TOTAL_COURSE_FEE) || 250000;
-const INSTALLMENT_CONFIG = {
-  seatReservation: 30000,
-  cohortAccess: 55000,
-  month1: 85000,
-  month2: 80000,
-};
-const THREE_INSTALLMENT_CONFIG = {
-  initialPayment: 85000,
-  month1: 85000,
-  month2: 80000,
-};
-
-//#region Utility Functions
-const getCohortSchedule = (startDate: Date) => ({
-  seatReservationDue: new Date(startDate),
-  cohortAccessDue: addMonths(startDate, 0),
-  month1Due: addMonths(startDate, 1),
-  month2Due: addMonths(startDate, 2),
-});
-
-const getThreeInstallmentSchedule = (startDate: Date) => ({
-  initialPaymentDue: new Date(startDate),
-  month1Due: addMonths(startDate, 1),
-  month2Due: addMonths(startDate, 2),
-});
 
 async function getCourseDetails(courseId: string) {
   return prismadb.course.findUniqueOrThrow({
@@ -127,13 +85,6 @@ async function getUserDetails(userId: string) {
       phone_number: true,
     },
   });
-}
-
-function validatePaymentPlan(input: string | null | undefined): PaymentPlan {
-  if (!input) return null;
-  return Object.values(PAYMENT_PLANS).includes(input as any)
-    ? (input as PaymentPlan)
-    : null;
 }
 
 // Helper to get payment plan from either new or old field
@@ -215,77 +166,6 @@ async function assignToSelectedCohort(
     actualStartDate: targetCohort.startDate,
   };
 }
-
-async function sendPaymentNotifications(
-  userId: string,
-  courseId: string,
-  installmentNumber?: number,
-) {
-  const [user, course, paymentStatus] = await Promise.all([
-    getUserDetails(userId),
-    getCourseDetails(courseId),
-    prismadb.paymentStatus.findUnique({
-      where: { userId_courseId: { userId, courseId } },
-      include: {
-        paymentInstallments: { orderBy: { installmentNumber: "asc" } },
-        cohort: true,
-      },
-    }),
-  ]);
-
-  if (!paymentStatus) return;
-
-  const paymentPlan = await getPaymentPlanFromRecord(paymentStatus);
-
-  if (paymentPlan === PAYMENT_PLANS.FULL_PAYMENT) {
-    await sendPurchaseConfirmationMail(
-      user.email!,
-      course.title,
-      user.name || "Student",
-      `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-    );
-  } else if (paymentPlan === PAYMENT_PLANS.FIRST_HALF_COMPLETE) {
-    if (paymentStatus.status === PaymentStatusType.COMPLETE) {
-      await sendPurchaseConfirmationMail(
-        user.email!,
-        course.title,
-        user.name || "Student",
-        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-      );
-    } else {
-      await sendPaymentConfirmation(
-        user.email!,
-        user.name || "Student",
-        course.title,
-        1,
-      );
-    }
-  } else if (
-    paymentPlan === PAYMENT_PLANS.FOUR_INSTALLMENTS &&
-    installmentNumber
-  ) {
-    if (installmentNumber === 4) {
-      await sendPurchaseConfirmationMail(
-        user.email!,
-        course.title,
-        user.name || "Student",
-        `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-      );
-    } else {
-      await sendPaymentConfirmation(
-        user.email!,
-        user.name || "Student",
-        course.title,
-        installmentNumber,
-      );
-    }
-  }
-}
-
-// Add better error logging
-const logPaymentError = (message: string, data: any = {}) => {
-  console.error(`[PAYMENT_ERROR] ${message}`, JSON.stringify(data, null, 2));
-};
 //#endregion
 
 paymentApp.post("/convert-ngn-to-other-currencies", async (req, res) => {
@@ -1044,181 +924,19 @@ async function verifyPayment(reference: string) {
   }
 
   const result = await prismadb.$transaction(
-    async (tx) => {
-      let updatedTx = await tx.paymentTransaction.update({
-        where: { transactionRef: reference as string },
-        data: {
-          paymentStatusId: userPaymentStatus?.id,
-          status: "success",
-          paymentDate: new Date(),
-          updatedAt: new Date(),
-        },
-      });
-
-      const txMetadata = JSON.parse(updatedTx.metadata || "{}");
-      let userId = updatedTx.userId;
-
-      // ✅ IWD LOGIC: Create user if this is a scholarship application
-      if (txMetadata.isIWD && txMetadata.applicationId) {
-        const application = await tx.scholarshipApplication.findUnique({
-          where: { id: txMetadata.applicationId },
-        });
-
-        if (!application) {
-          throw new Error("Scholarship application not found");
-        }
-
-        // Checking if user already exists
-        let user = await tx.user.findFirst({
-          where: {
-            OR: [
-              { email: application.email },
-              { phone_number: application.phone_number },
-            ],
-          },
-        });
-
-        if (!user) {
-          user = await tx.user.create({
-            data: {
-              name: application.fullName,
-              email: application.email,
-              phone_number: application.phone_number,
-              password: application.password, // This is already hashed from applyForScholarship
-              emailVerified: new Date(),
-              accountPaymentStatus: "PAID",
-            },
-          });
-          console.log(
-            `✅ Created user ${user.id} from IWD application ${application.id}`,
-          );
-        } else {
-          // Update existing user status if needed
-          user = await tx.user.update({
-            where: { id: user.id },
-            data: { accountPaymentStatus: "PAID" },
-          });
-        }
-
-        userId = user.id;
-
-        // Update transaction with the real userId
-        updatedTx = await tx.paymentTransaction.update({
-          where: { id: updatedTx.id },
-          data: { userId: user.id },
-        });
-
-        // Update application
-        await tx.scholarshipApplication.update({
-          where: { id: application.id },
-          data: {
-            userId: user.id,
-            paymentStatus: "PAID",
-          },
-        });
-      }
-
-      const paymentPlan = await getPaymentPlanFromRecord(updatedTx);
-
-      // ✅ CRITICAL: Reactivate user if they were marked inactive
-      if (
-        existingTx.paymentStatus?.user?.inactive ||
-        userId !== "IWD_PENDING"
-      ) {
-        const userToCheck =
-          userId !== "IWD_PENDING" ? userId : updatedTx.userId;
-        const u = await tx.user.findUnique({ where: { id: userToCheck } });
-        if (u?.inactive) {
-          await tx.user.update({
-            where: { id: userToCheck },
-            data: { inactive: false },
-          });
-          console.log(
-            `Reactivated user ${userToCheck} after successful payment`,
-          );
-        }
-      }
-
-      let paymentResult;
-      switch (paymentPlan) {
-        case PAYMENT_PLANS.FULL_PAYMENT:
-          paymentResult = await handleFullPayment(tx, {
-            userId: userId,
-            courseId: updatedTx.courseId,
-            reference: reference as string,
-          });
-          break;
-
-        case PAYMENT_PLANS.FIRST_HALF_COMPLETE:
-          paymentResult = await handleFirstHalfPayment(tx, {
-            userId: userId,
-            courseId: updatedTx.courseId,
-            reference: reference as string,
-          });
-          break;
-
-        case PAYMENT_PLANS.SECOND_HALF_PAYMENT:
-          paymentResult = await handleSecondHalfPayment(tx, {
-            userId: userId,
-            courseId: updatedTx.courseId,
-            reference: reference as string,
-          });
-          break;
-
-        case PAYMENT_PLANS.TWO_INSTALLMENTS:
-        case PAYMENT_PLANS.THREE_INSTALLMENTS:
-        case PAYMENT_PLANS.FOUR_INSTALLMENTS:
-        case PAYMENT_PLANS.FIVE_INSTALLMENTS:
-          const metadata = JSON.parse(updatedTx.metadata || "{}");
-          paymentResult = await handleInstallmentPayment(
-            tx,
-            {
-              userId: userId,
-              courseId: updatedTx.courseId,
-              installmentNumber: metadata.installmentNumber || 1,
-              paymentPlan: paymentPlan as string,
-              reference: reference as string,
-            },
-            Number(updatedTx.amount),
-          );
-          break;
-      }
-
-      // ✅ CRITICAL: Verify purchase was created for all payment types
-      const existingPurchase = await tx.purchase.findFirst({
-        where: {
-          userId: userId,
-          courseId: updatedTx.courseId,
-        },
-      });
-
-      if (!existingPurchase) {
-        await tx.purchase.create({
-          data: {
-            userId: userId,
-            courseId: updatedTx.courseId,
-          },
-        });
-        console.log(
-          `✅ Created purchase record for user ${userId} and course ${updatedTx.courseId}`,
-        );
-      }
-
-      return updatedTx;
-    },
+    async (tx) =>
+      processSuccessfulPaymentTransaction(tx, {
+        transactionRef: reference as string,
+      }),
     {
       maxWait: 30000,
-      timeout: 25000,
+      timeout: 30000,
     },
   );
 
   try {
     const metadata = JSON.parse(result.metadata || "{}");
-    // await sendPaymentNotifications(
-    //   result.userId,
-    //   result.courseId,
-    //   metadata.installmentNumber,
-    // );
+
     if (metadata.planType !== "FULL_PAYMENT" && metadata.planType !== "FULL") {
       const installments: any[] = userPaymentStatus?.paymentInstallments ?? [];
       const paidInstallments = installments.filter((i) => i.paid);
@@ -1352,8 +1070,6 @@ async function verifyPayment(reference: string) {
   };
 }
 
-//#endregion
-
 //#region Payment Callback
 paymentApp.get("/payment/callback", async (req: Request, res: Response) => {
   const { reference } = req.query;
@@ -1408,7 +1124,6 @@ paymentApp.get(
   },
 );
 
-//#region Payment Verification
 //#region Payment Verification
 paymentApp.get("/verify", async (req: Request, res: Response) => {
   const { reference } = req.query;
@@ -1513,6 +1228,182 @@ async function verifyPurchaseCreation(
   }
 
   return purchase;
+}
+
+export async function processSuccessfulPaymentTransaction(
+  tx: Prisma.TransactionClient,
+  params: {
+    transactionRef: string;
+    verifiedAt?: Date;
+    markedBy?: string;
+    manualReason?: string;
+    skipExternalVerification?: boolean;
+  },
+) {
+  const existingTx = await tx.paymentTransaction.findUnique({
+    where: { transactionRef: params.transactionRef },
+    include: {
+      paymentStatus: {
+        include: {
+          paymentInstallments: {
+            orderBy: { installmentNumber: "asc" },
+          },
+          course: true,
+          cohort: true,
+          user: {
+            select: {
+              id: true,
+              inactive: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!existingTx) {
+    throw new Error("Transaction not found");
+  }
+
+  if (existingTx.status === "success") {
+    return existingTx;
+  }
+
+  const metadata = JSON.parse(existingTx.metadata || "{}");
+
+  const paymentStatus = existingTx.paymentStatusId
+    ? await tx.paymentStatus.findUnique({
+        where: { id: existingTx.paymentStatusId },
+        include: {
+          paymentInstallments: {
+            orderBy: { installmentNumber: "asc" },
+          },
+          cohort: true,
+          user: true,
+          course: true,
+        },
+      })
+    : await tx.paymentStatus.findUnique({
+        where: {
+          userId_courseId: {
+            userId: existingTx.userId,
+            courseId: existingTx.courseId,
+          },
+        },
+        include: {
+          paymentInstallments: {
+            orderBy: { installmentNumber: "asc" },
+          },
+          cohort: true,
+          user: true,
+          course: true,
+        },
+      });
+
+  if (!paymentStatus) {
+    throw new Error("Linked payment status not found");
+  }
+
+  let updatedTx = await tx.paymentTransaction.update({
+    where: { transactionRef: params.transactionRef },
+    data: {
+      paymentStatusId: paymentStatus.id,
+      status: "success",
+      paymentDate: params.verifiedAt || new Date(),
+      updatedAt: new Date(),
+      metadata: JSON.stringify({
+        ...metadata,
+        manuallyMarkedPaid: params.skipExternalVerification || false,
+        markedPaidBy: params.markedBy,
+        manualReason: params.manualReason,
+        markedPaidAt: new Date().toISOString(),
+      }),
+    },
+  });
+
+  let userId = updatedTx.userId;
+
+  if (userId !== "IWD_PENDING") {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { inactive: true },
+    });
+
+    if (user?.inactive) {
+      await tx.user.update({
+        where: { id: userId },
+        data: { inactive: false },
+      });
+    }
+  }
+
+  const paymentPlan = await getPaymentPlanFromRecord(updatedTx);
+
+  switch (paymentPlan) {
+    case PAYMENT_PLANS.FULL_PAYMENT:
+      await handleFullPayment(tx, {
+        userId,
+        courseId: updatedTx.courseId,
+        reference: params.transactionRef,
+      });
+      break;
+
+    case PAYMENT_PLANS.FIRST_HALF_COMPLETE:
+      await handleFirstHalfPayment(tx, {
+        userId,
+        courseId: updatedTx.courseId,
+        reference: params.transactionRef,
+      });
+      break;
+
+    case PAYMENT_PLANS.SECOND_HALF_PAYMENT:
+      await handleSecondHalfPayment(tx, {
+        userId,
+        courseId: updatedTx.courseId,
+        reference: params.transactionRef,
+      });
+      break;
+
+    case PAYMENT_PLANS.TWO_INSTALLMENTS:
+    case PAYMENT_PLANS.THREE_INSTALLMENTS:
+    case PAYMENT_PLANS.FOUR_INSTALLMENTS:
+    case PAYMENT_PLANS.FIVE_INSTALLMENTS:
+      await handleInstallmentPayment(
+        tx,
+        {
+          userId,
+          courseId: updatedTx.courseId,
+          installmentNumber: metadata.installmentNumber || 1,
+          paymentPlan,
+          reference: params.transactionRef,
+        },
+        Number(updatedTx.amount),
+      );
+      break;
+
+    default:
+      throw new Error(`Unsupported payment plan: ${paymentPlan}`);
+  }
+
+  const existingPurchase = await tx.purchase.findFirst({
+    where: {
+      userId,
+      courseId: updatedTx.courseId,
+    },
+  });
+
+  if (!existingPurchase) {
+    await tx.purchase.create({
+      data: {
+        userId,
+        courseId: updatedTx.courseId,
+      },
+    });
+  }
+
+  return updatedTx;
 }
 
 //#region Payment Handlers
@@ -1915,21 +1806,31 @@ async function handleInstallmentPayment(
       });
 
       // ✅ CRITICAL: Create purchase record when access is granted
-      await tx.purchase.create({
-        data: {
+      const existingPurchase = await tx.purchase.findFirst({
+        where: {
           userId: metadata.userId,
           courseId: metadata.courseId,
         },
       });
+
+      if (!existingPurchase) {
+        await tx.purchase.create({
+          data: {
+            userId: metadata.userId,
+            courseId: metadata.courseId,
+          },
+        });
+      }
     }
 
-    const isFinalInstallment =
-      (paymentPlan === PAYMENT_PLANS.THREE_INSTALLMENTS &&
-        installmentNumber === 3) ||
-      (paymentPlan === PAYMENT_PLANS.FOUR_INSTALLMENTS &&
-        installmentNumber === 4);
+    const remainingUnpaidInstallments = await tx.paymentInstallment.count({
+      where: {
+        paymentStatusId: paymentStatus.id,
+        paid: false,
+      },
+    });
 
-    if (isFinalInstallment) {
+    if (remainingUnpaidInstallments === 0) {
       await tx.paymentStatus.update({
         where: { id: installment.paymentStatusId },
         data: { status: PaymentStatusType.COMPLETE },
@@ -1947,7 +1848,6 @@ async function handleInstallmentPayment(
     throw error;
   }
 }
-//#endregion
 
 //#region Purchase Status Endpoint
 paymentApp.get("/purchase-status", async (req: Request, res: Response) => {
@@ -1971,6 +1871,572 @@ paymentApp.get("/purchase-status", async (req: Request, res: Response) => {
   }
 });
 //#endregion
+
+paymentApp.patch(
+  "/admin/payment-installments/:installmentId/due-date",
+  async (req: Request, res: Response) => {
+    try {
+      const { installmentId } = req.params;
+      const { dueDate, reason, updatedBy } = req.body;
+
+      if (!dueDate) {
+        return res.status(400).json({
+          error: "dueDate is required",
+        });
+      }
+
+      const nextDueDate = new Date(dueDate);
+
+      if (Number.isNaN(nextDueDate.getTime())) {
+        return res.status(400).json({
+          error: "Invalid dueDate",
+        });
+      }
+
+      const installment = await prismadb.paymentInstallment.findUnique({
+        where: { id: installmentId },
+        include: {
+          paymentStatus: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              course: {
+                select: {
+                  id: true,
+                  title: true,
+                },
+              },
+              cohort: true,
+            },
+          },
+        },
+      });
+
+      if (!installment) {
+        return res.status(404).json({
+          error: "Installment not found",
+        });
+      }
+
+      if (installment.paid) {
+        return res.status(400).json({
+          error: "Cannot edit due date for a paid installment",
+        });
+      }
+
+      const updatedInstallment = await prismadb.paymentInstallment.update({
+        where: { id: installmentId },
+        data: {
+          dueDate: nextDueDate,
+          lastReminderSent: null,
+        },
+        include: {
+          paymentStatus: {
+            include: {
+              user: true,
+              course: true,
+              cohort: true,
+              paymentInstallments: {
+                orderBy: {
+                  installmentNumber: "asc",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return res.json({
+        installment: updatedInstallment,
+        message: "Installment due date updated successfully",
+      });
+    } catch (error) {
+      console.error("Failed to update installment due date:", error);
+
+      return res.status(500).json({
+        error: "Failed to update installment due date",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+paymentApp.post(
+  "/admin/payment-statuses/:paymentStatusId/transactions",
+  async (req: Request, res: Response) => {
+    try {
+      const { paymentStatusId } = req.params;
+
+      const {
+        amount,
+        paymentGateway = "START_BUTTON",
+        transactionRef,
+        installmentNumber,
+        paymentDate,
+        notes,
+        createdBy,
+      } = req.body;
+
+      if (!amount || Number(amount) <= 0) {
+        return res.status(400).json({
+          error: "Valid amount is required",
+        });
+      }
+
+      const paymentStatus = await prismadb.paymentStatus.findUnique({
+        where: { id: paymentStatusId },
+        include: {
+          user: true,
+          course: {
+            include: {
+              pricingPlans: true,
+            },
+          },
+          cohort: true,
+          paymentInstallments: {
+            orderBy: {
+              installmentNumber: "asc",
+            },
+          },
+        },
+      });
+
+      if (!paymentStatus) {
+        return res.status(404).json({
+          error: "Payment status not found",
+        });
+      }
+
+      const paymentPlan = await getPaymentPlanFromRecord(paymentStatus);
+
+      const isInstallmentPlan = [
+        PAYMENT_PLANS.TWO_INSTALLMENTS,
+        PAYMENT_PLANS.THREE_INSTALLMENTS,
+        PAYMENT_PLANS.FOUR_INSTALLMENTS,
+        PAYMENT_PLANS.FIVE_INSTALLMENTS,
+      ].includes(paymentPlan as any);
+
+      let selectedInstallment = null;
+
+      const firstUnpaidInstallment = paymentStatus.paymentInstallments.find(
+        (installment) => !installment.paid,
+      );
+
+      if (!firstUnpaidInstallment) {
+        return res.status(400).json({
+          error:
+            "All installments for this payment plan have already been paid",
+        });
+      }
+
+      if (
+        Number(installmentNumber) !== firstUnpaidInstallment.installmentNumber
+      ) {
+        return res.status(400).json({
+          error: `Installment #${firstUnpaidInstallment.installmentNumber} must be paid before installment #${installmentNumber}`,
+        });
+      }
+
+      if (isInstallmentPlan) {
+        if (!installmentNumber) {
+          return res.status(400).json({
+            error: "installmentNumber is required for installment plans",
+          });
+        }
+
+        selectedInstallment = paymentStatus.paymentInstallments.find(
+          (installment) =>
+            installment.installmentNumber === Number(installmentNumber),
+        );
+
+        if (!selectedInstallment) {
+          return res.status(404).json({
+            error: "Installment not found for this payment plan",
+          });
+        }
+
+        if (selectedInstallment.paid) {
+          return res.status(400).json({
+            error: "Selected installment is already paid",
+          });
+        }
+      }
+
+      const reference =
+        transactionRef ||
+        `MANUAL-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+      const existingRef = await prismadb.paymentTransaction.findUnique({
+        where: {
+          transactionRef: reference,
+        },
+      });
+
+      if (existingRef) {
+        return res.status(409).json({
+          error: "Transaction reference already exists",
+        });
+      }
+
+      const metadata = {
+        manualEntry: true,
+        createdBy,
+        notes,
+        userId: paymentStatus.userId,
+        courseId: paymentStatus.courseId,
+        cohortName: paymentStatus.cohort?.name,
+        planType: paymentPlan,
+        paymentPlan,
+        installmentNumber: installmentNumber
+          ? Number(installmentNumber)
+          : undefined,
+        amountPerInstallment: selectedInstallment?.amount,
+        installmentsCount: paymentStatus.paymentInstallments.length || 1,
+      };
+
+      const transaction = await prismadb.paymentTransaction.create({
+        data: {
+          transactionRef: reference,
+          paymentGateway,
+          paymentStatusId: paymentStatus.id,
+          userId: paymentStatus.userId,
+          courseId: paymentStatus.courseId,
+          amount: String(amount),
+          status: "pending",
+          paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+          authorizationUrl: null,
+          paymentPlan,
+          paymentType: paymentPlan,
+          metadata: JSON.stringify(metadata),
+        },
+        include: {
+          paymentStatus: {
+            include: {
+              user: true,
+              course: true,
+              cohort: true,
+              paymentInstallments: {
+                orderBy: {
+                  installmentNumber: "asc",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return res.status(201).json({
+        transaction,
+        message: "Payment transaction added successfully",
+      });
+    } catch (error) {
+      console.error("Failed to add manual payment transaction:", error);
+
+      return res.status(500).json({
+        error: "Failed to add payment transaction",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+paymentApp.post(
+  "/admin/payment-transactions/:transactionId/mark-paid",
+  async (req: Request, res: Response) => {
+    try {
+      const { transactionId } = req.params;
+      const { markedBy, reason, paymentDate } = req.body;
+
+      const transaction = await prismadb.paymentTransaction.findUnique({
+        where: {
+          id: transactionId,
+        },
+      });
+
+      if (!transaction) {
+        return res.status(404).json({
+          error: "Transaction not found",
+        });
+      }
+
+      if (transaction.status === "success") {
+        return res.json({
+          transaction,
+          message: "Transaction is already marked as paid",
+        });
+      }
+
+      if (!transaction.paymentStatusId) {
+        return res.status(400).json({
+          error: "Transaction is not linked to a payment status",
+        });
+      }
+
+      const result = await prismadb.$transaction(
+        async (tx) => {
+          return processSuccessfulPaymentTransaction(tx, {
+            transactionRef: transaction.transactionRef!,
+            verifiedAt: paymentDate ? new Date(paymentDate) : new Date(),
+            markedBy,
+            manualReason: reason,
+            skipExternalVerification: true,
+          });
+        },
+        {
+          maxWait: 30000,
+          timeout: 25000,
+        },
+      );
+
+      try {
+        const metadata = JSON.parse(result.metadata || "{}");
+
+        const [user, course, paymentStatus] = await Promise.all([
+          prismadb.user.findUnique({
+            where: {
+              id: result.userId,
+            },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          }),
+
+          prismadb.course.findUnique({
+            where: {
+              id: result.courseId,
+            },
+            select: {
+              id: true,
+              title: true,
+            },
+          }),
+
+          prismadb.paymentStatus.findUnique({
+            where: {
+              id: result.paymentStatusId || "",
+            },
+            include: {
+              cohort: true,
+              paymentInstallments: true,
+            },
+          }),
+        ]);
+
+        if (user && course) {
+          await NotificationService.create({
+            type: "COURSE_ADDED",
+            userId: user.id,
+            payload: {
+              cohortId: paymentStatus?.cohortId || undefined,
+              cohortName: paymentStatus?.cohort?.name,
+              courseTitle: course.title,
+              courseId: course.id,
+              paymentStatusId: result.paymentStatusId,
+              paymentTransactionId: result.id,
+              actionUrl: `/dashboard/lessons/${course.id}`,
+              // manuallyMarkedPaid: true,
+            },
+          });
+
+          // await sendPaymentConfirmationEmail({
+          //   amountPaid: `${currenciesInfo.NGN.symbol}${Number(result.amount).toLocaleString()}`,
+          //   courseAccessLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
+          //   courseTitle: course.title,
+          //   paymentType:
+          //     metadata.planType === "FULL_PAYMENT" || metadata.planType === "FULL"
+          //       ? "one_time"
+          //       : "installment",
+          //   currentInstallment: metadata.installmentNumber,
+          //   totalInstallments: metadata.installmentsCount,
+          //   paymentDate: format(
+          //     new Date(result.paymentDate || new Date()),
+          //     "d MMM yyyy",
+          //   ),
+          //   userEmail: user.email || "",
+          //   userName: user.name || "Student",
+          // });
+        }
+
+        const { GoogleSheetsSyncService } =
+          await import("../../utils/googleSheets");
+
+        GoogleSheetsSyncService.syncPaymentData().catch((error) =>
+          console.error("Google Sheets sync error:", error.message),
+        );
+      } catch (sideEffectError) {
+        console.error("Manual paid side effects failed:", sideEffectError);
+      }
+
+      const updated = await prismadb.paymentTransaction.findUnique({
+        where: {
+          id: transactionId,
+        },
+        include: {
+          paymentStatus: {
+            include: {
+              user: true,
+              course: true,
+              cohort: true,
+              paymentInstallments: {
+                orderBy: {
+                  installmentNumber: "asc",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return res.json({
+        transaction: updated,
+        message: "Transaction marked as paid successfully",
+      });
+    } catch (error) {
+      console.error("Failed to mark transaction as paid:", error);
+
+      return res.status(500).json({
+        error: "Failed to mark transaction as paid",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
+
+paymentApp.post(
+  "/admin/payment-statuses/:paymentStatusId/manual-payment",
+  async (req: Request, res: Response) => {
+    try {
+      const { paymentStatusId } = req.params;
+
+      const {
+        amount,
+        installmentNumber,
+        paymentDate,
+        reference,
+        notes,
+        createdBy,
+        markPaid = true,
+      } = req.body;
+
+      const created = await prismadb.$transaction(
+        async (tx) => {
+          const paymentStatus = await tx.paymentStatus.findUnique({
+            where: { id: paymentStatusId },
+            include: {
+              user: true,
+              course: true,
+              cohort: true,
+              paymentInstallments: {
+                orderBy: {
+                  installmentNumber: "asc",
+                },
+              },
+            },
+          });
+
+          if (!paymentStatus) {
+            throw new Error("Payment status not found");
+          }
+
+          const paymentPlan = await getPaymentPlanFromRecord(paymentStatus);
+
+          const transactionRef =
+            reference ||
+            `MANUAL-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+          const metadata = {
+            manualEntry: true,
+            createdBy,
+            notes,
+            userId: paymentStatus.userId,
+            courseId: paymentStatus.courseId,
+            cohortName: paymentStatus.cohort?.name,
+            planType: paymentPlan,
+            paymentPlan,
+            installmentNumber: installmentNumber
+              ? Number(installmentNumber)
+              : undefined,
+            installmentsCount: paymentStatus.paymentInstallments.length || 1,
+          };
+
+          const transaction = await tx.paymentTransaction.create({
+            data: {
+              transactionRef,
+              paymentGateway: "START_BUTTON",
+              paymentStatusId: paymentStatus.id,
+              userId: paymentStatus.userId,
+              courseId: paymentStatus.courseId,
+              amount: String(amount),
+              status: "pending",
+              paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+              authorizationUrl: null,
+              paymentPlan,
+              paymentType: paymentPlan,
+              metadata: JSON.stringify(metadata),
+            },
+          });
+
+          if (!markPaid) return transaction;
+
+          await processSuccessfulPaymentTransaction(tx, {
+            transactionRef,
+            verifiedAt: paymentDate ? new Date(paymentDate) : new Date(),
+            markedBy: createdBy,
+            manualReason: notes,
+            skipExternalVerification: true,
+          });
+
+          return transaction;
+        },
+        {
+          maxWait: 30000,
+          timeout: 30000,
+        },
+      );
+
+      const transaction = await prismadb.paymentTransaction.findUnique({
+        where: {
+          id: created.id,
+        },
+        include: {
+          paymentStatus: {
+            include: {
+              user: true,
+              course: true,
+              cohort: true,
+              paymentInstallments: {
+                orderBy: {
+                  installmentNumber: "asc",
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return res.status(201).json({
+        transaction,
+        message: markPaid
+          ? "Manual payment added and marked as paid"
+          : "Manual payment transaction added",
+      });
+    } catch (error) {
+      console.error("Failed to add manual payment:", error);
+
+      return res.status(500).json({
+        error: "Failed to add manual payment",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  },
+);
 
 //#region Cron Jobs
 cron.schedule("0 * * * *", async () => {
@@ -2363,480 +2829,5 @@ const convertBigIntToNumber = (obj: any): any => {
 
   return obj;
 };
-
-paymentApp.get("/admin/payments", async (req: Request, res: Response) => {
-  try {
-    const {
-      status,
-      paymentPlan,
-      courseId,
-      cohortId,
-      search,
-      page = 1,
-      limit = 20,
-      sortBy = "createdAt",
-      sortOrder = "desc",
-    } = req.query;
-
-    const where: any = {};
-
-    if (status) where.status = status;
-    if (paymentPlan) where.paymentPlan = paymentPlan;
-    if (courseId) where.courseId = courseId;
-    if (cohortId) where.cohortId = cohortId;
-
-    if (search) {
-      where.OR = [
-        {
-          user: {
-            name: {
-              contains: search,
-              mode: "insensitive",
-            },
-          },
-        },
-        {
-          user: {
-            email: {
-              contains: search,
-              mode: "insensitive",
-            },
-          },
-        },
-      ];
-    }
-
-    const payments = await prismadb.paymentStatus.findMany({
-      where,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone_number: true,
-          },
-        },
-        course: {
-          select: {
-            id: true,
-            title: true,
-            price: true,
-          },
-        },
-        cohort: {
-          select: {
-            id: true,
-            name: true,
-            startDate: true,
-            endDate: true,
-          },
-        },
-        paymentInstallments: {
-          orderBy: {
-            installmentNumber: "asc",
-          },
-        },
-      },
-      skip: (Number(page) - 1) * Number(limit),
-      take: Number(limit),
-      orderBy: {
-        [sortBy as string]: sortOrder,
-      },
-    });
-
-    const total = await prismadb.paymentStatus.count({ where });
-
-    const metricsRaw = await prismadb.$queryRaw<
-      Array<{
-        totalPayments: bigint;
-        completedPayments: bigint;
-        pendingPayments: bigint;
-        pendingSeatConfirmations: bigint;
-        expiredPayments: bigint;
-      }>
-    >`
-      SELECT 
-        COUNT(*) as "totalPayments",
-        SUM(CASE WHEN status = 'COMPLETE' THEN 1 ELSE 0 END) as "completedPayments",
-        SUM(CASE WHEN status = 'BALANCE_HALF_PAYMENT' THEN 1 ELSE 0 END) as "pendingPayments",
-        SUM(CASE WHEN status = 'PENDING_SEAT_CONFIRMATION' THEN 1 ELSE 0 END) as "pendingSeatConfirmations",
-        SUM(CASE WHEN status = 'EXPIRED' THEN 1 ELSE 0 END) as "expiredPayments"
-      FROM "PaymentStatus"
-    `;
-
-    const metrics = convertBigIntToNumber(metricsRaw[0]);
-
-    res.json({
-      data: payments,
-      pagination: {
-        total,
-        page: Number(page),
-        limit: Number(limit),
-        totalPages: Math.ceil(total / Number(limit)),
-      },
-      metrics,
-    });
-  } catch (error) {
-    console.error("Error fetching payment data:", error);
-    res.status(500).json({
-      error: "Failed to fetch payment data",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
-
-paymentApp.get("/admin/payments/stats", async (req: Request, res: Response) => {
-  try {
-    const totalRevenueRaw = await prismadb.$queryRaw<
-      { total: bigint | null }[]
-    >`
-      SELECT 
-        SUM(CASE 
-          WHEN ps."paymentPlan" = 'FULL_PAYMENT' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC, ${TOTAL_COURSE_FEE})
-          WHEN ps."paymentPlan" = 'FIRST_HALF_COMPLETE' AND ps.status = 'COMPLETE' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC, ${TOTAL_COURSE_FEE})
-          WHEN ps."paymentPlan" = 'FIRST_HALF_COMPLETE' AND ps.status = 'BALANCE_HALF_PAYMENT' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC / 2, ${TOTAL_COURSE_FEE / 2})
-          WHEN ps."paymentPlan" = 'FOUR_INSTALLMENTS' THEN (
-            SELECT COALESCE(SUM(amount), 0)
-            FROM "PaymentInstallment" 
-            WHERE "paymentStatusId" = ps.id AND paid = true
-          )
-          ELSE 0
-        END) as total
-      FROM "PaymentStatus" ps
-      LEFT JOIN "Course" c ON ps."courseId" = c.id
-      WHERE ps.status != 'EXPIRED'
-    `;
-
-    const revenueByTypeRaw = await prismadb.$queryRaw<
-      Array<{
-        paymentPlan: string;
-        revenue: bigint;
-        count: bigint;
-      }>
-    >`
-      SELECT 
-        ps."paymentPlan",
-        SUM(CASE 
-          WHEN ps."paymentPlan" = 'FULL_PAYMENT' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC, ${TOTAL_COURSE_FEE})
-          WHEN ps."paymentPlan" = 'FIRST_HALF_COMPLETE' AND ps.status = 'COMPLETE' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC, ${TOTAL_COURSE_FEE})
-          WHEN ps."paymentPlan" = 'FIRST_HALF_COMPLETE' AND ps.status = 'BALANCE_HALF_PAYMENT' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC / 2, ${TOTAL_COURSE_FEE / 2})
-          WHEN ps."paymentPlan" = 'FOUR_INSTALLMENTS' THEN (
-            SELECT COALESCE(SUM(amount), 0)
-            FROM "PaymentInstallment" 
-            WHERE "paymentStatusId" = ps.id AND paid = true
-          )
-          ELSE 0
-        END) as revenue,
-        COUNT(*) as count
-      FROM "PaymentStatus" ps
-      LEFT JOIN "Course" c ON ps."courseId" = c.id
-      WHERE ps.status != 'EXPIRED'
-      GROUP BY ps."paymentPlan"
-    `;
-
-    const revenueByCourseRaw = await prismadb.$queryRaw<
-      Array<{
-        id: string;
-        title: string;
-        revenue: bigint;
-        count: bigint;
-      }>
-    >`
-      SELECT 
-        c.id,
-        c.title,
-        SUM(CASE 
-          WHEN ps."paymentPlan" = 'FULL_PAYMENT' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC, ${TOTAL_COURSE_FEE})
-          WHEN ps."paymentPlan" = 'FIRST_HALF_COMPLETE' AND ps.status = 'COMPLETE' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC, ${TOTAL_COURSE_FEE})
-          WHEN ps."paymentPlan" = 'FIRST_HALF_COMPLETE' AND ps.status = 'BALANCE_HALF_PAYMENT' THEN COALESCE(NULLIF(REPLACE(c.price, ',', ''), '')::NUMERIC / 2, ${TOTAL_COURSE_FEE / 2})
-          WHEN ps."paymentPlan" = 'FOUR_INSTALLMENTS' THEN (
-            SELECT COALESCE(SUM(amount), 0)
-            FROM "PaymentInstallment" 
-            WHERE "paymentStatusId" = ps.id AND paid = true
-          )
-          ELSE 0
-        END) as revenue,
-        COUNT(*) as count
-      FROM "PaymentStatus" ps
-      JOIN "Course" c ON ps."courseId" = c.id
-      WHERE ps.status != 'EXPIRED'
-      GROUP BY c.id, c.title
-      ORDER BY revenue DESC
-      LIMIT 5
-    `;
-
-    const totalRevenue = convertBigIntToNumber(totalRevenueRaw[0]?.total ?? 0);
-    const revenueByType = convertBigIntToNumber(revenueByTypeRaw);
-    const revenueByCourse = convertBigIntToNumber(revenueByCourseRaw);
-
-    res.json({
-      totalRevenue,
-      revenueByType,
-      revenueByCourse,
-    });
-  } catch (error) {
-    console.error("Error fetching payment stats:", error);
-    res.status(500).json({
-      error: "Failed to fetch payment stats",
-      details: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-});
-
-/**
- * Admin endpoint: Manually verify and record a Paystack payment by reference.
- * Useful when automatic verification fails (e.g. missing installment records).
- * POST /admin/payments/manual-verify
- * Body: { reference: string, userId: string, courseId: string, installmentNumber?: number }
- */
-paymentApp.post(
-  "/admin/payments/manual-verify",
-  async (req: Request, res: Response) => {
-    const { reference, userId, courseId, installmentNumber = 1 } = req.body;
-
-    if (!reference || !userId || !courseId) {
-      return res
-        .status(400)
-        .json({ error: "reference, userId, and courseId are required" });
-    }
-
-    try {
-      // Verify with Paystack first
-      const verification = await paystack.transaction.verify(
-        reference as string,
-      );
-
-      if (verification?.data?.status !== "success") {
-        return res.status(400).json({
-          status: "error",
-          error: "Paystack reports this transaction is not successful",
-          paystackStatus: verification.data?.status,
-        });
-      }
-
-      const amountPaid = (verification.data.amount || 0) / 100; // kobo → naira
-
-      const result = await prismadb.$transaction(
-        async (tx) => {
-          // Upsert the paystackTransaction record
-          let paystackTx = await tx.paystackTransaction.findUnique({
-            where: { transactionRef: reference },
-          });
-
-          if (!paystackTx) {
-            paystackTx = await tx.paystackTransaction.create({
-              data: {
-                transactionRef: reference,
-                userId,
-                courseId,
-                amount: amountPaid.toString(),
-                status: "success",
-                paymentDate: new Date(),
-                paymentPlan:
-                  ((verification?.data?.metadata as any)
-                    ?.paymentPlan as string) || "MANUAL",
-                metadata: JSON.stringify(
-                  (verification?.data?.metadata as any) || {},
-                ),
-              },
-            });
-          } else if (paystackTx.status !== "success") {
-            paystackTx = await tx.paystackTransaction.update({
-              where: { id: paystackTx.id },
-              data: { status: "success", paymentDate: new Date() },
-            });
-          }
-
-          // Ensure paymentStatus exists
-          let paymentStatus = await tx.paymentStatus.findUnique({
-            where: { userId_courseId: { userId, courseId } },
-            include: {
-              paymentInstallments: { orderBy: { installmentNumber: "asc" } },
-              cohort: true,
-            },
-          });
-
-          const paymentPlan: string =
-            paystackTx.paymentPlan ||
-            ((verification?.data?.metadata as any)?.paymentPlan as string) ||
-            "FULL_PAYMENT";
-
-          if (!paymentStatus) {
-            // Create a basic paymentStatus — admin must assign cohort separately if needed
-            paymentStatus = (await tx.paymentStatus.create({
-              data: {
-                userId,
-                courseId,
-                paymentPlan,
-                status: PaymentStatusType.PENDING_SEAT_CONFIRMATION,
-              },
-              include: {
-                paymentInstallments: true,
-                cohort: true,
-              },
-            })) as any;
-            console.log(
-              `[ADMIN] Created paymentStatus for user ${userId} / course ${courseId}`,
-            );
-          }
-
-          // Determine if this is an installment plan
-          const isInstallmentPlan = [
-            PAYMENT_PLANS.TWO_INSTALLMENTS,
-            PAYMENT_PLANS.THREE_INSTALLMENTS,
-            PAYMENT_PLANS.FOUR_INSTALLMENTS,
-            PAYMENT_PLANS.FIVE_INSTALLMENTS,
-          ].includes(paymentPlan as any);
-
-          if (isInstallmentPlan) {
-            // Self-heal missing installments
-            if (paymentStatus?.paymentInstallments.length === 0) {
-              const courseForPlan = await tx.course.findUnique({
-                where: { id: courseId },
-                select: { pricingPlans: true },
-              });
-              const plan = (courseForPlan?.pricingPlans as any[])?.find(
-                (p: any) => p.planType === paymentPlan,
-              );
-              if (plan && plan.installmentsCount > 1) {
-                const cohortStartDate =
-                  paymentStatus.cohort?.startDate || new Date();
-                const installments: any[] = [];
-                if (plan.installmentsCount === 2) {
-                  installments.push({
-                    amount: plan.amountPerInstallment,
-                    dueDate: new Date(),
-                    installmentNumber: 1,
-                    paymentStatusId: paymentStatus.id,
-                  });
-                  installments.push({
-                    amount: plan.amountPerInstallment,
-                    dueDate: addMonths(cohortStartDate, 1),
-                    installmentNumber: 2,
-                    paymentStatusId: paymentStatus.id,
-                  });
-                } else {
-                  installments.push({
-                    amount: plan.amountPerInstallment,
-                    dueDate: new Date(),
-                    installmentNumber: 1,
-                    paymentStatusId: paymentStatus.id,
-                  });
-                  installments.push({
-                    amount: plan.amountPerInstallment,
-                    dueDate: cohortStartDate,
-                    installmentNumber: 2,
-                    paymentStatusId: paymentStatus.id,
-                  });
-                  for (let i = 3; i <= plan.installmentsCount; i++) {
-                    installments.push({
-                      amount: plan.amountPerInstallment,
-                      dueDate: addMonths(cohortStartDate, i - 2),
-                      installmentNumber: i,
-                      paymentStatusId: paymentStatus.id,
-                    });
-                  }
-                }
-                await tx.paymentInstallment.createMany({ data: installments });
-                console.log(
-                  `[ADMIN] Auto-created ${installments.length} installments`,
-                );
-              }
-              // Re-fetch
-              paymentStatus = await tx.paymentStatus.findUniqueOrThrow({
-                where: { id: paymentStatus.id },
-                include: {
-                  paymentInstallments: {
-                    orderBy: { installmentNumber: "asc" },
-                  },
-                  cohort: true,
-                },
-              });
-            }
-
-            // Mark the specified installment as paid
-            const targetInstallment = paymentStatus?.paymentInstallments.find(
-              (i) => i.installmentNumber === Number(installmentNumber),
-            );
-            if (targetInstallment && !targetInstallment.paid) {
-              await tx.paymentInstallment.update({
-                where: { id: targetInstallment.id },
-                data: { paid: true },
-              });
-              console.log(
-                `[ADMIN] Marked installment ${installmentNumber} as paid`,
-              );
-            }
-
-            // Check if all installments are now paid
-            const allInstallments = await tx.paymentInstallment.findMany({
-              where: { paymentStatusId: paymentStatus?.id },
-            });
-            const allPaid = allInstallments.every(
-              (i) =>
-                i.paid || i.installmentNumber === Number(installmentNumber),
-            );
-            await tx.paymentStatus.update({
-              where: { id: paymentStatus?.id },
-              data: {
-                status: allPaid
-                  ? PaymentStatusType.COMPLETE
-                  : PaymentStatusType.BALANCE_HALF_PAYMENT,
-              },
-            });
-          } else {
-            // Full payment or legacy plan
-            await tx.paymentStatus.update({
-              where: { id: paymentStatus?.id },
-              data: {
-                paymentPlan,
-                status: PaymentStatusType.COMPLETE,
-              },
-            });
-          }
-
-          // Ensure purchase record exists
-          const existingPurchase = await tx.purchase.findFirst({
-            where: { userId, courseId },
-          });
-          if (!existingPurchase) {
-            await tx.purchase.create({ data: { userId, courseId } });
-            console.log(`[ADMIN] Created purchase record for user ${userId}`);
-          }
-
-          // Reactivate user if inactive
-          const user = await tx.user.findUnique({ where: { id: userId } });
-          if (user?.inactive) {
-            await tx.user.update({
-              where: { id: userId },
-              data: { inactive: false },
-            });
-            console.log(`[ADMIN] Reactivated user ${userId}`);
-          }
-
-          return {
-            paystackTxId: paystackTx.id,
-            paymentStatusId: paymentStatus?.id,
-          };
-        },
-        { maxWait: 30000, timeout: 25000 },
-      );
-
-      res.json({
-        status: "success",
-        message: `Payment reference ${reference} successfully verified and recorded for user ${userId}`,
-        data: result,
-      });
-    } catch (error) {
-      console.error("[ADMIN] Manual verify error:", error);
-      res.status(500).json({
-        status: "error",
-        error: "Manual verification failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  },
-);
 
 export default paymentApp;
